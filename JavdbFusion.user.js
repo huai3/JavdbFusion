@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.349-fusion-hls
+// @version      7.350-fusion-top250fix
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -9473,7 +9473,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         }
         return { success: 1, data: { movies: officialMovies.slice((page - 1) * 50, page * 50) }, fromJavdbSession: true };
       } catch (e) {
-        return res;
+        // 旧实现直接 `return res`，把 fetchOfficialTop 抛出的具体原因整个吞掉，
+        // 界面最终只能显示泛化的「请登录账号」——这是 VIP 已登录却被误提示的最后一环。
+        // 这里把真实原因带回，让界面能区分「Cookie 失效」与「结构变更」。
+        return { success: 0, action: 'OfficialSessionError', message: (e && e.message) ? e.message : '读取 JAVDB 官方榜单失败' };
       }
     }
 
@@ -9484,8 +9487,20 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       else if (handleType === 'year' && typeValue) url += '?t=' + encodeURIComponent('y' + typeValue);
       const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
       if (!response.ok) throw new Error('JAVDB 官方 TOP250 请求失败 (' + response.status + ')');
-      const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
-      const items = Array.from(doc.querySelectorAll('.movie-list .item'));
+      const html = await response.text();
+      // 未登录时 /rankings/top 不会返回 302，而是返回 HTTP 200 + 一段 JS 跳转语句
+      // （实测响应体就是 window.location.href='/login';）。
+      // 这种情况下页面里根本没有榜单节点，旧代码只查 .movie-list .item 拿不到任何
+      // 数据，最终只抛一句泛化的「请确认已登录」，导致 VIP 用户明明已登录却仍被要求
+      // 粘贴 Token。这里显式识别该响应并给出准确原因。
+      if (/window\.location\.href\s*=\s*['\"]\/login/i.test(html)) {
+        throw new Error('JAVDB 未返回榜单数据：当前网页会话未登录或 Cookie 已失效（请刷新页面重新登录后再试）');
+      }
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      // 兼容两种结构：带 .movie-list 祖先容器，或卡片直接平铺在页面里。
+      // 旧写法 '.movie-list .item' 要求祖先存在，结构一变就整页取不到数据。
+      let items = Array.from(doc.querySelectorAll('.movie-list .item'));
+      if (!items.length) items = Array.from(doc.querySelectorAll('.item'));
       const movies = items.map(function (item, index) {
         const link = item.querySelector('a[href^="/v/"]');
         if (!link) return null;
@@ -9514,7 +9529,16 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           awards: [{ name: 'JavDB 影片TOP250', rank: rankMatch ? parseInt(rankMatch[0], 10) : index + 1 }]
         };
       }).filter(Boolean);
-      if (!movies.length) throw new Error('未能从 JAVDB 官方页面读取榜单；请确认当前账号已登录且有 TOP250 访问权限');
+      if (!movies.length) {
+        // 区分两种失败原因，避免一律提示"请登录"而误导已登录的 VIP 用户：
+        //  · 已登录且页面结构正常 → 说明筛选条件（类型/年份）下确实没有数据
+        //  · 已登录但一个卡片都没有 → 结构变更，需要更新选择器
+        const anyItem = doc.querySelector('.item');
+        if (anyItem) {
+          throw new Error('已读取 JAVDB 榜单页面，但当前筛选条件下没有影片（可尝试切换类型或年份）');
+        }
+        throw new Error('未能从 JAVDB 官方页面解析出榜单卡片（页面结构可能已变更，需更新解析规则）');
+      }
       return movies;
     }
     // 异步评分加载与持久化系统（复用顶层共享 scoreMemCache）
@@ -10271,20 +10295,48 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               showToast('🏆 TOP250 数据已就绪！250 部作品全部复用自本地数据库');
             }
           } else {
-            const isAuthError = res.action === 'JWTVerificationError' ||
-                                (res.message && (res.message.includes('登') || res.message.includes('token') || res.message.includes('auth') || res.message.includes('過期')));
+            const msg = String(res.message || '');
+            // 只有服务端明确返回鉴权失败码时才算 Token 失效。
+            // 旧实现用「文案里含 登/token/auth/過期」做模糊匹配，会把
+            // 「当前网页会话未登录」这类网页会话问题误判为 Token 失效，
+            // 进而 localStorage.removeItem 清掉用户已存的移动端凭据 ——
+            // 这正是 VIP 用户明明已登录却反复被要求登录的直接原因。
+            const isAuthError = res.action === 'JWTVerificationError';
             if (isAuthError) {
               localStorage.removeItem(APP_AUTH_KEY);
               if (listEl) {
                 listEl.innerHTML =
                   '<div style="grid-column:1/-1;text-align:center;padding:70px 20px;color:#e2e8f0;">' +
                     '<div style="font-size:18px;font-weight:700;margin-bottom:10px;color:#fed368;">' + escapeHtml(res.message || '登录凭据已失效，请重新验证') + '</div>' +
-                    '<div style="font-size:13px;color:#94a3b8;margin-bottom:20px;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.6;">TOP250 需保持移动端凭据有效。请输入普通 JAVDB 账号或粘贴 Token。</div>' +
+                    '<div style="font-size:13px;color:#94a3b8;margin-bottom:20px;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.6;">移动端凭据已失效，重新登录或粘贴新 Token 即可；无需重复粘贴，你也可以直接刷新页面后重试。</div>' +
                     '<div style="display:flex;justify-content:center;gap:12px;">' +
                       '<button type="button" id="t250-prompt-login-btn" style="background:#00a4dc;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">重新登录 / 粘贴 Token</button>' +
                       '<button type="button" id="t250-prompt-playback-btn" style="background:rgba(255,255,255,.1);color:#fff;border:none;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer;">先看免登录热播榜</button>' +
                     '</div>' +
                   '</div>';
+                const pBtn = listEl.querySelector('#t250-prompt-login-btn');
+                if (pBtn) pBtn.addEventListener('click', function () { showLoginModal(function () { loadData(); }); });
+                const pbBtn = listEl.querySelector('#t250-prompt-playback-btn');
+                if (pbBtn) pbBtn.addEventListener('click', function () { switchMode('playback'); });
+              }
+            } else if (msg) {
+              // 网页会话解析失败（未登录 / Cookie 失效 / 结构变更）：
+              // 不清凭据，给出准确原因 + 直接刷新页面的出路。
+              if (listEl) {
+                listEl.innerHTML =
+                  '<div style="grid-column:1/-1;text-align:center;padding:70px 20px;color:#e2e8f0;">' +
+                    '<div style="font-size:17px;font-weight:700;margin-bottom:10px;color:#fed368;">' + escapeHtml(msg) + '</div>' +
+                    '<div style="font-size:13px;color:#94a3b8;margin-bottom:20px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.6;">' +
+                      'TOP250 优先使用当前网页登录会话读取，无需移动端 Token。若你是 VIP 但看到本提示，请先刷新页面确认仍处于登录状态（顶部右侧应显示头像与昵称）。' +
+                    '</div>' +
+                    '<div style="display:flex;justify-content:center;gap:12px;">' +
+                      '<button type="button" id="t250-reload-btn" style="background:#00a4dc;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">刷新页面重试</button>' +
+                      '<button type="button" id="t250-prompt-login-btn" style="background:rgba(255,255,255,.1);color:#fff;border:none;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer;">用移动端 Token</button>' +
+                      '<button type="button" id="t250-prompt-playback-btn" style="background:rgba(255,255,255,.1);color:#fff;border:none;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer;">免登录热播榜</button>' +
+                    '</div>' +
+                  '</div>';
+                const rlBtn = listEl.querySelector('#t250-reload-btn');
+                if (rlBtn) rlBtn.addEventListener('click', function () { location.reload(); });
                 const pBtn = listEl.querySelector('#t250-prompt-login-btn');
                 if (pBtn) pBtn.addEventListener('click', function () { showLoginModal(function () { loadData(); }); });
                 const pbBtn = listEl.querySelector('#t250-prompt-playback-btn');
