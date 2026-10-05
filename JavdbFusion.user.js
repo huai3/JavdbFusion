@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.339-fusion
+// @version      7.346-fusion
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -113,7 +113,7 @@
     } catch (e) {}
   }
   ensureImageNoReferrer();
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.339';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.343';
   var tabHome = null, tabFav = null, favPanel = null;
   var tabGallery = null, galleryPanel = null;
   var tabTop250 = null, top250Panel = null;
@@ -6876,7 +6876,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         '<span class="material-symbols-outlined">menu</span></button>' +
       '<div class="logo-nav-wrap">' + javdbLogoHtml() + '<nav class="emby-topnav"></nav></div>' +
       '<span class="spacer"></span>' +
-      '<button class="hb" id="emby-search-trigger" title="搜索" aria-label="搜索" role="search">' +
+      '<button class="hb" id="emby-search-trigger" title="搜索（按 / 快速打开）" aria-label="搜索（按 / 快速打开）" aria-keyshortcuts="/" role="search">' +
         '<span class="material-symbols-outlined">search</span></button>' +
       '<button id="emby-settings-btn" title="设置" aria-label="设置">' +
         '<span class="material-symbols-outlined">settings</span></button>';
@@ -8379,7 +8379,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     { id: 'reviewListInfinite', name: '绕过JAVDB限制', desc: '为非 VIP 账号扩展评论与相关清单浏览；不控制 TOP250 或热播榜界面', default: false },
     { id: 'actressInfo', name: '女优信息与收藏标记', desc: '查询女优现役/退役状态、年龄、身高、三围等体检数据，并控制女优头像红心收藏标记的显示', default: true },
     { id: 'gfriendsAvatar', name: '演员头像高清替换', desc: '开启后优先从高清头像库匹配演员头像（男女演员均支持），未匹配则平滑回退 JAVDB 官方头像', default: true },
-    { id: 'quickStatusPreview', name: '状态快捷标记和预览图', desc: '在作品封面提供「想看/已看评分」快捷标记按钮，以及预览大图嗅探抓取与画廊浮层', default: false }
+    { id: 'quickStatusPreview', name: '状态快捷标记和预览图', desc: '在作品封面提供「想看/已看评分」快捷标记按钮，以及预览大图嗅探抓取与画廊浮层', default: false },
+    { id: 'ratingHeatmap', name: '评分热度排序', desc: '在 JAVDB 列表标出评分热度，按综合热度/评分/评价数排序，并按最低评分筛选', default: false }
   ];
 
   function isPluginEnabled(id) {
@@ -8403,6 +8404,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       try { if (typeof FavoriteActressManager !== 'undefined') FavoriteActressManager.markBadges(document); } catch (e) {}
     } else if (id === 'quickStatusPreview') {
       try { syncQuickStatusPreviewUI(); } catch (e) {}
+    } else if (id === 'ratingHeatmap') {
+      try { syncRatingHeatmap(document); } catch (e) {}
     } else if (id === 'gfriendsAvatar') {
       try { if (typeof refreshAllAvatarsUI === 'function') refreshAllAvatarsUI(); } catch (e) {}
     }
@@ -9187,10 +9190,24 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         const headers = options.headers || {};
         const data = options.data || options.body;
         const timeout = options.timeout || 15000;
+        const signal = options.signal;
+        let request = null;
+        let settled = false;
+        const finish = function (fn, value) {
+          if (settled) return;
+          settled = true;
+          if (signal) signal.removeEventListener('abort', onAbort);
+          fn(value);
+        };
+        const onAbort = function () {
+          try { if (request && request.abort) request.abort(); } catch (e) {}
+          finish(reject, new Error('aborted'));
+        };
+        if (signal && signal.aborted) { finish(reject, new Error('aborted')); return; }
 
         if (typeof GM_xmlhttpRequest !== 'undefined') {
           try {
-            GM_xmlhttpRequest({
+            request = GM_xmlhttpRequest({
               method: method,
               url: url,
               headers: headers,
@@ -9198,23 +9215,28 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               timeout: timeout,
               onload: function (res) {
                 if (res.status >= 200 && res.status < 300) {
-                  resolve(res.responseText);
+                  finish(resolve, res.responseText);
                 } else {
-                  reject(new Error('HTTP ' + res.status + ': ' + (res.statusText || 'Request failed')));
+                  finish(reject, new Error('HTTP ' + res.status + ': ' + (res.statusText || 'Request failed')));
                 }
               },
-              onerror: function (err) { reject(err || new Error('Network error')); },
-              ontimeout: function () { reject(new Error('Request timeout')); }
+              onerror: function (err) { finish(reject, err || new Error('Network error')); },
+              ontimeout: function () { finish(reject, new Error('Request timeout')); },
+              onabort: function () { finish(reject, new Error('aborted')); }
             });
+            if (signal) {
+              if (signal.aborted) onAbort();
+              else signal.addEventListener('abort', onAbort, { once: true });
+            }
             return;
           } catch (e) {}
         }
-        const fetchOpts = { method: method, headers: headers };
+        const fetchOpts = { method: method, headers: headers, signal: signal };
         if (data && method !== 'GET' && method !== 'HEAD') fetchOpts.body = data;
         fetch(url, fetchOpts).then(function (res) {
           if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + res.statusText);
           return res.text();
-        }).then(resolve).catch(reject);
+        }).then(function (value) { finish(resolve, value); }).catch(function (err) { finish(reject, err); });
       });
     },
     get: function (url, headers) { return this.request({ method: 'GET', url: url, headers: headers }); },
@@ -9288,9 +9310,13 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     const memCache = new Map();
 
     // IndexedDB 存储支持
+    let dbConnection = null;
+    let dbOpenPromise = null;
     function openDB() {
-      return new Promise(function (resolve, reject) {
-        if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB unsupported'));
+      if (dbConnection) return Promise.resolve(dbConnection);
+      if (dbOpenPromise) return dbOpenPromise;
+      dbOpenPromise = new Promise(function (resolve, reject) {
+        if (typeof indexedDB === 'undefined') { dbOpenPromise = null; reject(new Error('IndexedDB unsupported')); return; }
         const req = indexedDB.open(DB_NAME, DB_VERSION);
         req.onupgradeneeded = function (e) {
           const db = e.target.result;
@@ -9298,9 +9324,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             db.createObjectStore(STORE_NAME, { keyPath: 'key' });
           }
         };
-        req.onsuccess = function (e) { resolve(e.target.result); };
-        req.onerror = function (e) { reject(e.target.error); };
+        req.onsuccess = function (e) {
+          dbConnection = e.target.result;
+          dbConnection.onversionchange = function () { dbConnection.close(); dbConnection = null; dbOpenPromise = null; };
+          resolve(dbConnection);
+        };
+        req.onerror = function (e) { dbOpenPromise = null; reject(e.target.error); };
+        req.onblocked = function () { dbOpenPromise = null; reject(new Error('IndexedDB open blocked')); };
       });
+      return dbOpenPromise;
     }
 
     async function getCached(key, ttlMs) {
@@ -9330,15 +9362,19 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       }
     }
 
-    async function setCached(key, data) {
+    async function setCachedMany(entries) {
       const now = Date.now();
-      memCache.set(key, { time: now, data: data });
+      (entries || []).forEach(function (entry) {
+        if (entry && entry.key) memCache.set(entry.key, { time: now, data: entry.data });
+      });
       try {
         const db = await openDB();
         return new Promise(function (resolve) {
           const tx = db.transaction(STORE_NAME, 'readwrite');
           const store = tx.objectStore(STORE_NAME);
-          store.put({ key: key, data: data, time: now });
+          (entries || []).forEach(function (entry) {
+            if (entry && entry.key) store.put({ key: entry.key, data: entry.data, time: now });
+          });
           tx.oncomplete = function () { resolve(true); };
           tx.onerror = function () { resolve(false); };
         });
@@ -9346,6 +9382,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         return false;
       }
     }
+    async function setCached(key, data) { return setCachedMany([{ key: key, data: data }]); }
 
     function updateImgServer(str) {
       if (!str) return '';
@@ -9651,14 +9688,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (!code && !id) return;
       const upperCode = code.toUpperCase();
       const normC = normCode(code);
-      const promises = [];
-      if (upperCode) promises.push(setCached('t250_detail_' + upperCode, rec));
-      if (normC) promises.push(setCached('t250_detail_' + normC, rec));
+      const entries = [];
+      if (upperCode) entries.push({ key: 't250_detail_' + upperCode, data: rec });
+      if (normC) entries.push({ key: 't250_detail_' + normC, data: rec });
       if (id) {
-        promises.push(setCached('t250_detail_' + id, rec));
-        promises.push(setCached('t250_detail_' + String(id).toLowerCase(), rec));
+        entries.push({ key: 't250_detail_' + id, data: rec });
+        entries.push({ key: 't250_detail_' + String(id).toLowerCase(), data: rec });
       }
-      await Promise.all(promises);
+      await setCachedMany(entries);
     }
 
     // 后台温和全量同步引擎：串行平滑补齐数据存入收藏夹数据库并广播
@@ -14931,6 +14968,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     PLUGIN_REGISTRY.forEach(function (pl) {
       localStorage.removeItem('javdb_plugin_' + pl.id);
     });
+    try { syncRatingHeatmap(document, true); } catch (e) {}
     applySettings();
     applyStyleTheme('emby');
     try { syncDetailTranslation(); } catch (e) {}
@@ -15148,6 +15186,29 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   function closeSearchModal() {
     const m = document.getElementById('emby-search-modal');
     if (m) m.classList.remove('open');
+  }
+
+  // GitHub 风格搜索快捷键：按 / 聚焦站内搜索；编辑文字时不拦截。
+  let slashSearchBound = false;
+  function bindSlashSearchShortcut() {
+    if (slashSearchBound) return;
+    slashSearchBound = true;
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== '/' || e.defaultPrevented || e.isComposing || e.ctrlKey || e.altKey || e.metaKey) return;
+      const target = e.target;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName || '') || target.getAttribute('role') === 'textbox')) return;
+      e.preventDefault();
+      if (enabled) openSearchModal();
+      const input = document.querySelector('#emby-search-modal.open .search-input input, #search-bar-container .search-input input, #search-bar-container input[type="search"]');
+      if (input) {
+        setTimeout(function () {
+          input.focus();
+          if (typeof input.select === 'function') input.select();
+        }, enabled ? 310 : 0);
+      } else {
+        location.href = '/search?q=';
+      }
+    }, true);
   }
 
   /* =======================================================================
@@ -21272,80 +21333,111 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
 
   const PreviewSys = {
     cache: new Map(),
+    cacheExpiry: new Map(),
+    pending: new Map(),
+    cacheGet(key, force) {
+      if (force) return null;
+      const until = this.cacheExpiry.get(key) || 0;
+      if (until <= Date.now()) { this.cache.delete(key); this.cacheExpiry.delete(key); return null; }
+      return this.cache.get(key) || null;
+    },
+    cacheSet(key, value, ttlOverride) {
+      const ttl = ttlOverride || (value && value.status === 'success' ? 12 * 60 * 60 * 1000 : 90 * 1000);
+      this.cache.set(key, value);
+      this.cacheExpiry.set(key, Date.now() + ttl);
+      if (this.cache.size > 240) {
+        const oldest = this.cache.keys().next().value;
+        this.cache.delete(oldest); this.cacheExpiry.delete(oldest);
+      }
+    },
     async fetch(code, force) {
       if (!code) return { status: 'no-data' };
       const normCode = String(code).trim().toUpperCase();
-      if (!force && this.cache.has(normCode)) {
-        const c = this.cache.get(normCode);
-        if (c && c.status === 'success') return c;
-      }
-
-      const sites = getPreviewSiteConfigs().filter(function (s) { return s.enabled !== false; });
-      for (let i = 0; i < sites.length; i++) {
-        const s = sites[i];
+      const cached = this.cacheGet(normCode, force);
+      if (cached) return cached;
+      const pendingKey = 'all:' + normCode;
+      if (this.pending.has(pendingKey)) return this.pending.get(pendingKey);
+      const work = (async () => {
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const deadline = setTimeout(function () { if (controller) controller.abort(); }, 15000);
+        const sites = getPreviewSiteConfigs().filter(function (s) { return s.enabled !== false; });
         try {
-          const res = await this._fetchBySiteConfig(s, normCode);
-          if (res && res.img) {
-            const out = { status: 'success', img: res.img, gallery: res.gallery || [res.img], source: s.name, siteId: s.id };
-            this.cache.set(normCode, out);
-            this.cache.set(normCode + ':' + s.id, out);
-            return out;
+          for (let i = 0; i < sites.length; i++) {
+            if (controller && controller.signal.aborted) break;
+            const s = sites[i];
+            try {
+              const res = await this.fetchFromSite(s.id, normCode, false, controller ? controller.signal : null);
+              if (res && res.status === 'success') {
+                this.cacheSet(normCode, res);
+                return res;
+              }
+            } catch (e) {
+              if (!(controller && controller.signal.aborted)) log('预览图抓取 [' + s.name + '] 异常: ' + e.message);
+            }
           }
-        } catch (e) {
-          log('预览图抓取 [' + s.name + '] 异常: ' + e.message);
-        }
-      }
-      const noData = { status: 'no-data' };
-      this.cache.set(normCode, noData);
-      return noData;
+        } finally { clearTimeout(deadline); }
+        const noData = { status: 'no-data' };
+        this.cacheSet(normCode, noData, controller && controller.signal.aborted ? 15000 : 90000);
+        return noData;
+      })();
+      this.pending.set(pendingKey, work);
+      try { return await work; }
+      finally { if (this.pending.get(pendingKey) === work) this.pending.delete(pendingKey); }
     },
 
-    async fetchFromSite(siteId, code, force) {
+    async fetchFromSite(siteId, code, force, signal) {
       if (!code || !siteId) return { status: 'no-data' };
       const normCode = String(code).trim().toUpperCase();
       const cacheKey = normCode + ':' + siteId;
-      if (!force && this.cache.has(cacheKey)) {
-        const c = this.cache.get(cacheKey);
-        if (c && c.status === 'success') return c;
-      }
+      const cached = this.cacheGet(cacheKey, force);
+      if (cached) return cached;
+      const pendingKey = 'site:' + cacheKey;
+      if (this.pending.has(pendingKey)) return this.pending.get(pendingKey);
       const sites = getPreviewSiteConfigs();
       const s = sites.find(function (item) { return item.id === siteId; });
       if (!s) return { status: 'no-data' };
-
-      try {
-        const res = await this._fetchBySiteConfig(s, normCode);
-        if (res && res.img) {
-          const out = { status: 'success', img: res.img, gallery: res.gallery || [res.img], source: s.name, siteId: s.id };
-          this.cache.set(cacheKey, out);
-          return out;
-        }
-      } catch (e) {
-        log('指定站点 [' + s.name + '] 抓取异常: ' + e.message);
-      }
-      const noData = { status: 'no-data' };
-      this.cache.set(cacheKey, noData);
-      return noData;
+      const work = (async () => {
+        const localController = !signal && typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const requestSignal = signal || (localController && localController.signal);
+        const localDeadline = localController ? setTimeout(function () { localController.abort(); }, 12000) : 0;
+        try {
+          const res = await this._fetchBySiteConfig(s, normCode, requestSignal);
+          if (res && res.img) {
+            const out = { status: 'success', img: res.img, gallery: res.gallery || [res.img], source: s.name, siteId: s.id };
+            this.cacheSet(cacheKey, out);
+            return out;
+          }
+        } catch (e) {
+          if (!(requestSignal && requestSignal.aborted)) log('指定站点 [' + s.name + '] 抓取异常: ' + e.message);
+        } finally { if (localDeadline) clearTimeout(localDeadline); }
+        const noData = { status: 'no-data' };
+        this.cacheSet(cacheKey, noData, requestSignal && requestSignal.aborted ? 15000 : 90000);
+        return noData;
+      })();
+      this.pending.set(pendingKey, work);
+      try { return await work; }
+      finally { if (this.pending.get(pendingKey) === work) this.pending.delete(pendingKey); }
     },
 
-    async _fetchBySiteConfig(s, normCode) {
+    async _fetchBySiteConfig(s, normCode, signal) {
       if (!s) return null;
       if (s.id === 'javfree') {
-        return await this._fetchJavfree(normCode);
+        return await this._fetchJavfree(normCode, signal);
       } else if (s.id === 'javstore') {
-        return await this._fetchJavstore(normCode);
+        return await this._fetchJavstore(normCode, signal);
       } else if (s.id === 'blogjav') {
-        return await this._fetchBlogjav(normCode);
+        return await this._fetchBlogjav(normCode, signal);
       } else if (s.id === 'local') {
-        return await this._fetchLocal(normCode);
+        return await this._fetchLocal(normCode, signal);
       } else if (s.template) {
-        return await this._fetchCustom(s.template, normCode);
+        return await this._fetchCustom(s.template, normCode, signal);
       }
       return null;
     },
 
-    async _fetchJavfree(code) {
+    async _fetchJavfree(code, signal) {
       const searchUrl = 'https://javfree.me/search/' + encodeURIComponent(code);
-      const html = await gmHttp.request({ url: searchUrl, method: 'GET', timeout: 10000 });
+      const html = await gmHttp.request({ url: searchUrl, method: 'GET', timeout: 10000, signal: signal });
       if (!html) return null;
       const doc = new DOMParser().parseFromString(html, 'text/html');
       const a = doc.querySelector('.entry-title > a');
@@ -21355,7 +21447,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (normTitle.indexOf(normInput) === -1) return null; // 必须匹配番号，防止无关搜索条目
       let articleUrl = a.getAttribute('href') || '';
       if (articleUrl.startsWith('/')) articleUrl = 'https://javfree.me' + articleUrl;
-      const artHtml = await gmHttp.request({ url: articleUrl, method: 'GET', timeout: 10000 });
+      const artHtml = await gmHttp.request({ url: articleUrl, method: 'GET', timeout: 10000, signal: signal });
       if (!artHtml) return null;
       const artDoc = new DOMParser().parseFromString(artHtml, 'text/html');
       const imgs = artDoc.querySelectorAll('p > img, .entry-content img');
@@ -21371,9 +21463,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       return { img: cleanSrc, gallery: gallery.length ? gallery : [cleanSrc] };
     },
 
-    async _fetchJavstore(code) {
+    async _fetchJavstore(code, signal) {
       const searchUrl = 'https://javstore.net/search?q=' + encodeURIComponent(code);
-      const html = await gmHttp.request({ url: searchUrl, method: 'GET', timeout: 10000 });
+      const html = await gmHttp.request({ url: searchUrl, method: 'GET', timeout: 10000, signal: signal });
       if (!html) return null;
       const doc = new DOMParser().parseFromString(html, 'text/html');
       const normInput = code.replace(/[\s\-_]/g, '').toUpperCase();
@@ -21390,7 +21482,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       }
       if (!targetHref) return null; // 未匹配到精确番号则放弃，绝不盲目回退到搜索结果第一条
       if (targetHref.startsWith('/')) targetHref = 'https://javstore.net' + targetHref;
-      const artHtml = await gmHttp.request({ url: targetHref, method: 'GET', timeout: 10000 });
+      const artHtml = await gmHttp.request({ url: targetHref, method: 'GET', timeout: 10000, signal: signal });
       if (!artHtml) return null;
       const artDoc = new DOMParser().parseFromString(artHtml, 'text/html');
       const gallery = [];
@@ -21414,9 +21506,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       return { img: gallery[0], gallery: gallery };
     },
 
-    async _fetchBlogjav(code) {
+    async _fetchBlogjav(code, signal) {
       const searchUrl = 'https://blogjav.net/?s=' + encodeURIComponent(code);
-      const html = await gmHttp.request({ url: searchUrl, method: 'GET', timeout: 10000 });
+      const html = await gmHttp.request({ url: searchUrl, method: 'GET', timeout: 10000, signal: signal });
       if (!html) return null;
       const doc = new DOMParser().parseFromString(html, 'text/html');
       const normInput = code.replace(/[\s\-_]/g, '').toUpperCase();
@@ -21430,7 +21522,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (!link) return null;
       const href = link.getAttribute('href');
       if (!href) return null;
-      const artHtml = await gmHttp.request({ url: href, method: 'GET', timeout: 10000 });
+      const artHtml = await gmHttp.request({ url: href, method: 'GET', timeout: 10000, signal: signal });
       if (!artHtml) return null;
       const artDoc = new DOMParser().parseFromString(artHtml, 'text/html');
       const imgNodes = Array.from(artDoc.querySelectorAll('.entry-content img'));
@@ -21446,7 +21538,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       return gallery.length ? { img: gallery[0], gallery: gallery } : null;
     },
 
-    async _fetchLocal(code) {
+    async _fetchLocal(code, signal) {
       // 优化：若当前正是详情页且存在预览图，直接从页面 DOM 秒提，无需重复发请求
       if (typeof currentPageCode === 'function' && currentPageCode() === code) {
         const localGallery = [];
@@ -21462,14 +21554,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       }
 
       let detailUrl = '';
-      const sHtml = await gmHttp.request({ url: '/search?q=' + encodeURIComponent(code) + '&f=all', method: 'GET', timeout: 8000 });
+      const sHtml = await gmHttp.request({ url: '/search?q=' + encodeURIComponent(code) + '&f=all', method: 'GET', timeout: 8000, signal: signal });
       if (!sHtml) return null;
       const sDoc = new DOMParser().parseFromString(sHtml, 'text/html');
       const firstItem = sDoc.querySelector('.movie-list .item a.box');
       if (firstItem) detailUrl = firstItem.getAttribute('href') || '';
       if (!detailUrl) return null;
       const fullDetailUrl = toAbsUrl(detailUrl);
-      const dHtml = await gmHttp.request({ url: fullDetailUrl, method: 'GET', timeout: 8000 });
+      const dHtml = await gmHttp.request({ url: fullDetailUrl, method: 'GET', timeout: 8000, signal: signal });
       if (!dHtml) return null;
       const dDoc = new DOMParser().parseFromString(dHtml, 'text/html');
       const gallery = [];
@@ -21487,9 +21579,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       return gallery.length ? { img: gallery[0], gallery: gallery } : null;
     },
 
-    async _fetchCustom(tpl, code) {
+    async _fetchCustom(tpl, code, signal) {
       const url = tpl.replace(/\{code\}/g, encodeURIComponent(code));
-      const html = await gmHttp.request({ url: url, method: 'GET', timeout: 10000 });
+      const html = await gmHttp.request({ url: url, method: 'GET', timeout: 10000, signal: signal });
       if (!html) return null;
       const doc = new DOMParser().parseFromString(html, 'text/html');
       const imgs = Array.from(doc.querySelectorAll('.preview-images img, .entry-content img, article img, img'));
@@ -22426,6 +22518,94 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
    * 为每张卡片注入 STEAM 风格卡牌高光层 (.emby-card-shine) 并绑定 3D 倾斜，
    * 不再注入 Emby 文字/播放浮层。
    * ===================================================================== */
+   let ratingHeatStyleReady = false;
+   function syncRatingHeatmap(scope, forceOff) {
+     const root = scope && scope.querySelectorAll ? scope : document;
+     const lists = root.matches && root.matches('.movie-list')
+       ? [root]
+       : Array.prototype.slice.call(root.querySelectorAll('.movie-list'));
+      if (forceOff || !isPluginEnabled('ratingHeatmap')) {
+       lists.forEach(function (list) {
+         const toolbar = list.parentElement && list.parentElement.querySelector(':scope > .jf-rating-tools');
+         if (toolbar) toolbar.remove();
+          list.querySelectorAll('.item.jf-rating-hot, .item.jf-rating-warm, .item.jf-rating-cool, .item.jf-rating-hidden, .item[data-jf-rating-order]').forEach(function (item) {
+            item.classList.remove('jf-rating-hot', 'jf-rating-warm', 'jf-rating-cool', 'jf-rating-hidden');
+            item.style.removeProperty('order');
+            delete item.dataset.jfRatingOrder;
+            const cover = item.querySelector('.cover');
+            if (cover) cover.removeAttribute('data-jf-rating-label');
+          });
+       });
+       return;
+     }
+     if (!ratingHeatStyleReady) {
+       const style = document.createElement('style');
+       style.id = 'jf-rating-heat-style';
+       style.textContent = '.jf-rating-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:8px 10px;border:1px solid rgba(148,163,184,.22);border-radius:10px;background:rgba(15,23,42,.42);color:var(--e-text2,#ddd);font-size:12px}.jf-rating-tools select,.jf-rating-tools button{border:1px solid rgba(148,163,184,.3);border-radius:7px;background:rgba(255,255,255,.08);color:inherit;padding:5px 8px;font:inherit}.jf-rating-tools option{background:#20242d;color:#eee}.jf-rating-hot .cover{box-shadow:inset 0 0 0 2px rgba(52,211,153,.8),0 0 13px rgba(52,211,153,.2)!important}.jf-rating-warm .cover{box-shadow:inset 0 0 0 2px rgba(250,204,21,.72),0 0 10px rgba(250,204,21,.13)!important}.jf-rating-cool .cover{box-shadow:inset 0 0 0 2px rgba(148,163,184,.4)!important}.jf-rating-hot .cover::after,.jf-rating-warm .cover::after,.jf-rating-cool .cover::after{content:attr(data-jf-rating-label);position:absolute;right:6px;bottom:6px;z-index:7;padding:3px 6px;border-radius:6px;background:rgba(15,23,42,.78);color:#fff;font-size:10px;line-height:1.2;pointer-events:none}.jf-rating-hidden{display:none!important}';
+       (document.head || document.documentElement).appendChild(style);
+       ratingHeatStyleReady = true;
+     }
+     lists.forEach(function (list) {
+       if (list.closest('#emby-favorites-panel, #emby-top250-panel')) return;
+       let toolbar = list.parentElement && list.parentElement.querySelector(':scope > .jf-rating-tools');
+       if (!toolbar) {
+         toolbar = document.createElement('div');
+         toolbar.className = 'jf-rating-tools';
+         toolbar.innerHTML = '<span>评分热度</span><select class="jf-rating-sort" aria-label="影片排序"><option value="native">原站顺序</option><option value="heat">综合热度</option><option value="score">评分</option><option value="votes">评价数</option></select><select class="jf-rating-min" aria-label="最低评分"><option value="0">全部评分</option><option value="3">隐藏低于 3.0</option><option value="3.5">隐藏低于 3.5</option><option value="4">隐藏低于 4.0</option><option value="4.5">隐藏低于 4.5</option></select><button type="button" class="jf-rating-reset">重置</button>';
+         list.parentElement.insertBefore(toolbar, list);
+         const sort = toolbar.querySelector('.jf-rating-sort');
+         const min = toolbar.querySelector('.jf-rating-min');
+         sort.value = localStorage.getItem('javdbEmbyRatingSort') || 'native';
+         min.value = localStorage.getItem('javdbEmbyRatingMin') || '0';
+         sort.addEventListener('change', function () { localStorage.setItem('javdbEmbyRatingSort', sort.value); applyRatingHeatmap(list, toolbar); });
+         min.addEventListener('change', function () { localStorage.setItem('javdbEmbyRatingMin', min.value); applyRatingHeatmap(list, toolbar); });
+         toolbar.querySelector('.jf-rating-reset').addEventListener('click', function () {
+           sort.value = 'native'; min.value = '0';
+           localStorage.setItem('javdbEmbyRatingSort', 'native');
+           localStorage.setItem('javdbEmbyRatingMin', '0');
+           applyRatingHeatmap(list, toolbar);
+         });
+       }
+       applyRatingHeatmap(list, toolbar);
+     });
+   }
+   function applyRatingHeatmap(list, toolbar) {
+     const items = Array.prototype.slice.call(list.querySelectorAll(':scope > .item'));
+     const records = [];
+     let totalScore = 0, ratedCount = 0;
+     items.forEach(function (item, index) {
+       if (!item.dataset.jfRatingOrder) item.dataset.jfRatingOrder = String(index + 1);
+       const text = (item.textContent || '').replace(/\s+/g, ' ');
+       const match = text.match(/([0-5](?:\.\d+)?)\s*分(?:[^\d]{0,14}(?:由\s*)?([\d,]+)\s*(?:人|則|条|條|票|評價|评价|votes?))?/i);
+       const score = match ? parseFloat(match[1]) : NaN;
+       const votes = match && match[2] ? (parseInt(match[2].replace(/,/g, ''), 10) || 0) : 0;
+       const valid = Number.isFinite(score) && score >= 0 && score <= 5;
+       if (valid) { totalScore += score; ratedCount++; }
+       records.push({ item: item, index: index, original: parseInt(item.dataset.jfRatingOrder, 10) || index + 1, score: valid ? score : -1, votes: votes });
+     });
+     const average = ratedCount ? totalScore / ratedCount : 0;
+     const minScore = parseFloat(toolbar.querySelector('.jf-rating-min').value) || 0;
+     records.forEach(function (r) {
+       r.heat = r.score < 0 ? -1 : (r.votes / (r.votes + 100)) * r.score + (100 / (r.votes + 100)) * average;
+       r.item.classList.remove('jf-rating-hot', 'jf-rating-warm', 'jf-rating-cool');
+       if (r.score >= 0) {
+         r.item.classList.add(r.heat >= 4.25 ? 'jf-rating-hot' : (r.heat >= 3.65 ? 'jf-rating-warm' : 'jf-rating-cool'));
+         const cover = r.item.querySelector('.cover');
+         if (cover) cover.dataset.jfRatingLabel = r.score.toFixed(1) + ' · ' + (r.votes ? r.votes.toLocaleString() : '?');
+       }
+       r.item.classList.toggle('jf-rating-hidden', minScore > 0 && r.score >= 0 && r.score < minScore);
+     });
+     const mode = toolbar.querySelector('.jf-rating-sort').value;
+     if (mode === 'native') records.forEach(function (r) { r.item.style.removeProperty('order'); });
+     else {
+       records.sort(function (a, b) {
+         const av = mode === 'votes' ? a.votes : (mode === 'score' ? a.score : a.heat);
+         const bv = mode === 'votes' ? b.votes : (mode === 'score' ? b.score : b.heat);
+         return (bv - av) || (a.original - b.original);
+       });
+       records.forEach(function (r, index) { r.item.style.order = String(index); });
+     }
+   }
    function restructureGrid() {
      if (!enabled) return;
      // 布局类自愈 + 引擎残留清理（必须先于 movieLists 过滤执行——
@@ -22438,6 +22618,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
        function (l) { return !l.closest('#emby-favorites-panel') && !l.closest('#emby-top250-panel'); }
      );
      if (!movieLists.length) return;
+     try { syncRatingHeatmap(movieLists[0]); } catch (e) {}
 
      // 主页：隐藏「最新網址」公告栏（裁切仅发生在瀑布流大视图，见 emby-masonry-large）
      hideJavdbAnnouncement();
@@ -24052,6 +24233,22 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     if (!container) return;
     var trailer = container.querySelector('.preview-video-container');
     if (!trailer) return; // 无预告片，不处理
+    // 可选接管 JavDB 原生预告片入口，打开融合播放器而不是原生播放器/新标签。
+    // 委托只绑定一次，并在点击时读取开关，避免设置切换后重复注册监听器。
+    if (!trailer.dataset.jfNativeTrailerBound) {
+      trailer.dataset.jfNativeTrailerBound = '1';
+      trailer.addEventListener('click', function (e) {
+        if (!GM_getValue('jf_tr_replace_native', false)) return;
+        var target = e.target && e.target.closest ? e.target.closest('a,button') : null;
+        if (!target || !trailer.contains(target)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        try {
+          if (typeof FUSION !== 'undefined' && FUSION && FUSION.openTrailer) FUSION.openTrailer(currentPageCode());
+        } catch (err) {}
+      }, true);
+    }
     // 注入右下角「預告片」chip 标识（避免重复注入）
     if (!trailer.querySelector('.trailer-label')) {
       var label = document.createElement('span');
@@ -25121,6 +25318,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       document.documentElement.classList.remove('emby-skin');
       if (skinEl && skinEl.parentNode) { skinEl.parentNode.removeChild(skinEl); skinEl = null; }
       removeEmbyDOM();
+      try { syncRatingHeatmap(document, true); } catch (e) {}
       if (/^\/rankings\/(top|playback)(\/|\?|$)/.test(location.pathname) || location.pathname.startsWith('/plans') || (location.pathname.startsWith('/advanced_search') && (location.search.includes('handlePlayback') || location.search.includes('handleTop')))) {
         try { Top250ViewManager.hookNativePage(); } catch (e) {}
       }
@@ -25388,7 +25586,6 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         };
       } catch (e) {}
     }
-    setInterval(checkRouteChange, 900);
   }
 
   /* =======================================================================
@@ -25411,17 +25608,39 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     /* ---------- 通用 HTTP（Promise 化 GM_xmlhttpRequest） ---------- */
     function gmReq(opt) {
       return new Promise(function (resolve, reject) {
-        GM_xmlhttpRequest({
+        const signal = opt.signal;
+        let request = null;
+        let settled = false;
+        const cleanup = function () {
+          if (signal) signal.removeEventListener('abort', onAbort);
+        };
+        const finish = function (fn, value) {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          fn(value);
+        };
+        const onAbort = function () {
+          try { if (request && request.abort) request.abort(); } catch (e) {}
+          finish(reject, new Error('aborted'));
+        };
+        if (signal && signal.aborted) { finish(reject, new Error('aborted')); return; }
+        request = GM_xmlhttpRequest({
           method: opt.method || 'GET',
           url: opt.url,
           headers: opt.headers || {},
           data: opt.data != null ? opt.data : undefined,
           timeout: opt.timeout || 15000,
           anonymous: opt.anonymous === true,
-          onload: function (r) { resolve(r); },
-          onerror: function () { reject(new Error('network')); },
-          ontimeout: function () { reject(new Error('timeout')); }
+          onload: function (r) { finish(resolve, r); },
+          onerror: function () { finish(reject, new Error('network')); },
+          ontimeout: function () { finish(reject, new Error('timeout')); },
+          onabort: function () { finish(reject, new Error('aborted')); }
         });
+        if (signal) {
+          if (signal.aborted) onAbort();
+          else signal.addEventListener('abort', onAbort, { once: true });
+        }
       });
     }
     function debounce(fn, ms) {
@@ -25472,6 +25691,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       get useDmm() { return GM_getValue('jf_tr_dmm', true); },
       get useDirect() { return GM_getValue('jf_tr_direct', true); },
       get useJavspyl() { return GM_getValue('jf_tr_javspyl', true); },
+      get replaceNative() { return GM_getValue('jf_tr_replace_native', false); },
       get volume() { return Number(GM_getValue('jf_tr_volume', 0.5)) || 0.5; },
       set volume(v) { GM_setValue('jf_tr_volume', v); }
     };
@@ -25832,7 +26052,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     }
 
     /* =======================================================================
-     * 四、预告片引擎（官方嗅探 → DMM API → 厂商直链 → javspyl）
+     * 四、预告片引擎（DMM 高清优先 → 官方源/厂商直链 → javspyl）
      * ===================================================================== */
     const dmmQualityOptions = [
       { quality: 'sm_s', rank: 10, text: '240p' }, { quality: 'dm_s', rank: 20, text: '360p' },
@@ -25869,13 +26089,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       } catch (e) {}
       return null;
     }
-    async function searchDmmContentIds(id) {
+    async function searchDmmContentIds(id, signal) {
       const idLower = id.toLowerCase();
       const idNoHyphen = id.replace(/-/g, '').toLowerCase();
       const attempts = [
-        { keyword: id.replace('-', '00') }, { keyword: id }, { keyword: idNoHyphen }
+        { keyword: id.replace('-', '00') }, { keyword: id }
       ];
-      for (const attempt of attempts) {
+      // 两种常用番号写法同时查询，避免第二次搜索要等第一次超时才开始。
+      const requests = attempts.map(async function (attempt) {
+        if (signal && signal.aborted) return [];
         try {
           const params = new URLSearchParams({
             api_id: 'UrwskPfkqQ0DuVry2gYL', affiliate_id: '10278-996',
@@ -25883,10 +26105,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           });
           const r = await gmReq({
             url: 'https://api.dmm.com/affiliate/v3/ItemList?' + params.toString(),
-            headers: { Accept: 'application/json,text/plain,*/*' }, timeout: 12000
+            headers: { Accept: 'application/json,text/plain,*/*' }, timeout: 4500, signal: signal
           });
           let data;
-          try { data = JSON.parse(r.responseText); } catch (e) { continue; }
+          try { data = JSON.parse(r.responseText); } catch (e) { return []; }
           const items = (data && data.result && data.result.items) || [];
           const matched = [];
           for (const item of items) {
@@ -25898,18 +26120,55 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               matched.push({ serviceCode: item.service_code, floorCode: item.floor_code, contentId: item.content_id });
             }
           }
-          if (matched.length) return matched;
-        } catch (e) { /* 下一个关键词 */ }
-      }
-      return [];
+          return matched;
+        } catch (e) { return []; }
+      });
+      const results = await Promise.all(requests);
+      const seen = new Set();
+      return results.flat().filter(function (hit) {
+        const key = [hit.serviceCode, hit.floorCode, hit.contentId].join('|');
+        if (!hit.contentId || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).slice(0, 4);
     }
-    async function extractDmmTrailerLinks(hit) {
+    // 多数正规番号可直接推导 DMM CID（例：WAAA-661 → waaa00661），先试 CID 播放页，省去 ItemList 搜索。
+    // DMM CDN 的 /pv/<opaque-token>/<cid><quality>.mp4 令牌无法仅凭番号可靠生成，仍由播放页返回真实直链。
+    function inferDmmHitFromCode(id) {
+      const match = String(id || '').trim().match(/^([A-Z]{2,10})-(\d{2,6})$/i);
+      if (!match) return null;
+      return {
+        serviceCode: 'digital',
+        floorCode: 'videoa',
+        contentId: match[1].toLowerCase() + match[2].padStart(5, '0')
+      };
+    }
+    // 参考 SleazyFork 441120：对常见 CID 目录结构直接生成少量 DMM CDN 候选，
+    // 让播放器先试直链；系列规则不匹配时仍由 HTML5 播放页/API 搜索补全。
+    // DMM /pv/<签名令牌>/... 的令牌不能由番号推导，这里只生成旧式 litevideo/freepv 地址。
+    function buildDmmDirectCandidates(hit) {
+      const cid = String(hit && hit.contentId || '').toLowerCase();
+      if (!/^[a-z0-9]{4,18}$/.test(cid)) return [];
+      const prefix = cid.slice(0, 3);
+      const base = 'https://cc3001.dmm.com/litevideo/freepv/' + cid[0] + '/' + prefix + '/' + cid + '/' + cid;
+      // 多个旧式后缀依次回退；不做 HEAD 探测，避免每个番号额外并发请求。
+      return ['_dmb_w', '_dm_w', '_mhb_w', '_sm_w'].map(function (suffix) {
+        return {
+          url: base + suffix + '.mp4',
+          label: 'DMM 直链候选 ' + suffix,
+          quality: '',
+          source: 'dmm',
+          unverified: true
+        };
+      });
+    }
+    async function extractDmmTrailerLinks(hit, signal, timeoutMs) {
       if (!hit || !hit.contentId || !hit.serviceCode || !hit.floorCode) return null;
       try {
         const playerUrl = 'https://www.dmm.co.jp/service/digitalapi/-/html5_player/=/cid=' + hit.contentId +
           '/mtype=AhRVShI_/service=' + hit.serviceCode + '/floor=' + hit.floorCode + '/mode=/';
         const r = await gmReq({
-          url: playerUrl, timeout: 12000,
+          url: playerUrl, timeout: timeoutMs || 5000, signal: signal,
           headers: { 'accept-language': 'ja-JP,ja;q=0.9', Cookie: 'age_check_done=1' }
         });
         const txt = r.responseText || '';
@@ -25927,7 +26186,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           if (!videoUrl || typeof videoUrl !== 'string') return;
           const m = videoUrl.match(qualityRegex);
           if (!m || !m[1]) return;
-          videoUrl = videoUrl.replace(/^http:/, 'https:').replace('cc3001.dmm.co.jp', 'cc3001.dmm.com');
+          // 仅对不带签名的旧式 freepv 直链做域名替换（规避 cc3001.dmm.co.jp 的 DNS 污染）；
+          // /pv/<token>/ 新版签名地址原样保留域名，避免签名因 Host 被改写而失效导致静默 403。
+          if (videoUrl.indexOf('/litevideo/freepv/') >= 0) {
+            videoUrl = videoUrl.replace('cc3001.dmm.co.jp', 'cc3001.dmm.com');
+          }
+          videoUrl = videoUrl.replace(/^http:/, 'https:');
           qualityMap[m[1]] = videoUrl;
         });
         return Object.keys(qualityMap).length ? qualityMap : null;
@@ -25944,10 +26208,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (/^(?:k|n)\d{4}$/i.test(avID)) return 'https://my.cdn.tokyo-hot.com/media/samples/' + avID + '.mp4';
       return null;
     }
-    async function queryJavSpylVideoURL(avID) {
+    async function queryJavSpylVideoURL(avID, signal) {
       try {
         const r = await gmReq({
-          url: 'https://api.javspyl.eu.org/api/', method: 'POST', timeout: 4000,
+          url: 'https://api.javspyl.eu.org/api/', method: 'POST', timeout: 3500, signal: signal,
           headers: { origin: 'https://api.javspyl.eu.org', 'Content-Type': 'application/x-www-form-urlencoded' },
           data: 'ID=' + encodeURIComponent(avID)
         });
@@ -25957,8 +26221,38 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       } catch (e) {}
       return null;
     }
-    // 汇总解析：返回 [{ url, label, quality, source }]
-    async function resolveTrailer(code) {
+    // 解析结果按番号短缓存，避免关闭后重复打开时重新打满所有第三方接口。
+    const trailerResolveCache = new Map();
+    const TRAILER_CACHE_TTL = 10 * 60 * 1000;
+    // 同一番号正在解析中的共享 Promise：悬停预取和随后点击打开播放器命中同一番号时，
+    // 复用同一次网络请求，避免并发重复打接口（DMM API / ItemList 搜索都限流敏感）。
+    const trailerInFlight = new Map();
+    // 汇总解析：DMM/FANZA 高清源优先，其次 JAVDB 官方/厂商直链，最后 javspyl。
+    function resolveTrailer(code, onUpdate, signal) {
+      const cacheKey = (normalizeCode(code) || String(code || '').toUpperCase()) + '|' +
+        [TrConf.useOfficial, TrConf.useDmm, TrConf.useDirect, TrConf.useJavspyl].map(function (v) { return v ? '1' : '0'; }).join('');
+      const cached = trailerResolveCache.get(cacheKey);
+      if (cached && cached.expires > Date.now()) {
+        const copy = cached.sources.map(function (s) { return Object.assign({}, s); });
+        if (onUpdate && copy.length) onUpdate(copy);
+        return Promise.resolve(copy);
+      }
+      const inflight = trailerInFlight.get(cacheKey);
+      if (inflight) {
+        // 已有同番号解析在跑（多半是悬停预取触发的）：等它结束直接复用结果，
+        // 只把最终结果回调给这次调用方，不重复过程中的渐进式候选。
+        return inflight.then(function (result) {
+          if (onUpdate && result.length) onUpdate(result.slice());
+          return result.map(function (s) { return Object.assign({}, s); });
+        });
+      }
+      const task = doResolveTrailer(code, cacheKey, onUpdate, signal).finally(function () {
+        trailerInFlight.delete(cacheKey);
+      });
+      trailerInFlight.set(cacheKey, task);
+      return task;
+    }
+    async function doResolveTrailer(code, cacheKey, onUpdate, signal) {
       const sources = [];
       const seen = new Set();
       const push = function (url, label, quality, source) {
@@ -25966,39 +26260,92 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         seen.add(url);
         sources.push({ url: url, label: label, quality: quality || '', source: source });
       };
+      if (TrConf.useDmm && /^[A-Z]{2,10}-\d{2,6}$/i.test(code) && !/^FC2-/i.test(code) && code.indexOf('VR-') < 0) {
+        try {
+          let qualityMaps = [];
+          const inferredHit = inferDmmHitFromCode(code);
+          // 直链快速路径：先把规则候选交给播放器尝试，不等 DMM 商品搜索。
+          // 播放页/API 随后提供真实地址，追加在候选之后，播放失败时继续回退。
+          const directCandidates = buildDmmDirectCandidates(inferredHit);
+          directCandidates.forEach(function (s) {
+            if (!seen.has(s.url)) { seen.add(s.url); sources.push(s); }
+          });
+          if (directCandidates.length && onUpdate) onUpdate(sources.slice());
+          // 旧 CID 播放页快速路径：成功就跳过 ItemList 搜索 API。
+          if (inferredHit && !(signal && signal.aborted)) {
+            const directMap = await extractDmmTrailerLinks(inferredHit, signal, 2000);
+            if (directMap) qualityMaps.push(directMap);
+          }
+          // CID 不符合 DMM 实际商品编号时，保留原有搜索回退以兼容特殊番号/发行商。
+          if (!qualityMaps.length && !(signal && signal.aborted)) {
+            const hits = await searchDmmContentIds(code, signal);
+            qualityMaps = await Promise.all(hits.slice(0, 3).map(function (hit) {
+              return signal && signal.aborted ? Promise.resolve(null) : extractDmmTrailerLinks(hit, signal);
+            }));
+          }
+          const dmmSources = [];
+          const dmmSeen = new Set();
+          qualityMaps.forEach(function (qm) {
+            if (!qm) return;
+            sortDmmQualities(qm).forEach(function (q) {
+              if (!qm[q] || dmmSeen.has(qm[q])) return;
+              dmmSeen.add(qm[q]);
+              dmmSources.push({ url: qm[q], label: 'DMM/FANZA ' + getDmmQualityText(q), quality: q, source: 'dmm' });
+            });
+          });
+          const qualityRank = new Map(dmmQualityOptions.map(function (q) { return [q.quality, q.rank]; }));
+          dmmSources.sort(function (a, b) {
+            return (qualityRank.get(b.quality) || 0) - (qualityRank.get(a.quality) || 0);
+          });
+          dmmSources.forEach(function (s) { push(s.url, s.label, s.quality, s.source); });
+        } catch (e) {}
+      }
+      // DMM 先解析完成并排在首位；不可用时才追加其他可用源作回退。
       if (TrConf.useOfficial) {
         const official = getOfficialTrailerUrl(code);
         if (official) push(official, 'JAVDB 官方预告片', '', 'official');
-      }
-      if (TrConf.useDmm && /^[A-Z]{2,10}-\d{2,6}$/i.test(code) && !/^FC2-/i.test(code) && code.indexOf('VR-') < 0) {
-        try {
-          const hits = await searchDmmContentIds(code);
-          for (const hit of hits) {
-            const qm = await extractDmmTrailerLinks(hit);
-            if (qm) {
-              const sorted = sortDmmQualities(qm);
-              sorted.forEach(function (q) { push(qm[q], 'DMM/FANZA ' + getDmmQualityText(q), q, 'dmm'); });
-              if (sorted.length) break;
-            }
-          }
-        } catch (e) {}
       }
       if (TrConf.useDirect) {
         const direct = queryDirectTrailerUrl(code);
         if (direct) push(direct, '厂商直链 480p', '480p', 'direct');
       }
-      if (TrConf.useJavspyl && !sources.length) {
-        const spyl = await queryJavSpylVideoURL(code);
+      // 注意：不能用 !sources.length 判断"是否已有可用源"——DMM 猜测直链（unverified）
+      // 一开始就无条件塞进了 sources，导致这里永远非空，javspyl 兜底实际从未被触发过。
+      // 应该看有没有任何"已验证"的源（DMM 已验证画质 / 官方预告片 / 厂商直链都不算 unverified）。
+      const hasAnyVerifiedSource = sources.some(function (s) { return !s.unverified; });
+      if (TrConf.useJavspyl && !hasAnyVerifiedSource && !(signal && signal.aborted)) {
+        const spyl = await queryJavSpylVideoURL(code, signal);
         if (spyl) push(spyl, 'javspyl 兜底源', '', 'javspyl');
       }
-      return sources;
+      const result = sources.slice();
+      // 仅有按模板猜出的 DMM 地址时不缓存，避免一次错误规则让后续点击跳过搜索回退。
+      if (result.length && result.some(function (s) { return !s.unverified; })) {
+        trailerResolveCache.set(cacheKey, { sources: result, expires: Date.now() + TRAILER_CACHE_TTL });
+        if (trailerResolveCache.size > 80) trailerResolveCache.delete(trailerResolveCache.keys().next().value);
+      }
+      if (onUpdate && result.length) onUpdate(result.slice());
+      return result;
+    }
+    // 悬停即预取：鼠标移到预告片入口（封面按钮/圆按钮/榜单预览按钮）时提前发起解析，
+    // 等真正点击时若已解析完成可直接命中缓存瞬间播放；未完成则复用同一个 in-flight 请求。
+    function prefetchTrailerOnHover(el, getCode) {
+      if (!el || el.dataset.jfPrefetchBound) return;
+      el.dataset.jfPrefetchBound = '1';
+      el.addEventListener('mouseenter', function () {
+        const code = (typeof getCode === 'function' ? getCode() : getCode) || '';
+        if (!code) return;
+        resolveTrailer(code, null, null).catch(function () {});
+      }, { passive: true });
     }
 
     /* ---------- 预告片播放器弹窗（毛玻璃） ---------- */
+    let activeTrailerSession = null;
     function openTrailerPlayer(code) {
       code = code || (typeof currentPageCode === 'function' ? currentPageCode() : '') || '';
       if (!code) { ftoast('未识别到番号，无法解析预告片'); return; }
-      document.querySelector('.jf-trailer-overlay') && document.querySelector('.jf-trailer-overlay').remove();
+      if (activeTrailerSession) activeTrailerSession.close();
+      document.querySelectorAll('.jf-trailer-overlay').forEach(function (old) { old.remove(); });
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
       const overlay = document.createElement('div');
       overlay.className = 'jf-trailer-overlay';
       overlay.innerHTML =
@@ -26009,77 +26356,195 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<div class="jf-trailer-tools">' +
               '<span class="jf-trailer-src" id="jfTrailerSrc">解析中…</span>' +
               '<select class="jf-trailer-quality" id="jfTrailerQuality" style="display:none;"></select>' +
+              '<button class="jf-trailer-pip" id="jfTrailerPip" type="button" title="画中画" aria-label="画中画"><span class="material-symbols-outlined">picture_in_picture_alt</span></button>' +
               '<button class="jf-trailer-close" id="jfTrailerClose" title="关闭">×</button>' +
             '</div>' +
           '</div>' +
           '<div class="jf-trailer-body">' +
             '<div class="jf-trailer-loading" id="jfTrailerLoading"><div class="jf-spinner"></div><div>正在解析预告片源…</div></div>' +
-            '<video class="jf-trailer-video" id="jfTrailerVideo" controls playsinline preload="auto" referrerpolicy="no-referrer" style="display:none;"></video>' +
+            '<video class="jf-trailer-video" id="jfTrailerVideo" controls playsinline preload="none" referrerpolicy="no-referrer" style="display:none;"></video>' +
           '</div>' +
         '</div>';
       document.body.appendChild(overlay);
+      let deadlineTimer = 0;
+      let closed = false;
+      const onKey = function (e) { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+      const onVisibility = function () { if (document.hidden) { try { video.pause(); } catch (e) {} } };
       const close = function () {
+        if (closed) return;
+        closed = true;
+        clearTimeout(deadlineTimer);
+        clearAutoStartTimer();
+        try { if (controller) controller.abort(); } catch (e) {}
         const v = overlay.querySelector('#jfTrailerVideo');
-        if (v) { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} }
+        if (v) {
+          try {
+            v.pause();
+            if (document.pictureInPictureElement === v && document.exitPictureInPicture) document.exitPictureInPicture().catch(function () {});
+            v.removeAttribute('src'); v.load();
+          } catch (e) {}
+        }
         overlay.remove();
         document.removeEventListener('keydown', onKey, true);
+        document.removeEventListener('visibilitychange', onVisibility, true);
+        if (activeTrailerSession && activeTrailerSession.overlay === overlay) activeTrailerSession = null;
       };
-      const onKey = function (e) { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+      const abortController = controller;
+      const closeSession = close;
+      activeTrailerSession = { overlay: overlay, close: closeSession, controller: abortController };
+      let video;
       document.addEventListener('keydown', onKey, true);
+      document.addEventListener('visibilitychange', onVisibility, true);
       overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
       overlay.querySelector('#jfTrailerClose').addEventListener('click', close);
 
-      const video = overlay.querySelector('#jfTrailerVideo');
+      video = overlay.querySelector('#jfTrailerVideo');
       const loading = overlay.querySelector('#jfTrailerLoading');
       const srcTag = overlay.querySelector('#jfTrailerSrc');
       const qSelect = overlay.querySelector('#jfTrailerQuality');
+      const pipBtn = overlay.querySelector('#jfTrailerPip');
       video.volume = TrConf.volume;
       video.addEventListener('volumechange', function () { TrConf.volume = video.volume; });
-
-      resolveTrailer(code).then(function (sources) {
-        if (!document.body.contains(overlay)) return;
-        if (!sources.length) {
-          loading.innerHTML = '<div style="font-size:15px;opacity:.85;">😔 未找到可用预告片源</div>' +
-            '<div style="font-size:12px;opacity:.5;margin-top:8px;">已尝试：官方预告片 / DMM API / 厂商直链 / javspyl</div>';
-          srcTag.textContent = '无源';
-          return;
+      if (!document.pictureInPictureEnabled || typeof video.requestPictureInPicture !== 'function') pipBtn.hidden = true;
+      pipBtn.addEventListener('click', async function () {
+        try {
+          if (document.pictureInPictureElement === video) await document.exitPictureInPicture();
+          else await video.requestPictureInPicture();
+        } catch (e) { ftoast('当前浏览器无法进入画中画'); }
+      });
+      let sources = [];
+      let idx = 0;
+      let failCount = 0;
+      let started = false;
+      let resolutionComplete = false;
+      let awaitingMoreSources = false;
+      let resolveTimedOut = false;
+      // 画质优先级：已验证的 DMM 档位（画质越高分越高）> 官方/厂商直链等无编号已知源 > 未验证的猜测直链（垫底）。
+      const qualityRankMap = new Map(dmmQualityOptions.map(function (q) { return [q.quality, q.rank]; }));
+      const sourceScore = function (s) {
+        if (s.unverified) return -1;
+        const r = qualityRankMap.get(s.quality);
+        return typeof r === 'number' ? r : 5;
+      };
+      const sortSourcesByQuality = function (list) {
+        return list.slice().sort(function (a, b) { return sourceScore(b) - sourceScore(a); });
+      };
+      let autoStartTimer = 0;
+      const clearAutoStartTimer = function () { if (autoStartTimer) { clearTimeout(autoStartTimer); autoStartTimer = 0; } };
+      // 起播只认「已验证」源，保证默认播的就是清晰度最高的真实地址；
+      // 猜测直链只在短暂等待后仍无已验证源时才兜底使用，避免用户等太久。
+      const tryAutoStart = function (force) {
+        if (started || closed || !sources.length) return;
+        const hasVerified = sources.some(function (s) { return !s.unverified; });
+        if (hasVerified || force) { clearAutoStartTimer(); playAt(0); return; }
+        if (!autoStartTimer) {
+          autoStartTimer = setTimeout(function () { tryAutoStart(true); }, 3500);
         }
-        // 画质下拉（仅多源时显示）
+      };
+      const updateSourceMenu = function () {
         if (sources.length > 1) {
           qSelect.style.display = '';
+          const selected = Math.min(idx, sources.length - 1);
           qSelect.innerHTML = sources.map(function (s, i) {
             return '<option value="' + i + '">' + escapeHtml(s.label) + '</option>';
           }).join('');
+          qSelect.value = String(selected);
+        } else {
+          qSelect.style.display = 'none';
+          qSelect.innerHTML = '';
         }
-        let idx = 0;
-        let failCount = 0;
-        const playAt = function (i) {
-          idx = i;
-          const s = sources[i];
-          if (!s) return;
-          srcTag.textContent = s.source === 'official' ? '官方' : (s.source === 'dmm' ? 'DMM' : (s.source === 'direct' ? '直链' : 'javspyl'));
-          qSelect.value = String(i);
-          video.src = s.url;
-          video.style.display = '';
+      };
+      const playAt = function (i) {
+        if (closed || !document.body.contains(overlay)) return;
+        const s = sources[i];
+        if (!s) return;
+        idx = i;
+        srcTag.textContent = s.source === 'official' ? '官方' : (s.source === 'dmm' ? 'DMM' : (s.source === 'direct' ? '直链' : 'javspyl'));
+        qSelect.value = String(i);
+        video.style.display = '';
+        loading.style.display = 'none';
+        video.src = s.url;
+        video.load();
+        started = true;
+        const playPromise = video.play();
+        if (playPromise && playPromise.catch) playPromise.catch(function () {});
+      };
+      const receiveSources = function (next) {
+        if (closed || !document.body.contains(overlay) || !Array.isArray(next)) return;
+        const previousLength = sources.length;
+        const currentUrl = sources[idx] && sources[idx].url;
+        // 每次更新都按画质重新排序（已验证源按清晰度降序、未验证猜测直链垫底），
+        // 而不是依赖到达顺序——下拉菜单显示的顺序也因此始终是"最清晰的排最前"。
+        sources = sortSourcesByQuality(next);
+        updateSourceMenu();
+        // 已经开始播放时只更新菜单，不打断用户正在看的片源。
+        if (!started && sources.length) tryAutoStart(false);
+        else if (awaitingMoreSources && sources.length > previousLength) {
+          awaitingMoreSources = false;
           loading.style.display = 'none';
-          video.load();
-          const p = video.play();
-          if (p && p.catch) p.catch(function () { video.muted = true; video.play().catch(function () {}); });
-        };
-        video.addEventListener('error', function () {
-          failCount++;
-          if (idx + 1 < sources.length && failCount <= sources.length) playAt(idx + 1);
-          else {
-            loading.style.display = '';
-            loading.innerHTML = '<div style="opacity:.85;">😔 所有预告片源均播放失败（可能受地区/防盗链限制）</div>';
-            video.style.display = 'none';
-          }
-        });
-        qSelect.addEventListener('change', function () { failCount = 0; playAt(Number(qSelect.value) || 0); });
-        playAt(0);
+          const bi = sources.findIndex(function (s) { return !s.unverified; });
+          playAt(bi >= 0 ? bi : 0);
+        }
+        else if (currentUrl) {
+          const currentIndex = sources.findIndex(function (s) { return s.url === currentUrl; });
+          if (currentIndex >= 0) { idx = currentIndex; qSelect.value = String(idx); }
+        }
+        if (sources.length > previousLength && started) {
+          srcTag.title = sources.length + ' 个片源可选';
+        }
+      };
+      video.addEventListener('error', function () {
+        if (closed || !sources.length) return;
+        failCount++;
+        if (idx + 1 < sources.length && failCount <= sources.length) playAt(idx + 1);
+        else if (!resolutionComplete) {
+          awaitingMoreSources = true;
+          video.style.display = 'none';
+          loading.style.display = '';
+          loading.innerHTML = '<div style="opacity:.85;">当前片源播放失败，正在继续查找其他源…</div>';
+        }
+        else {
+          awaitingMoreSources = false;
+          loading.style.display = '';
+          loading.innerHTML = '<div style="opacity:.85;">😔 所有预告片源均播放失败（可能受地区/防盗链限制）</div>';
+          video.style.display = 'none';
+        }
+      });
+      qSelect.addEventListener('change', function () { failCount = 0; playAt(Number(qSelect.value) || 0); });
+      deadlineTimer = setTimeout(function () {
+        if (closed) return;
+        resolveTimedOut = true;
+        if (controller) controller.abort();
+        if (!sources.length) {
+          loading.innerHTML = '<div style="opacity:.85;">⏱ 解析超时，已停止等待。关闭后重新点预告片可重试。</div>';
+          srcTag.textContent = '超时';
+        } else {
+          srcTag.title = '后台查找超时，已保留当前可播放片源';
+        }
+      }, 12000);
+      resolveTrailer(code, receiveSources, controller ? controller.signal : null).then(function (resolved) {
+        if (closed) return;
+        clearTimeout(deadlineTimer);
+        resolutionComplete = true;
+        receiveSources(resolved);
+        // 解析已彻底结束：不必再等"也许还有更高清的源在路上"，用现有最好的（已验证优先）立即起播。
+        if (!started) tryAutoStart(true);
+        if (!sources.length) {
+          if (resolveTimedOut) return;
+          loading.innerHTML = '<div style="font-size:15px;opacity:.85;">😔 未找到可用预告片源</div>' +
+            '<div style="font-size:12px;opacity:.5;margin-top:8px;">已尝试：官方预告片 / DMM API / 厂商直链 / javspyl</div>';
+          srcTag.textContent = '无源';
+        } else if (awaitingMoreSources) {
+          awaitingMoreSources = false;
+          loading.style.display = '';
+          loading.innerHTML = '<div style="opacity:.85;">😔 所有找到的预告片源均播放失败（可能受地区/防盗链限制）</div>';
+          video.style.display = 'none';
+        }
       }).catch(function () {
-        if (!document.body.contains(overlay)) return;
-        loading.innerHTML = '<div style="opacity:.85;">😔 预告片解析失败，请稍后重试</div>';
+        if (closed) return;
+        clearTimeout(deadlineTimer);
+        if (controller && controller.signal.aborted) return;
+        loading.innerHTML = '<div style="opacity:.85;">😔 预告片解析失败，请关闭后重试</div>';
         srcTag.textContent = '失败';
       });
     }
@@ -26494,7 +26959,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         '<div class="jf-magpanel-head">' +
           '<span class="jf-magpanel-title">🔥 磁力搜索 <span class="jf-magpanel-code">' + escapeHtml(code) + '</span></span>' +
           '<span class="jf-magpanel-head-btns">' +
-            '<button class="jf-magpanel-hbtn" id="jfMagRefresh" title="重新搜索">⟳</button>' +
+            '<button class="jf-magpanel-hbtn" id="jfMagRefresh" title="搜索/刷新磁力资源">⟳</button>' +
             '<button class="jf-magpanel-hbtn" id="jfMagToggle" title="折叠/展开">' + (collapsed ? '«' : '»') + '</button>' +
           '</span>' +
         '</div>' +
@@ -26510,13 +26975,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<option value="seeds">按做种数</option>' +
           '</select>' +
         '</div>' +
-        '<div class="jf-magpanel-list" id="jfMagList"><div class="jf-magpanel-status">加载中…</div></div>';
+        '<div class="jf-magpanel-list" id="jfMagList"><div class="jf-magpanel-status">点击 ⟳ 搜索磁力资源；折叠时不会自动请求</div></div>';
       document.body.appendChild(panel);
 
       let lastRows = [];
       const listEl = panel.querySelector('#jfMagList');
       const siteSel = panel.querySelector('#jfMagSite');
       const sortSel = panel.querySelector('#jfMagSort');
+      let loaded = false;
       sortSel.value = GM_getValue('jf_mag_panel_sort', 'default');
 
       function renderRows() {
@@ -26561,6 +27027,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         }
       }
       async function load(force) {
+        loaded = true;
         listEl.innerHTML = '<div class="jf-magpanel-status"><span class="jf-spinner" style="width:18px;height:18px;border-width:2px;"></span> 搜索中…</div>';
         if (force) {
           const c = magPanelCacheRead();
@@ -26577,7 +27044,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           listEl.innerHTML = '<div class="jf-magpanel-status err">搜索失败：' + escapeHtml(e.message === 'timeout' ? '连接超时' : '网络错误') + '，点 ⟳ 重试</div>';
         }
       }
-      siteSel.addEventListener('change', function () { GM_setValue('jf_mag_panel_site', siteSel.value); load(); });
+      siteSel.addEventListener('change', function () {
+        GM_setValue('jf_mag_panel_site', siteSel.value);
+        if (!panel.classList.contains('collapsed') && loaded) load();
+      });
       sortSel.addEventListener('change', function () { GM_setValue('jf_mag_panel_sort', sortSel.value); renderRows(); });
       panel.querySelector('#jfMagRefresh').addEventListener('click', function () { load(true); });
       panel.querySelector('#jfMagToggle').addEventListener('click', function () {
@@ -26585,8 +27055,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         const c = panel.classList.contains('collapsed');
         GM_setValue('jf_mag_panel_collapsed', c);
         panel.querySelector('#jfMagToggle').textContent = c ? '«' : '»';
+        if (!c && !loaded) load(false);
       });
-      load();
     }
 
 
@@ -26746,6 +27216,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         e.preventDefault(); e.stopPropagation();
         openTrailerPlayer();
       });
+      prefetchTrailerOnHover(btn, function () { return typeof currentPageCode === 'function' ? currentPageCode() : ''; });
       wrap.appendChild(btn);
     }
     // 圆按钮组追加「预告片」圆按钮（复用皮肤圆按钮视觉，自建类避免皮肤委托拦截）
@@ -26765,6 +27236,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         setTimeout(function () { btn.classList.remove('rippling'); }, 420);
         openTrailerPlayer();
       });
+      prefetchTrailerOnHover(btn, function () { return typeof currentPageCode === 'function' ? currentPageCode() : ''; });
       row.appendChild(btn);
     }
     // 已入库醒目播放按钮（渐变大胶囊，插在播放按钮组内；多服务器命中可展开选择）
@@ -26920,6 +27392,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           actions.className = 'jf-rank-actions';
           cover.appendChild(actions);
         }
+        if (actions) actions.dataset.position = GM_getValue('jf_rank_btn_pos', 'bottom-left');
         if (showPreview && actions) {
           if (!actions.querySelector('.jf-rank-trailer')) {
             const preview = document.createElement('button');
@@ -26931,6 +27404,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               e.preventDefault(); e.stopPropagation();
               openTrailerPlayer(code);
             });
+            prefetchTrailerOnHover(preview, code);
             actions.appendChild(preview);
           }
         }
@@ -27166,17 +27640,19 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       /* ---- 预告片 Tab ---- */
       function renderTrailerTab() {
         body.innerHTML =
-          '<div class="jf-set-sec">预告片源解析顺序：官方预告片 → DMM/FANZA API（多画质）→ 厂商直链（加勒比/一本道/HEYZO/东京热）→ javspyl 兜底。封面上悬停出现播放按钮，操作区也有「预告片」圆按钮。</div>' +
+          '<div class="jf-set-sec">优先解析并播放 DMM/FANZA 高清源，DMM 不可用时再使用 JAVDB 官方源或厂商直链；javspyl 仅作最后回退。候选 DMM 商品并行查询，封面与操作区按钮均使用脚本播放器。</div>' +
           '<div class="jf-set-grid">' +
             '<label class="jf-set-row"><input type="checkbox" id="jfTrOfficial" ' + (TrConf.useOfficial ? 'checked' : '') + '> JAVDB 官方预告片</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfTrDmm" ' + (TrConf.useDmm ? 'checked' : '') + '> DMM/FANZA API</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfTrDirect" ' + (TrConf.useDirect ? 'checked' : '') + '> 厂商直链规则</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfTrSpyl" ' + (TrConf.useJavspyl ? 'checked' : '') + '> javspyl 兜底源</label>' +
+            '<label class="jf-set-row"><input type="checkbox" id="jfTrReplaceNative" ' + (TrConf.replaceNative ? 'checked' : '') + '> 将 JAVDB 原生预告片改为脚本播放器</label>' +
           '</div>' +
-          '<div class="jf-set-sec" style="margin-top:12px;opacity:.6;">DMM 部分地区受限时自动降级；播放失败会自动切换到下一个源。</div>';
+          '<div class="jf-set-sec" style="margin-top:12px;opacity:.6;">DMM/FANZA 片源按最高画质优先；关闭播放器会取消未完成请求。原生替换开关只接管预览影片，不影响 JAVDB 图片灯箱。</div>';
         const bind = function (id, key) { body.querySelector('#' + id).addEventListener('change', function (e) { GM_setValue(key, e.target.checked); }); };
         bind('jfTrOfficial', 'jf_tr_official'); bind('jfTrDmm', 'jf_tr_dmm');
         bind('jfTrDirect', 'jf_tr_direct'); bind('jfTrSpyl', 'jf_tr_javspyl');
+        bind('jfTrReplaceNative', 'jf_tr_replace_native');
       }
 
       /* ---- 界面 Tab ---- */
@@ -27190,7 +27666,20 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<label class="jf-set-row"><input type="checkbox" id="jfUiListBadge" ' + (GM_getValue('jf_ui_listbadge', true) ? 'checked' : '') + '> 列表页入库角标（需先同步索引）</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfUiLibPlay" ' + (GM_getValue('jf_ui_libplay', true) ? 'checked' : '') + '> 已入库醒目播放按钮</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfUiMagPanel" ' + (GM_getValue('jf_mag_panel', true) ? 'checked' : '') + '> 详情页右侧磁力搜索框</label>' +
-          '</div>';
+          '</div>' +
+          '<label class="jf-set-row" style="justify-content:space-between;gap:14px;margin-top:10px;">' +
+            '<span>列表封面按钮位置（预览片 + 媒体库）</span>' +
+            '<select class="jf-inp" id="jfUiRankBtnPos" style="width:180px;max-width:45%;margin:0;">' +
+              '<option value="top-left">左上</option><option value="top-center">上中</option><option value="top-right">右上</option>' +
+              '<option value="center-left">左中</option><option value="center">正中</option><option value="center-right">右中</option>' +
+              '<option value="bottom-left">左下</option><option value="bottom-center">下中</option><option value="bottom-right">右下</option>' +
+            '</select>' +
+          '</label>';
+        body.querySelector('#jfUiRankBtnPos').value = GM_getValue('jf_rank_btn_pos', 'bottom-left');
+        body.querySelector('#jfUiRankBtnPos').addEventListener('change', function (e) {
+          GM_setValue('jf_rank_btn_pos', e.target.value);
+          fullScan();
+        });
         body.querySelector('#jfUiMedia').addEventListener('change', function (e) { setPluginEnabled('fusionMediaLib', e.target.checked); fullScan(); });
         body.querySelector('#jfUiTrailer').addEventListener('change', function (e) { setPluginEnabled('fusionTrailer', e.target.checked); fullScan(); });
         body.querySelector('#jfUiMagnet').addEventListener('change', function (e) { setPluginEnabled('fusionMagnet', e.target.checked); scanMagnetTables(); });
@@ -27238,14 +27727,23 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         /* 列表页角标 */
         '.jf-lib-badge{position:absolute;top:5px;right:5px;z-index:6;width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:rgba(20,30,20,.78);color:#7ee787;border:1px solid rgba(76,175,80,.55);box-shadow:0 2px 6px rgba(0,0,0,.4);backdrop-filter:blur(4px);cursor:pointer;transition:all .18s ease;}',
         '.jf-lib-badge:hover{background:rgba(52,206,87,.9);color:#04140a;transform:scale(1.12);}',
-        '.jf-rank-actions{position:absolute;z-index:8;left:7px;right:7px;bottom:7px;display:flex;gap:6px;flex-wrap:nowrap;box-sizing:border-box;padding:16px 0 0;background:linear-gradient(180deg,transparent,rgba(10,14,20,.42));}',
-        '.jf-rank-action{display:inline-flex;flex:1 1 0;align-items:center;justify-content:center;min-width:0;min-height:32px;box-sizing:border-box;padding:5px 6px;border:1px solid rgba(255,255,255,.28);border-radius:9px;background:rgba(255,255,255,.17);color:#fff!important;text-decoration:none!important;white-space:nowrap;font:600 11px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer;backdrop-filter:blur(12px) saturate(1.2);-webkit-backdrop-filter:blur(12px) saturate(1.2);box-shadow:0 3px 10px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.12);transition:background .18s ease,border-color .18s ease,transform .18s ease,box-shadow .18s ease;}',
-        '.jf-rank-action:hover{background:rgba(255,255,255,.26);border-color:rgba(255,255,255,.42);transform:translateY(-1px);box-shadow:0 5px 14px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.2);}',
+        '.jf-rank-actions{position:absolute!important;z-index:8;left:7px!important;right:auto!important;bottom:7px!important;display:inline-flex!important;align-items:flex-end;gap:6px;flex-wrap:wrap;box-sizing:border-box;width:max-content!important;max-width:calc(100% - 14px);padding:0!important;background:none!important;}',
+        '.jf-rank-actions[data-position="top-center"]{top:7px!important;bottom:auto!important;left:50%!important;right:auto!important;transform:translateX(-50%);}',
+        '.jf-rank-actions[data-position="top-right"]{top:7px!important;bottom:auto!important;left:auto!important;right:7px!important;}',
+        '.jf-rank-actions[data-position="center-left"]{top:50%!important;bottom:auto!important;left:7px!important;right:auto!important;transform:translateY(-50%);}',
+        '.jf-rank-actions[data-position="center"]{top:50%!important;bottom:auto!important;left:50%!important;right:auto!important;transform:translate(-50%,-50%);}',
+        '.jf-rank-actions[data-position="center-right"]{top:50%!important;bottom:auto!important;left:auto!important;right:7px!important;transform:translateY(-50%);}',
+        '.jf-rank-actions[data-position="bottom-center"]{top:auto!important;bottom:7px!important;left:50%!important;right:auto!important;transform:translateX(-50%);}',
+        '.jf-rank-actions[data-position="bottom-right"]{top:auto!important;bottom:7px!important;left:auto!important;right:7px!important;}',
+        '.jf-rank-actions[data-position="top-left"]{top:7px!important;bottom:auto!important;left:7px!important;right:auto!important;}',
+        '.jf-rank-actions[data-position="bottom-left"]{top:auto!important;bottom:7px!important;left:7px!important;right:auto!important;}',
+        '.jf-rank-action{display:inline-flex!important;flex:0 0 auto!important;align-items:center;justify-content:center;min-width:0;min-height:29px;max-width:100%;box-sizing:border-box;padding:5px 9px;border:1px solid rgba(255,255,255,.72);border-radius:8px;background:rgba(239,243,249,.94)!important;color:#263244!important;text-decoration:none!important;white-space:nowrap;font:600 11px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer;backdrop-filter:blur(8px) saturate(1.05);-webkit-backdrop-filter:blur(8px) saturate(1.05);box-shadow:0 2px 7px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.72);transition:background .18s ease,border-color .18s ease,transform .18s ease,box-shadow .18s ease;}',
+        '.jf-rank-action:hover{filter:brightness(.97);transform:translateY(-1px);box-shadow:0 4px 10px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.8);}',
         '.jf-rank-action:focus-visible{outline:2px solid rgba(255,255,255,.82);outline-offset:2px;}',
-        '.jf-rank-trailer{background:rgba(191,219,254,.28);border-color:rgba(219,234,254,.48);}',
-        '.jf-rank-play{background:rgba(255,255,255,.17);border-color:rgba(255,255,255,.28);}',
-        '.jf-rank-play.jf-lib-play-jellyfin{background:rgba(221,214,254,.3);border-color:rgba(237,233,254,.5);}',
-        '.jf-rank-play.jf-lib-play-emby{background:rgba(187,247,208,.28);border-color:rgba(220,252,231,.48);}',
+        '.jf-rank-action.jf-rank-trailer{background:rgba(219,234,254,.96)!important;border-color:#bfdbfe!important;color:#24466d!important;}',
+        '.jf-rank-action.jf-rank-play{background:rgba(239,243,249,.96)!important;border-color:#d8e0ec!important;color:#263244!important;}',
+        '.jf-rank-action.jf-rank-play.jf-lib-play-jellyfin{background:rgba(237,233,254,.97)!important;border-color:#ddd6fe!important;color:#493779!important;}',
+        '.jf-rank-action.jf-rank-play.jf-lib-play-emby{background:rgba(220,252,231,.97)!important;border-color:#bbf7d0!important;color:#28543a!important;}',
         /* 封面悬浮预告片按钮（Emby 海报行为：hover 浮现） */
         '#emby-detail-hero .poster-wrap{position:relative;}',
         '.jf-poster-play{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border:none;outline:none;cursor:pointer;background:linear-gradient(to bottom,rgba(0,0,0,0) 30%,rgba(0,0,0,.55) 100%);color:#fff;opacity:0;transition:opacity .22s ease;}',
@@ -27269,6 +27767,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         '.jf-trailer-src{font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.1);color:#bbb;white-space:nowrap;}',
         '.jf-trailer-quality{background:rgba(255,255,255,.1);color:#eee;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:3px 6px;font-size:12px;outline:none;}',
         '.jf-trailer-quality option{background:#222;color:#eee;}',
+        '.jf-trailer-pip{width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.1);border-radius:50%;background:rgba(255,255,255,.08);color:#e7eaf0;cursor:pointer;}',
+        '.jf-trailer-pip[hidden]{display:none!important;}',
+        '.jf-trailer-pip:hover{background:rgba(255,255,255,.18);}',
+        '.jf-trailer-pip .material-symbols-outlined{font-size:17px;}',
         '.jf-trailer-close{width:30px;height:30px;border:none;border-radius:50%;background:rgba(255,255,255,.1);color:#fff;font-size:18px;cursor:pointer;line-height:1;transition:background .15s;}',
         '.jf-trailer-close:hover{background:rgba(248,113,113,.7);}',
         '.jf-trailer-body{position:relative;background:#000;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;}',
@@ -27498,6 +28000,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
    * ===================================================================== */
   function init() {
     log('初始化 | 皮肤=' + (enabled ? '开' : '关'));
+    bindSlashSearchShortcut();
     try { if (isDetailPage()) autoBlockJavdbTranslate(); } catch (e) {}
     try { if (isDetailPage()) ReviewListInfiniteManager.init(); } catch (e) {}
     try { if (isDetailPage()) FAV.passiveCollect(); } catch (e) {}
