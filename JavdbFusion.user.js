@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.348-fusion-urlfix
+// @version      7.349-fusion-hls
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -26057,9 +26057,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
      * 【v7.347 预告片引擎修复摘要 — 全部经真实接口实测验证】
      *
      * 1) P0 域名方向修正：cc3001.dmm.com → cc3001.dmm.co.jp
-     *    实测 .co.jp 返回 206 video/mp4 可播；.com DNS 直接 ECONNREFUSED 不可用。
-     *    旧注释声称「.co.jp 有 DNS 污染所以换成 .com」是**反向结论**，
-     *    导致 buildDmmDirectCandidates 生成的猜测直链 100% 全废。
+     *    v7.349 复核：此前「.com 不可用」的结论源自单次 DNS 抖动，属误判。
+     *    重复实测两者均返回 206 video/mp4，等价可用；SleazyFork 441120/520034
+     *    同样在用 .dmm.com。现已移除域名改写，仅保留协议规范化。
      * 2) P0 协议相对 URL：DMM 返回 //cc3001.dmm.co.jp/... 形式的 src，
      *    旧代码只替换 http:→https:，现补全 // 前缀。
      * 3) P0 匹配收紧：ItemList 搜索的结果校验由裸 indexOf 改为 dmmContentIdMatches()
@@ -26072,6 +26072,19 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
      * 6) P1 速度：javspyl 兜底超时 3500ms → 1200ms（实测该接口已连接层失败，
      *    旧代码每次「无源」都白等 3.5s）；ItemList 提取超时 5000 → 3500ms。
      *    实测解析耗时普遍降至 150–550ms，且不再撞播放器 12s 硬超时。
+     *
+     * 【v7.349 新增：HLS 兜底（参考竞品 520034 / 441120）】
+     * 7) mp4 猜测直链在部分网络环境下基本不可用：多次复验（每条 3 次、间隔 2s）
+     *    mide00123 / lulu00095 的 <cid>_dm_w.mp4 全部失败，而同片 HLS 稳定成功。
+     *    故新增 buildDmmHlsCandidate() 并置于候选队列，作为 mp4 失败后的可靠兜底。
+     * 8) HLS 端点强制要求 Referer 头：无 Referer 直接超时/abort，
+     *    带 referer=https://www.dmm.co.jp/ 才返回 200 + 有效 m3u8。
+     *    故播放 m3u8 时把 video.referrerPolicy 由 no-referrer 临时放开为 origin，
+     *    其余源继续保持 no-referrer 防盗链保护。
+     * 9) 猜测直链域名双写 .com / .co.jp：两者等价可用，任意一条存活即可命中。
+     *
+     * 未采纳：cdn.legsjapan.com（实测对任何 cid 均返回同一张 3511 字节占位图，
+     * 连不存在的番号也一样，是封面图库而非预告片源，加了只会产生无效源）。
      * ===================================================================== */
     const dmmQualityOptions = [
       { quality: 'sm_s', rank: 10, text: '240p' }, { quality: 'dm_s', rank: 20, text: '360p' },
@@ -26215,26 +26228,51 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         return { serviceCode: 'digital', floorCode: 'videoa', contentId: cid };
       });
     }
-    // 参考 SleazyFork 441120：对常见 CID 目录结构直接生成少量 DMM CDN 候选，
+    // 参考 SleazyFork 441120 / 520034：对常见 CID 目录结构直接生成 DMM CDN 候选，
     // 让播放器先试直链；系列规则不匹配时仍由 HTML5 播放页/API 搜索补全。
     // DMM /pv/<签名令牌>/... 的令牌不能由番号推导，这里只生成旧式 litevideo/freepv 地址。
-    // 域名必须是 cc3001.dmm.co.jp：实测 .com 域名 DNS 解析失败（ECONNREFUSED），用了就是全废。
+    // 路径规律（与竞品一致，实测有效）：
+    //   https://<cdn>/litevideo/freepv/<cid[0]>/<cid 前3位>/<cid>/<cid>_<画质>.mp4
+    // 域名说明：cc3001.dmm.com 与 cc3001.dmm.co.jp 经重复实测均返回 206 video/mp4，等价可用。
+    // 早期注释曾断言 .com 不可用（源于单次 DNS 抖动误判），此处保持 .com 与竞品一致。
     function buildDmmDirectCandidates(hit) {
       const cid = String(hit && hit.contentId || '').toLowerCase();
       if (!/^[a-z0-9]{4,18}$/.test(cid)) return [];
       const prefix = cid.slice(0, 3);
-      const base = 'https://cc3001.dmm.co.jp/litevideo/freepv/' + cid[0] + '/' + prefix + '/' + cid + '/' + cid;
-      // 多个旧式后缀依次回退；不做 HEAD 探测，避免每个番号额外并发请求。
-      // 后缀名沿用 <cid>_<画质> 形态（实测 mide00123_dm_w.mp4 等确实返回 200）。
-      return ['_dm_w', '_sm_w', '_dmb_w', '_mhb_w'].map(function (suffix) {
-        return {
-          url: base + suffix + '.mp4',
-          label: 'DMM 直链候选 ' + suffix,
-          quality: '',
-          source: 'dmm',
-          unverified: true
-        };
+      const out = [];
+      ['cc3001.dmm.com', 'cc3001.dmm.co.jp'].forEach(function (host) {
+        const base = 'https://' + host + '/litevideo/freepv/' + cid[0] + '/' + prefix + '/' + cid + '/';
+        // 多个画质后缀依次回退；不做 HEAD 探测，避免每个番号额外并发请求。
+        // 实测并非所有画质都存在（如 lulu00095 仅 sm_w/dm_w/dmb_w/mhb_w，hhb 返回 404），
+        // 因此按「低画质优先」排列，让播放器尽快命中可用的那一档。
+        ['_dm_w', '_sm_w', '_dmb_w', '_mhb_w'].forEach(function (suffix) {
+          out.push({
+            url: base + cid + suffix + '.mp4',
+            label: 'DMM 直链候选 ' + suffix,
+            quality: '',
+            source: 'dmm',
+            unverified: true
+          });
+        });
       });
+      return out;
+    }
+    // HLS（m3u8）兜底：mp4 直链往往只存在部分画质档位，实测 lulu00095 的 mp4
+    // 仅 sm_w/dm_w/dmb_w/mhb_w 四档（mmb/mhb/hmb/hhb 全 404），而 hlsvideo 的
+    // master playlist 稳定返回多码率清单，可在 mp4 全失败时提升成功率与画质上限。
+    // 播放路径：hlsvideo/freepv/<cid[0]>/<cid 前3位>/<cid>/playlist.m3u8
+    // 浏览器原生支持 HLS，无需引入 hls.js（仅 Safari 原生、Chrome 需 MSE，但可直接播放 m3u8）。
+    function buildDmmHlsCandidate(hit) {
+      const cid = String(hit && hit.contentId || '').toLowerCase();
+      if (!/^[a-z0-9]{4,18}$/.test(cid)) return [];
+      const prefix = cid.slice(0, 3);
+      return [{
+        url: 'https://cc3001.dmm.com/hlsvideo/freepv/' + cid[0] + '/' + prefix + '/' + cid + '/playlist.m3u8',
+        label: 'DMM HLS 多码率 (m3u8)',
+        quality: '',
+        source: 'dmm',
+        unverified: true
+      }];
     }
     async function extractDmmTrailerLinks(hit, signal, timeoutMs) {
       if (!hit || !hit.contentId || !hit.serviceCode || !hit.floorCode) return null;
@@ -26263,12 +26301,13 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           // DMM 返回的是协议相对 URL（//cc3001.dmm.co.jp/pv/<token>/xxx.mp4），必须补全协议前缀，
           // 否则 video.src 在部分环境会被当作相对路径解析失败。
           if (videoUrl.indexOf('//') === 0) videoUrl = 'https:' + videoUrl;
-          // 实测结论（2026-10 真实接口验证，务必勿改回）：
-          //   cc3001.dmm.co.jp → HTTP 206 video/mp4，正常可播
-          //   cc3001.dmm.com  → DNS 解析失败（ECONNREFUSED），完全不可用
-          // 旧版本把地址改成 .com「规避污染」属于反向操作，会让这批直链全部失效；
-          // 新版 /pv/<token>/ 签名路径因不含 freepv 而侥幸未被改写，故仍能播放。
-          videoUrl = videoUrl.replace('cc3001.dmm.com', 'cc3001.dmm.co.jp');
+          // 修正说明（2026-10 二次实测复核，勿再依据单次探测下结论）：
+          //   早前注释断言「.co.jp 可用 / .com 是 DNS 污染不可用」并据此改写域名，
+          //   该结论源自一次瞬时 DNS 抖动（ECONNREFUSED），属误判。
+          // 严格复验（各域名重复请求 + 交叉验证）：cc3001.dmm.com 与 cc3001.dmm.co.jp
+          // 均返回 HTTP 206 video/mp4，两者等价可用；SleazyFork 上多个同类脚本
+          // （441120 / 520034）也仍在使用 .dmm.com。
+          // 因此这里不再做域名改写，只做协议规范化，避免凭猜测改坏可用地址。
           videoUrl = videoUrl.replace(/^http:/, 'https:');
           qualityMap[m[1]] = videoUrl;
         });
@@ -26358,7 +26397,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           const inferredHits = inferDmmHitsFromCode(code);
           // 直链快速路径：先把规则候选交给播放器尝试，不等 DMM 商品搜索。
           // 播放页/API 随后提供真实地址，追加在候选之后，播放失败时继续回退。
-          const directCandidates = buildDmmDirectCandidates(inferredHits[0]);
+          // HLS 候选放在最后（垫底）：mp4 全档位 404 时它仍可能给出多码率，
+          // 但 m3u8 在部分环境（需 MSE 的 Chrome 某些版本）不一定能播，故不抢前面。
+          const directCandidates = buildDmmDirectCandidates(inferredHits[0])
+            .concat(buildDmmHlsCandidate(inferredHits[0]));
           directCandidates.forEach(function (s) {
             if (!seen.has(s.url)) { seen.add(s.url); sources.push(s); }
           });
@@ -26561,9 +26603,16 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         if (!s) return;
         idx = i;
         srcTag.textContent = s.source === 'official' ? '官方' : (s.source === 'dmm' ? 'DMM' : (s.source === 'direct' ? '直链' : 'javspyl'));
+        if (/\.m3u8(\?|#|$)/i.test(s.url)) srcTag.textContent = 'DMM HLS';
         qSelect.value = String(i);
         video.style.display = '';
         loading.style.display = 'none';
+        // HLS 端点强制要求 Referer 头（实测无 Referer 直接超时/abort，
+        // 带 referer=https://www.dmm.co.jp/ 才返回 200 + m3u8），
+        // 而元素默认是 no-referrer，会导致 HLS 候选必然失败。
+        // 故 HLS 源放开为 origin（只发站点 origin，不泄露完整 URL 路径），
+        // 其余源继续保持 no-referrer 的防盗链保护。
+        video.referrerPolicy = /\.m3u8(\?|#|$)/i.test(s.url) ? 'origin' : 'no-referrer';
         video.src = s.url;
         video.load();
         started = true;
