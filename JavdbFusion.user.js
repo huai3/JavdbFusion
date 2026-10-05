@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.350-fusion-top250fix
+// @version      7.351-fusion-webtop
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -177,13 +177,32 @@
         // 仅在用户账号个人信息菜单区域检测真实的 VIP 徽章，排除顶栏针对非VIP展示的「购买/升级VIP」推广链接
         const userMenu = nav.querySelector('.navbar-end, .user-menu, .navbar-item.has-dropdown');
         if (userMenu) {
-          const vipBadge = userMenu.querySelector('.vip, .badge-vip, .tag.is-warning, [class*="vip"]');
+          // VIP 徽章在不同主题下可能是文字徽章，也可能只是 material-symbols 钻石图标，
+          // 后者不含 "vip" 字样（实测截图即为此形态），故同时按图标名与会员相关关键词判定。
+          const vipBadge = userMenu.querySelector(
+            '.vip, .badge-vip, .tag.is-warning, [class*="vip"], ' +
+            '[class*="diamond"], [class*="premium"], [class*="member"], [data-vip]'
+          );
           if (vipBadge && !vipBadge.closest('a[href*="/vip"], a[href*="/plans"]')) {
-            if (/vip/i.test(vipBadge.textContent || vipBadge.className || '')) return true;
+            if (/vip|diamond|premium|member/i.test(vipBadge.textContent || vipBadge.className || '')) return true;
+          }
+          // 图标型徽章：material-symbols / icon-* 的 diamond / workspace_premium 字形名
+          const vipIcon = userMenu.querySelector(
+            '.material-symbols-outlined, .material-icons, [class*="icon-"], svg'
+          );
+          if (vipIcon) {
+            const iconName = (vipIcon.className || '') + ' ' +
+              (vipIcon.getAttribute('data-icon') || vipIcon.getAttribute('aria-label') || '') + ' ' +
+              (vipIcon.textContent || '');
+            if (/diamond|workspace_premium|crown|verified/i.test(iconName)) return true;
           }
         }
       }
+      // 站点可能把 VIP 状态放在全局标记里，作为最后兜底
+      if (document.body && document.body.dataset && (document.body.dataset.vip === '1' || document.body.dataset.vip === 'true')) return true;
       if (localStorage.getItem('javdb_is_vip') === '1') return true;
+      // 用户可手动锁定「我已是 VIP」，彻底绕开徽章识别差异
+      if (localStorage.getItem('jf_force_web_top') === '1') return true;
     } catch (e) {}
     return false;
   }
@@ -8376,7 +8395,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     { id: 'otherSite', name: '外部播放站点', desc: '开启后在番号详情页提供多源跳转播放；关闭时默认直接调用 JAVDB 官方播放（会员免跳转）', default: true },
     { id: 'infoSites', name: '番号信息站点', desc: '开启后在番号后面以网站LOGO形式展示 JAVBUS、JAVLib、FANZA動画、javtxt 快捷跳转入口', default: true },
     { id: 'infiniteScroll', name: '无限加载', desc: '浏览列表时滚动到底部自动加载下一页，免去手动点击翻页', default: true },
-    { id: 'reviewListInfinite', name: '绕过JAVDB限制', desc: '为非 VIP 账号扩展评论与相关清单浏览；不控制 TOP250 或热播榜界面', default: false },
+    { id: 'reviewListInfinite', name: '绕过JAVDB限制', desc: '为非 VIP 账号扩展评论与相关清单浏览；TOP250 与热播榜界面始终可用，VIP 优先走网页会话直读榜单，无需移动端 Token', default: false },
     { id: 'actressInfo', name: '女优信息与收藏标记', desc: '查询女优现役/退役状态、年龄、身高、三围等体检数据，并控制女优头像红心收藏标记的显示', default: true },
     { id: 'gfriendsAvatar', name: '演员头像高清替换', desc: '开启后优先从高清头像库匹配演员头像（男女演员均支持），未匹配则平滑回退 JAVDB 官方头像', default: true },
     { id: 'quickStatusPreview', name: '状态快捷标记和预览图', desc: '在作品封面提供「想看/已看评分」快捷标记按钮，以及预览大图嗅探抓取与画廊浮层', default: false },
@@ -9437,22 +9456,45 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       throw new Error(res.message || '获取热播榜失败');
     }
 
-    // 2. 获取 TOP250 榜单（需普通账号 Token 鉴权）
+    // 2. 获取 TOP250 榜单
+    //    VIP（及强制网页端模式）：只读官方网页 /rankings/top，不碰移动端 API、无需 Token；
+    //    非 VIP：走移动端 API，需要登录/粘贴 Token。
     async function fetchTop(handleType, typeValue, page, bypassCache) {
-      const cacheKey = 'top_' + handleType + '_' + typeValue + '_p' + page;
+      const token = getAuthToken();
+      const preferWebSession = isJavdbVipUser();
+      // 缓存键带上数据源标记：切换来源后不会读到另一种来源留下的旧缓存
+      const srcTag = preferWebSession ? 'web' : (token ? 'api' : 'web');
+      const cacheKey = 'top_' + srcTag + '_' + handleType + '_' + typeValue + '_p' + page;
       if (!bypassCache) {
         const cached = await getCached(cacheKey, 86400000); // 24小时持久化缓存
         if (cached && cached.length) return { success: 1, data: { movies: cached }, fromCache: true };
       }
 
-      const token = getAuthToken();
-      if (!token) {
-        const movies = await fetchOfficialTop(handleType, typeValue);
-        for (let p = 1; p <= 5; p++) {
-          await setCached('top_' + handleType + '_' + typeValue + '_p' + p, movies.slice((p - 1) * 50, p * 50));
+      // 数据源优先级（v7.351）：
+      //   VIP 已登录  → 直接用网页会话读官方 TOP250，**完全不碰移动端 API**，
+      //                  也就不会弹出 Token 登录框、不会挤掉手机端登录态。
+      //   非 VIP      → 走移动端 API（需要用户自行登录/粘贴 Token）。
+      //   VIP 但网页会话失效 → 回退移动端 API（若已存 Token），
+      //                  再不行才提示登录，避免已登录用户被无故要求 Token。
+      if (preferWebSession || !token) {
+        try {
+          const movies = await fetchOfficialTop(handleType, typeValue, page);
+          // 网页端按 ?p=<page> 原生分页，每次只返回当前页，因此只缓存本页；
+          // 旧实现会把第 1 页切片后预写 p=1..5，那在网页端是错的（每页独立请求），
+          // 会导致 p=2..5 读到第 1 页的残片。
+          await setCached(cacheKey, movies);
+          return { success: 1, data: { movies: movies }, fromJavdbSession: true };
+        } catch (e) {
+          // VIP 网页端读取失败：若已有移动端 Token，仍可回退，不必立刻要求重新登录。
+          if (!(preferWebSession && token)) throw e;
+          return await fetchTopViaMobileApi(handleType, typeValue, page, cacheKey, token, e);
         }
-        return { success: 1, data: { movies: movies.slice((page - 1) * 50, page * 50) }, fromJavdbSession: true };
       }
+      return await fetchTopViaMobileApi(handleType, typeValue, page, cacheKey, token, null);
+    }
+
+    // 移动端 API 路径：仅非 VIP，或 VIP 网页会话失效且本地已有 Token 时才走。
+    async function fetchTopViaMobileApi(handleType, typeValue, page, cacheKey, token, webSessionError) {
       const url = API_BASE + '/v1/movies/top?start_rank=1&type=' + encodeURIComponent(handleType) +
                   '&type_value=' + encodeURIComponent(typeValue) +
                   '&ignore_watched=false&page=' + page + '&limit=50';
@@ -9467,24 +9509,26 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         return res;
       }
       try {
-        const officialMovies = await fetchOfficialTop(handleType, typeValue);
-        for (let p = 1; p <= 5; p++) {
-          await setCached('top_' + handleType + '_' + typeValue + '_p' + p, officialMovies.slice((p - 1) * 50, p * 50));
-        }
-        return { success: 1, data: { movies: officialMovies.slice((page - 1) * 50, page * 50) }, fromJavdbSession: true };
+        const officialMovies = await fetchOfficialTop(handleType, typeValue, page);
+        await setCached(cacheKey, officialMovies);
+        return { success: 1, data: { movies: officialMovies }, fromJavdbSession: true };
       } catch (e) {
-        // 旧实现直接 `return res`，把 fetchOfficialTop 抛出的具体原因整个吞掉，
-        // 界面最终只能显示泛化的「请登录账号」——这是 VIP 已登录却被误提示的最后一环。
-        // 这里把真实原因带回，让界面能区分「Cookie 失效」与「结构变更」。
-        return { success: 0, action: 'OfficialSessionError', message: (e && e.message) ? e.message : '读取 JAVDB 官方榜单失败' };
+        // 移动端与网页端都失败：优先透出网页端的真实原因（更贴近用户当前状态）。
+        const msg = (webSessionError && webSessionError.message) || (e && e.message) || '获取TOP250数据失败';
+        return { success: 0, action: 'OfficialSessionError', message: msg };
       }
     }
 
     // VIP 用户直接使用当前 JavDB 网页登录会话读取官方 TOP250，不要求单独的移动端 Token。
-    async function fetchOfficialTop(handleType, typeValue) {
-      let url = location.origin + '/rankings/top';
-      if (handleType === 'video_type' && typeValue) url += '?t=' + encodeURIComponent(typeValue);
-      else if (handleType === 'year' && typeValue) url += '?t=' + encodeURIComponent('y' + typeValue);
+    // 支持分页：官方 /rankings/top?p=<页>&t=<类型|年份>，因此网页端可完全替代移动端 API。
+    async function fetchOfficialTop(handleType, typeValue, page) {
+      const pageNo = Math.max(1, parseInt(page, 10) || 1);
+      const params = [];
+      if (pageNo > 1) params.push('p=' + pageNo);
+      if (handleType === 'video_type' && typeValue) params.push('t=' + encodeURIComponent(typeValue));
+      else if (handleType === 'year' && typeValue) params.push('t=' + encodeURIComponent('y' + typeValue));
+      const qs = params.length ? '?' + params.join('&') : '';
+      const url = location.origin + '/rankings/top' + qs;
       const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
       if (!response.ok) throw new Error('JAVDB 官方 TOP250 请求失败 (' + response.status + ')');
       const html = await response.text();
@@ -9501,7 +9545,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       // 旧写法 '.movie-list .item' 要求祖先存在，结构一变就整页取不到数据。
       let items = Array.from(doc.querySelectorAll('.movie-list .item'));
       if (!items.length) items = Array.from(doc.querySelectorAll('.item'));
-      const movies = items.map(function (item, index) {
+      const perPage = 50;
+      const offset = (pageNo - 1) * perPage;
+      const movies = items.map(function (item, i) {
         const link = item.querySelector('a[href^="/v/"]');
         if (!link) return null;
         const match = (link.getAttribute('href') || '').match(/\/v\/([^/?#]+)/);
@@ -9518,6 +9564,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         const scoreMatch = scoreText.match(/[0-5](?:\.\d+)?/);
         const date = ((item.querySelector('.meta, .time') || {}).textContent || '').trim();
         const hasCnsub = /中字|字幕/.test(item.textContent || '');
+        const rank = rankMatch ? parseInt(rankMatch[0], 10) : offset + i + 1;
         return {
           id: match[1], code: String(code).trim(), number: String(code).trim(),
           title: title || titleText, origin_title: title || titleText,
@@ -9525,13 +9572,13 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           thumb_url: cover, cover_url: cover, date: date, release_date: date,
           score: scoreMatch ? parseFloat(scoreMatch[0]) : 0,
           has_cnsub: hasCnsub, magnets_count: 0,
-          _topRank: rankMatch ? parseInt(rankMatch[0], 10) : index + 1,
-          awards: [{ name: 'JavDB 影片TOP250', rank: rankMatch ? parseInt(rankMatch[0], 10) : index + 1 }]
+          _topRank: rank,
+          awards: [{ name: 'JavDB 影片TOP250', rank: rank }]
         };
       }).filter(Boolean);
       if (!movies.length) {
         // 区分两种失败原因，避免一律提示"请登录"而误导已登录的 VIP 用户：
-        //  · 已登录且页面结构正常 → 说明筛选条件（类型/年份）下确实没有数据
+        //  · 已登录且页面结构正常 → 说明筛选条件（类型/年份）或该页码下确实没有数据
         //  · 已登录但一个卡片都没有 → 结构变更，需要更新选择器
         const anyItem = doc.querySelector('.item');
         if (anyItem) {
@@ -9924,7 +9971,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       const uncachedPages = [];
 
       for (let p = 1; p <= 5; p++) {
-        const cacheKey = 'top_' + handleType + '_' + typeValue + '_p' + p;
+        // 与 fetchTop 保持同一套缓存键（含数据源标记），否则切换数据源后会读到旧来源的残留缓存
+        const srcTag = isJavdbVipUser() ? 'web' : (getAuthToken() ? 'api' : 'web');
+        const cacheKey = 'top_' + srcTag + '_' + handleType + '_' + typeValue + '_p' + p;
         const cached = await getCached(cacheKey, 86400000);
         if (cached && cached.length) {
           allMovies[p - 1] = cached;
@@ -10327,7 +10376,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
                   '<div style="grid-column:1/-1;text-align:center;padding:70px 20px;color:#e2e8f0;">' +
                     '<div style="font-size:17px;font-weight:700;margin-bottom:10px;color:#fed368;">' + escapeHtml(msg) + '</div>' +
                     '<div style="font-size:13px;color:#94a3b8;margin-bottom:20px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.6;">' +
-                      'TOP250 优先使用当前网页登录会话读取，无需移动端 Token。若你是 VIP 但看到本提示，请先刷新页面确认仍处于登录状态（顶部右侧应显示头像与昵称）。' +
+                      'TOP250 对 VIP 账号直接读取网页榜单（<code>/rankings/top</code>），全程不使用移动端 API，也不需要 Token；只有非 VIP 账号才需要登录移动端。若你是 VIP 却看到本提示，说明网页会话已失效——请刷新页面重新登录 JAVDB 即可，无需粘贴 Token。' +
                     '</div>' +
                     '<div style="display:flex;justify-content:center;gap:12px;">' +
                       '<button type="button" id="t250-reload-btn" style="background:#00a4dc;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">刷新页面重试</button>' +
@@ -27850,11 +27899,26 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<label class="jf-set-row"><input type="checkbox" id="jfTrSpyl" ' + (TrConf.useJavspyl ? 'checked' : '') + '> javspyl 兜底源</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfTrReplaceNative" ' + (TrConf.replaceNative ? 'checked' : '') + '> 将 JAVDB 原生预告片改为脚本播放器</label>' +
           '</div>' +
-          '<div class="jf-set-sec" style="margin-top:12px;opacity:.6;">DMM/FANZA 片源按最高画质优先；关闭播放器会取消未完成请求。原生替换开关只接管预览影片，不影响 JAVDB 图片灯箱。</div>';
+          '<div class="jf-set-sec" style="margin-top:12px;opacity:.6;">DMM/FANZA 片源按最高画质优先；关闭播放器会取消未完成请求。原生替换开关只接管预览影片，不影响 JAVDB 图片灯箱。</div>' +
+          '<div class="jf-set-sec" style="margin-top:14px;">TOP250 数据源</div>' +
+          '<div class="jf-set-sec" style="margin-top:6px;display:flex;flex-direction:column;gap:8px;">' +
+            '<label class="jf-set-row"><input type="checkbox" id="jfForceWebTop" ' + (localStorage.getItem('jf_force_web_top') === '1' ? 'checked' : '') + '> 强制使用网页端榜单（VIP 推荐）</label>' +
+          '</div>' +
+          '<div class="jf-set-sec" style="margin-top:6px;opacity:.6;">勾选后 TOP250 只读取官方网页 <code>/rankings/top</code>，<b>完全不使用移动端 API、也不需要 Token</b>，不会影响手机端登录态。VIP 账号通常会自动启用；若徽章识别失败导致仍提示登录，可手动勾选此项。</div>';
         const bind = function (id, key) { body.querySelector('#' + id).addEventListener('change', function (e) { GM_setValue(key, e.target.checked); }); };
         bind('jfTrOfficial', 'jf_tr_official'); bind('jfTrDmm', 'jf_tr_dmm');
         bind('jfTrDirect', 'jf_tr_direct'); bind('jfTrSpyl', 'jf_tr_javspyl');
         bind('jfTrReplaceNative', 'jf_tr_replace_native');
+        body.querySelector('#jfForceWebTop').addEventListener('change', function (e) {
+          if (e.target.checked) localStorage.setItem('jf_force_web_top', '1');
+          else localStorage.removeItem('jf_force_web_top');
+          // 榜单缓存键会随分页/来源变化，直接清掉旧缓存避免看到陈旧数据
+          try {
+            localStorage.removeItem('javdb_top250_force_web');
+          } catch (err) {}
+          ftoast(e.target.checked ? '已切换为网页端榜单，无需 Token' : '已恢复自动判断数据源');
+          loadData && loadData();
+        });
       }
 
       /* ---- 界面 Tab ---- */
