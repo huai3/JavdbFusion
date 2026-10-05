@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.351-fusion-webtop
+// @version      7.352-fusion-vipdetect
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -181,20 +181,28 @@
           // 后者不含 "vip" 字样（实测截图即为此形态），故同时按图标名与会员相关关键词判定。
           const vipBadge = userMenu.querySelector(
             '.vip, .badge-vip, .tag.is-warning, [class*="vip"], ' +
-            '[class*="diamond"], [class*="premium"], [class*="member"], [data-vip]'
+            '[class*="diamond"], [class*="premium"], [data-vip]'
           );
           if (vipBadge && !vipBadge.closest('a[href*="/vip"], a[href*="/plans"]')) {
             if (/vip|diamond|premium|member/i.test(vipBadge.textContent || vipBadge.className || '')) return true;
           }
-          // 图标型徽章：material-symbols / icon-* 的 diamond / workspace_premium 字形名
-          const vipIcon = userMenu.querySelector(
+          // 图标型徽章：只认钻石/会员字形本身。
+          // 注意不可写成宽泛的 'svg' 或 '.material-symbols-outlined' —— navbar-end 下还有
+          // 主题、语言等大量图标，取「第一个」会拿到与 VIP 无关的图标而误判，
+          // 导致非 VIP 账号被当成 VIP、进而跳过移动端鉴权流程。
+          const icons = userMenu.querySelectorAll(
             '.material-symbols-outlined, .material-icons, [class*="icon-"], svg'
           );
-          if (vipIcon) {
-            const iconName = (vipIcon.className || '') + ' ' +
-              (vipIcon.getAttribute('data-icon') || vipIcon.getAttribute('aria-label') || '') + ' ' +
-              (vipIcon.textContent || '');
-            if (/diamond|workspace_premium|crown|verified/i.test(iconName)) return true;
+          for (let i = 0; i < icons.length; i++) {
+            const el = icons[i];
+            if (el.closest('a[href*="/vip"], a[href*="/plans"]')) continue;
+            const iconName = [
+              el.className || '',
+              el.getAttribute('data-icon') || '',
+              el.getAttribute('aria-label') || '',
+              el.getAttribute('title') || ''
+            ].join(' ');
+            if (/diamond|workspace_premium|crown|verified|auto_awesome|emoji_events/i.test(iconName)) return true;
           }
         }
       }
