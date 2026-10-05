@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.352-fusion-vipdetect
+// @version      7.353-fusion-probetop
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -171,6 +171,11 @@
 
   function isJavdbVipUser() {
     try {
+      // 手动锁定优先级最高：徽章识别在任何皮肤/主题下都可能失效。
+      // 注意：TOP250 数据源已改为「直接试网页端」不再依赖本函数；
+      // 这里只用于评论/相关清单绕过——误判的代价仅是「多做一次无用绕过」，
+      // 不会导致功能失效，所以保留徽章识别作为提示即可。
+      if (localStorage.getItem('jf_force_web_top') === '1') return true;
       if (!isJavdbUserLoggedIn()) return false;
       const nav = document.querySelector('nav.navbar.is-fixed-top.main-nav, .navbar');
       if (nav) {
@@ -209,8 +214,6 @@
       // 站点可能把 VIP 状态放在全局标记里，作为最后兜底
       if (document.body && document.body.dataset && (document.body.dataset.vip === '1' || document.body.dataset.vip === 'true')) return true;
       if (localStorage.getItem('javdb_is_vip') === '1') return true;
-      // 用户可手动锁定「我已是 VIP」，彻底绕开徽章识别差异
-      if (localStorage.getItem('jf_force_web_top') === '1') return true;
     } catch (e) {}
     return false;
   }
@@ -9465,43 +9468,46 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     }
 
     // 2. 获取 TOP250 榜单
-    //    VIP（及强制网页端模式）：只读官方网页 /rankings/top，不碰移动端 API、无需 Token；
-    //    非 VIP：走移动端 API，需要登录/粘贴 Token。
+    //
+    //    数据源选择方式（v7.353 重构）：**不判断你是不是 VIP**，而是直接试网页端。
+    //
+    //    理由：VIP 徽章在不同主题下可能是文字、也可能是纯图标，靠 class 名/图标字形
+    //    去猜非常脆弱（7.351/7.352 两次都在这里出错）。而 /rankings/top 对未登录
+    //    与已登录**都返回 HTTP 200**，差别只在响应体：
+    //      未登录 → `window.location.href='/login';`（没有任何 .item 卡片）
+    //      已登录 → 完整榜单 HTML（含卡片）
+    //    所以「能否解析出卡片」本身就是最可靠的登录态/VIP 判定，无需任何猜测。
+    //
+    //    顺序：先网页端（带当前 Cookie）→ 失败且本地已有 Token 才走移动端 API。
+    //    这样 VIP 用户永远走不到移动端分支，也就不会被弹 Token 框、
+    //    不会因共用凭据而把手机端登录态挤掉。
     async function fetchTop(handleType, typeValue, page, bypassCache) {
       const token = getAuthToken();
-      const preferWebSession = isJavdbVipUser();
-      // 缓存键带上数据源标记：切换来源后不会读到另一种来源留下的旧缓存
-      const srcTag = preferWebSession ? 'web' : (token ? 'api' : 'web');
-      const cacheKey = 'top_' + srcTag + '_' + handleType + '_' + typeValue + '_p' + page;
+      // 缓存键带来源标记：切换数据源后不会读到另一种来源留下的旧缓存
+      const cacheKey = 'top_' + (token ? 'api' : 'web') + '_' + handleType + '_' + typeValue + '_p' + page;
       if (!bypassCache) {
         const cached = await getCached(cacheKey, 86400000); // 24小时持久化缓存
         if (cached && cached.length) return { success: 1, data: { movies: cached }, fromCache: true };
       }
 
-      // 数据源优先级（v7.351）：
-      //   VIP 已登录  → 直接用网页会话读官方 TOP250，**完全不碰移动端 API**，
-      //                  也就不会弹出 Token 登录框、不会挤掉手机端登录态。
-      //   非 VIP      → 走移动端 API（需要用户自行登录/粘贴 Token）。
-      //   VIP 但网页会话失效 → 回退移动端 API（若已存 Token），
-      //                  再不行才提示登录，避免已登录用户被无故要求 Token。
-      if (preferWebSession || !token) {
-        try {
-          const movies = await fetchOfficialTop(handleType, typeValue, page);
-          // 网页端按 ?p=<page> 原生分页，每次只返回当前页，因此只缓存本页；
-          // 旧实现会把第 1 页切片后预写 p=1..5，那在网页端是错的（每页独立请求），
-          // 会导致 p=2..5 读到第 1 页的残片。
-          await setCached(cacheKey, movies);
-          return { success: 1, data: { movies: movies }, fromJavdbSession: true };
-        } catch (e) {
-          // VIP 网页端读取失败：若已有移动端 Token，仍可回退，不必立刻要求重新登录。
-          if (!(preferWebSession && token)) throw e;
-          return await fetchTopViaMobileApi(handleType, typeValue, page, cacheKey, token, e);
-        }
+      // 第一步：始终先试网页端。成功即完全不会触碰移动端 API。
+      try {
+        const movies = await fetchOfficialTop(handleType, typeValue, page);
+        // 网页端按 ?p=<page> 原生分页，每次只返回当前页，因此只缓存本页；
+        // 旧实现会把第 1 页切片后预写 p=1..5，那在网页端是错的（每页独立请求），
+        // 会导致 p=2..5 读到第 1 页的残片。
+        const webKey = 'top_web_' + handleType + '_' + typeValue + '_p' + page;
+        await setCached(webKey, movies);
+        return { success: 1, data: { movies: movies }, fromJavdbSession: true };
+      } catch (webErr) {
+        // 第二步：网页端读不到。已存 Token 时降级到移动端 API，
+        // 没有 Token 才把网页端的真实原因抛给界面。
+        if (!token) throw webErr;
+        return await fetchTopViaMobileApi(handleType, typeValue, page, cacheKey, token, webErr);
       }
-      return await fetchTopViaMobileApi(handleType, typeValue, page, cacheKey, token, null);
     }
 
-    // 移动端 API 路径：仅非 VIP，或 VIP 网页会话失效且本地已有 Token 时才走。
+    // 移动端 API 路径：仅在网页端读不到数据、且本地已存 Token 时才会走到。
     async function fetchTopViaMobileApi(handleType, typeValue, page, cacheKey, token, webSessionError) {
       const url = API_BASE + '/v1/movies/top?start_rank=1&type=' + encodeURIComponent(handleType) +
                   '&type_value=' + encodeURIComponent(typeValue) +
@@ -9979,9 +9985,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       const uncachedPages = [];
 
       for (let p = 1; p <= 5; p++) {
-        // 与 fetchTop 保持同一套缓存键（含数据源标记），否则切换数据源后会读到旧来源的残留缓存
-        const srcTag = isJavdbVipUser() ? 'web' : (getAuthToken() ? 'api' : 'web');
-        const cacheKey = 'top_' + srcTag + '_' + handleType + '_' + typeValue + '_p' + p;
+        // 与 fetchTop 保持同一套缓存键。网页端结果统一落在 top_web_*，
+        // 不再依赖 isJavdbVipUser() 判断（该判断已因脆弱被移除）。
+        const cacheKey = 'top_web_' + handleType + '_' + typeValue + '_p' + p;
         const cached = await getCached(cacheKey, 86400000);
         if (cached && cached.length) {
           allMovies[p - 1] = cached;
@@ -27908,11 +27914,11 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<label class="jf-set-row"><input type="checkbox" id="jfTrReplaceNative" ' + (TrConf.replaceNative ? 'checked' : '') + '> 将 JAVDB 原生预告片改为脚本播放器</label>' +
           '</div>' +
           '<div class="jf-set-sec" style="margin-top:12px;opacity:.6;">DMM/FANZA 片源按最高画质优先；关闭播放器会取消未完成请求。原生替换开关只接管预览影片，不影响 JAVDB 图片灯箱。</div>' +
-          '<div class="jf-set-sec" style="margin-top:14px;">TOP250 数据源</div>' +
+          '<div class="jf-set-sec" style="margin-top:14px;">会员状态</div>' +
           '<div class="jf-set-sec" style="margin-top:6px;display:flex;flex-direction:column;gap:8px;">' +
-            '<label class="jf-set-row"><input type="checkbox" id="jfForceWebTop" ' + (localStorage.getItem('jf_force_web_top') === '1' ? 'checked' : '') + '> 强制使用网页端榜单（VIP 推荐）</label>' +
+            '<label class="jf-set-row"><input type="checkbox" id="jfForceWebTop" ' + (localStorage.getItem('jf_force_web_top') === '1' ? 'checked' : '') + '> 我已开通 VIP（手动锁定）</label>' +
           '</div>' +
-          '<div class="jf-set-sec" style="margin-top:6px;opacity:.6;">勾选后 TOP250 只读取官方网页 <code>/rankings/top</code>，<b>完全不使用移动端 API、也不需要 Token</b>，不会影响手机端登录态。VIP 账号通常会自动启用；若徽章识别失败导致仍提示登录，可手动勾选此项。</div>';
+          '<div class="jf-set-sec" style="margin-top:6px;opacity:.6;">TOP250 与热播榜<b>始终优先直接读取官方网页</b>（<code>/rankings/top</code>），全程不使用移动端 API、也不需要 Token，不会影响手机端登录态；脚本靠「能否解析出榜单卡片」自动判断会话是否有效，无需此处设置。此选项仅用于修正评论/相关清单绕过功能的会员识别——若你的 VIP 徽章没被识别到、评论展开功能对 VIP 仍然生效，勾选此项即可。</div>';
         const bind = function (id, key) { body.querySelector('#' + id).addEventListener('change', function (e) { GM_setValue(key, e.target.checked); }); };
         bind('jfTrOfficial', 'jf_tr_official'); bind('jfTrDmm', 'jf_tr_dmm');
         bind('jfTrDirect', 'jf_tr_direct'); bind('jfTrSpyl', 'jf_tr_javspyl');
@@ -27924,8 +27930,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           try {
             localStorage.removeItem('javdb_top250_force_web');
           } catch (err) {}
-          ftoast(e.target.checked ? '已切换为网页端榜单，无需 Token' : '已恢复自动判断数据源');
-          loadData && loadData();
+          ftoast(e.target.checked ? '已标记为 VIP（评论绕过功能将不再劫持页面）' : '已恢复自动识别会员状态');
         });
       }
 
