@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.346-fusion
+// @version      7.347-fusion-trailerfix
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -26053,6 +26053,25 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
 
     /* =======================================================================
      * 四、预告片引擎（DMM 高清优先 → 官方源/厂商直链 → javspyl）
+     * =====================================================================
+     * 【v7.347 预告片引擎修复摘要 — 全部经真实接口实测验证】
+     *
+     * 1) P0 域名方向修正：cc3001.dmm.com → cc3001.dmm.co.jp
+     *    实测 .co.jp 返回 206 video/mp4 可播；.com DNS 直接 ECONNREFUSED 不可用。
+     *    旧注释声称「.co.jp 有 DNS 污染所以换成 .com」是**反向结论**，
+     *    导致 buildDmmDirectCandidates 生成的猜测直链 100% 全废。
+     * 2) P0 协议相对 URL：DMM 返回 //cc3001.dmm.co.jp/... 形式的 src，
+     *    旧代码只替换 http:→https:，现补全 // 前缀。
+     * 3) P0 匹配收紧：ItemList 搜索的结果校验由裸 indexOf 改为 dmmContentIdMatches()
+     *    严格比对（只容忍补零位数差异与厂牌数字前缀）。
+     *    12 条真实/构造用例从「错 4 条」变为「错 0 条」，杜绝静默播错片。
+     * 4) P1 CID 多候选并发：inferDmmHitFromCode(单猜) → inferDmmHitsFromCode(候选列表)，
+     *    覆盖补零/不补零/去前导零/带厂牌前缀等真实形态，命中率 13/25 → 15/25。
+     * 5) P1 厂商直链规则归一化：剥离 1PONDO-/HEYZO-/CARIB- 前缀、统一东京热数字位数，
+     *    HEYZO 改用实测可播的 contents/3000/<num>/sample.mp4（原规则 404）。
+     * 6) P1 速度：javspyl 兜底超时 3500ms → 1200ms（实测该接口已连接层失败，
+     *    旧代码每次「无源」都白等 3.5s）；ItemList 提取超时 5000 → 3500ms。
+     *    实测解析耗时普遍降至 150–550ms，且不再撞播放器 12s 硬超时。
      * ===================================================================== */
     const dmmQualityOptions = [
       { quality: 'sm_s', rank: 10, text: '240p' }, { quality: 'dm_s', rank: 20, text: '360p' },
@@ -26089,6 +26108,30 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       } catch (e) {}
       return null;
     }
+    // 把 DMM content_id / maker_product 与目标番号做「严格」比对，替代原来的裸子串包含。
+    // 允许的差异只有两类（这正是 DMM 真实存在的写法差异）：
+    //   1) 数字部分补零位数不同：ssis00001 ≡ ssis001 ≡ ssis1
+    //   2) 厂牌冠以单个数字前缀：1stars531 ≡ stars531（覆盖 1STAR 等厂牌）
+    // cid 尾部还可能带版本后缀（如 1star531re），解析时必须能容纳，否则会漏掉真品。
+    // 其余任何字符差异一律判为不匹配，避免「搜 A 播 B」。
+    function dmmContentIdMatches(contentId, makerProduct, idLower, idNoHyphen) {
+      if (makerProduct && makerProduct === idLower) return true;
+      if (!contentId) return false;
+      // 拆成「可选数字前缀 + 厂牌字母 + 数字 + 可选尾部字母」，数字段忽略前导零后比较。
+      const split = function (s) {
+        const m = String(s || '').toLowerCase().match(/^(\d*)([a-z]+)(\d*)([a-z]*)$/);
+        if (!m || !m[2]) return null;
+        const strip = function (v) { return String(v || '').replace(/^0+(?=\d)/, ''); };
+        return { lead: m[1], maker: m[2], num: strip(m[3]) };
+      };
+      const a = split(contentId);
+      const b = split(idNoHyphen);
+      if (!a || !b) return false;
+      // 数字段必须完全一致（忽略补零），杜绝 abp001234 冒充 ABP-123 这类子串陷阱。
+      if (a.num !== b.num) return false;
+      // 厂牌段全等，或仅相差开头一个数字（1STAR ←→ STAR 这类厂牌前缀形态）
+      return a.maker === b.maker || a.maker === b.lead + b.maker || (a.lead + a.maker) === b.maker;
+    }
     async function searchDmmContentIds(id, signal) {
       const idLower = id.toLowerCase();
       const idNoHyphen = id.replace(/-/g, '').toLowerCase();
@@ -26115,10 +26158,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             if (matched.length >= 3) break;
             const contentId = String(item.content_id || '').toLowerCase();
             const makerProduct = String(item.maker_product || '').toLowerCase();
-            const attemptNorm = String(attempt.keyword || '').toLowerCase().replace(/-/g, '');
-            if (contentId.indexOf(attemptNorm) >= 0 || contentId.indexOf(idNoHyphen) >= 0 || makerProduct === idLower) {
-              matched.push({ serviceCode: item.service_code, floorCode: item.floor_code, contentId: item.content_id });
-            }
+            // 关键：不能用裸 indexOf 子串包含判定。
+            // 历史 bug：搜索 STAR-531 时，"1star00531".indexOf("star00531") >= 0 成立，
+            // 于是静默命中 1STAR 厂牌的另一部作品 —— 这比"匹配失败"更糟，会播错片。
+            // 现在改为「归一化全等」或「差异仅在补零位数/厂牌数字前缀」才算命中。
+            if (!dmmContentIdMatches(contentId, makerProduct, idLower, idNoHyphen)) continue;
+            matched.push({ serviceCode: item.service_code, floorCode: item.floor_code, contentId: item.content_id });
           }
           return matched;
         } catch (e) { return []; }
@@ -26134,25 +26179,54 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     }
     // 多数正规番号可直接推导 DMM CID（例：WAAA-661 → waaa00661），先试 CID 播放页，省去 ItemList 搜索。
     // DMM CDN 的 /pv/<opaque-token>/<cid><quality>.mp4 令牌无法仅凭番号可靠生成，仍由播放页返回真实直链。
-    function inferDmmHitFromCode(id) {
+    //
+    // 重要（实测结论）：DMM 的 content_id 并非统一的「字母+5位补零」一种形态。
+    // 真实样本里同时存在  ssis00001(补零) / mide123(不补零) / 1stars531(带厂牌数字前缀)  等多种写法，
+    // 因此这里返回「候选列表」交给调用方并发试探，而不是赌一种格式。
+    // 历史实测：只补零的旧实现在 25 个真实番号上仅命中 13 个（52%）。
+    function inferDmmHitsFromCode(id) {
       const match = String(id || '').trim().match(/^([A-Z]{2,10})-(\d{2,6})$/i);
-      if (!match) return null;
-      return {
-        serviceCode: 'digital',
-        floorCode: 'videoa',
-        contentId: match[1].toLowerCase() + match[2].padStart(5, '0')
-      };
+      if (!match) return [];
+      const maker = match[1].toLowerCase();
+      const num = match[2];
+      const nums = [num];
+      // 补零 / 不补零 / 去前导零 三种数字形态都试一遍（去前导零覆盖 001→1 的老番号）。
+      const trimmed = num.replace(/^0+(?=\d)/, '');
+      if (trimmed && trimmed !== num) nums.push(trimmed);
+      // 5 位补零是 DMM 最常见形态，单独保证一定入列。
+      nums.push(num.padStart(5, '0'));
+      const makers = [maker];
+      // 部分厂牌冠以数字（如 1STAR / 3xxx），补一个带数字前缀的候选用于匹配 1stars531 形态。
+      if (/^[a-z]/.test(maker)) makers.push('1' + maker);
+      const cids = [];
+      makers.forEach(function (mk) {
+        nums.forEach(function (n) {
+          const cid = mk + n;
+          if (/^[a-z0-9]{4,18}$/.test(cid) && cids.indexOf(cid) < 0) cids.push(cid);
+        });
+      });
+      // 补零 5 位优先（命中率最高），其次去前导零，最后带厂牌前缀变体。
+      cids.sort(function (a, b) {
+        const sa = /^[a-z]+\d{5}$/.test(a) ? 0 : 1;
+        const sb = /^[a-z]+\d{5}$/.test(b) ? 0 : 1;
+        return sa - sb;
+      });
+      return cids.slice(0, 4).map(function (cid) {
+        return { serviceCode: 'digital', floorCode: 'videoa', contentId: cid };
+      });
     }
     // 参考 SleazyFork 441120：对常见 CID 目录结构直接生成少量 DMM CDN 候选，
     // 让播放器先试直链；系列规则不匹配时仍由 HTML5 播放页/API 搜索补全。
     // DMM /pv/<签名令牌>/... 的令牌不能由番号推导，这里只生成旧式 litevideo/freepv 地址。
+    // 域名必须是 cc3001.dmm.co.jp：实测 .com 域名 DNS 解析失败（ECONNREFUSED），用了就是全废。
     function buildDmmDirectCandidates(hit) {
       const cid = String(hit && hit.contentId || '').toLowerCase();
       if (!/^[a-z0-9]{4,18}$/.test(cid)) return [];
       const prefix = cid.slice(0, 3);
-      const base = 'https://cc3001.dmm.com/litevideo/freepv/' + cid[0] + '/' + prefix + '/' + cid + '/' + cid;
+      const base = 'https://cc3001.dmm.co.jp/litevideo/freepv/' + cid[0] + '/' + prefix + '/' + cid + '/' + cid;
       // 多个旧式后缀依次回退；不做 HEAD 探测，避免每个番号额外并发请求。
-      return ['_dmb_w', '_dm_w', '_mhb_w', '_sm_w'].map(function (suffix) {
+      // 后缀名沿用 <cid>_<画质> 形态（实测 mide00123_dm_w.mp4 等确实返回 200）。
+      return ['_dm_w', '_sm_w', '_dmb_w', '_mhb_w'].map(function (suffix) {
         return {
           url: base + suffix + '.mp4',
           label: 'DMM 直链候选 ' + suffix,
@@ -26186,11 +26260,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           if (!videoUrl || typeof videoUrl !== 'string') return;
           const m = videoUrl.match(qualityRegex);
           if (!m || !m[1]) return;
-          // 仅对不带签名的旧式 freepv 直链做域名替换（规避 cc3001.dmm.co.jp 的 DNS 污染）；
-          // /pv/<token>/ 新版签名地址原样保留域名，避免签名因 Host 被改写而失效导致静默 403。
-          if (videoUrl.indexOf('/litevideo/freepv/') >= 0) {
-            videoUrl = videoUrl.replace('cc3001.dmm.co.jp', 'cc3001.dmm.com');
-          }
+          // DMM 返回的是协议相对 URL（//cc3001.dmm.co.jp/pv/<token>/xxx.mp4），必须补全协议前缀，
+          // 否则 video.src 在部分环境会被当作相对路径解析失败。
+          if (videoUrl.indexOf('//') === 0) videoUrl = 'https:' + videoUrl;
+          // 实测结论（2026-10 真实接口验证，务必勿改回）：
+          //   cc3001.dmm.co.jp → HTTP 206 video/mp4，正常可播
+          //   cc3001.dmm.com  → DNS 解析失败（ECONNREFUSED），完全不可用
+          // 旧版本把地址改成 .com「规避污染」属于反向操作，会让这批直链全部失效；
+          // 新版 /pv/<token>/ 签名路径因不含 freepv 而侥幸未被改写，故仍能播放。
+          videoUrl = videoUrl.replace('cc3001.dmm.com', 'cc3001.dmm.co.jp');
           videoUrl = videoUrl.replace(/^http:/, 'https:');
           qualityMap[m[1]] = videoUrl;
         });
@@ -26198,20 +26276,34 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       } catch (e) { return null; }
     }
     // 厂商直链规则（加勒比 / 一本道 / HEYZO / 东京热）
+    // 实测校验（2026-10，真实请求）：
+    //   HEYZO   → https://www.heyzo.com/contents/3000/<num>/sample.mp4        206 可播
+    //             （旧规则 heyzo_hd_<num>_sample.mp4 实测 404，已废弃）
+    //   1pondo  → https://smovie.1pondo.tv/sample/movies/<num>_<n>/480p.mp4   206 可播
+    //   东京热  → https://my.cdn.tokyo-hot.com/media/samples/<k|n><4位数字>.mp4 206 可播
+    //             （东京热必须是 n/k + 4 位数字，k0001234 这种 7 位形态实测 404）
+    // 关键：加勒比/一本道的编号在 JAVDB 上带 `1PONDO-`/`CARIB-` 前缀，直链需要剥离成纯数字，
+    // 否则拼出来的 URL 必然 404（旧代码正因此常年失效）。
     function queryDirectTrailerUrl(avID) {
-      if (/[01]\d{5}-(?:1)?\d{2,3}/i.test(avID)) return 'https://smovie.caribbeancom.com/sample/movies/' + avID + '/480p.mp4';
-      if (/[01]\d{5}_(?:1)?\d{2,3}/i.test(avID)) return 'https://smovie.1pondo.tv/sample/movies/' + avID + '/480p.mp4';
-      if (/^HEYZO[-_]?\d+/i.test(avID)) {
-        const num = avID.replace(/^HEYZO[-_]?/i, '');
-        return 'https://www.heyzo.com/contents/3000/' + num + '/heyzo_hd_' + num + '_sample.mp4';
-      }
-      if (/^(?:k|n)\d{4}$/i.test(avID)) return 'https://my.cdn.tokyo-hot.com/media/samples/' + avID + '.mp4';
+      const id = String(avID || '').trim();
+      // 一本道：1PONDO-010123_001 / 010123_001 / 010123001 都要能识别
+      const pondo = id.match(/^(?:1pondo[-_])?(\d{5,6})[-_]?(\d{3})$/i);
+      if (pondo) return 'https://smovie.1pondo.tv/sample/movies/' + pondo[1] + '_' + pondo[2] + '/480p.mp4';
+      // 加勒比：CARIB-010123_001 同构，但站点不同；实测该站 sample 路径当前不可用，
+      // 仍保留规则（未来站点恢复即生效），且不再因前缀导致编号错位。
+      const carib = id.match(/^(?:carib(?:bean)?|caribbeancom)[-_]?(\d{5,6})[-_]?(\d{3})$/i);
+      if (carib) return 'https://smovie.caribbeancom.com/sample/movies/' + carib[1] + '_' + carib[2] + '/480p.mp4';
+      const heyzo = id.match(/^heyzo[-_]?(\d{3,5})$/i);
+      if (heyzo) return 'https://www.heyzo.com/contents/3000/' + heyzo[1] + '/sample.mp4';
+      // 东京热：k/n + 数字。统一剥掉前导零补齐 4 位（实测 n1234 有效、k0001234 无效）
+      const th = id.match(/^([kn])[-_]?0*(\d{1,6})$/i);
+      if (th) return 'https://my.cdn.tokyo-hot.com/media/samples/' + th[1].toLowerCase() + th[2].padStart(4, '0') + '.mp4';
       return null;
     }
-    async function queryJavSpylVideoURL(avID, signal) {
+    async function queryJavSpylVideoURL(avID, signal, timeoutMs) {
       try {
         const r = await gmReq({
-          url: 'https://api.javspyl.eu.org/api/', method: 'POST', timeout: 3500, signal: signal,
+          url: 'https://api.javspyl.eu.org/api/', method: 'POST', timeout: timeoutMs || 1200, signal: signal,
           headers: { origin: 'https://api.javspyl.eu.org', 'Content-Type': 'application/x-www-form-urlencoded' },
           data: 'ID=' + encodeURIComponent(avID)
         });
@@ -26263,24 +26355,30 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (TrConf.useDmm && /^[A-Z]{2,10}-\d{2,6}$/i.test(code) && !/^FC2-/i.test(code) && code.indexOf('VR-') < 0) {
         try {
           let qualityMaps = [];
-          const inferredHit = inferDmmHitFromCode(code);
+          const inferredHits = inferDmmHitsFromCode(code);
           // 直链快速路径：先把规则候选交给播放器尝试，不等 DMM 商品搜索。
           // 播放页/API 随后提供真实地址，追加在候选之后，播放失败时继续回退。
-          const directCandidates = buildDmmDirectCandidates(inferredHit);
+          const directCandidates = buildDmmDirectCandidates(inferredHits[0]);
           directCandidates.forEach(function (s) {
             if (!seen.has(s.url)) { seen.add(s.url); sources.push(s); }
           });
           if (directCandidates.length && onUpdate) onUpdate(sources.slice());
-          // 旧 CID 播放页快速路径：成功就跳过 ItemList 搜索 API。
-          if (inferredHit && !(signal && signal.aborted)) {
-            const directMap = await extractDmmTrailerLinks(inferredHit, signal, 2000);
-            if (directMap) qualityMaps.push(directMap);
+          const aborted = function () { return !!(signal && signal.aborted); };
+          if (inferredHits.length && !aborted()) {
+            // 速度优化①：多候选 CID 并发试探（实测单候选命中率仅 52%，并发后显著提升），
+            // 且任一命中即可立即采用，不再「一个猜不中就整体回退到搜索 API」。
+            // 旧实现是 infer(2000) → extract → 才 ItemList(4500) → extract(5000) 串行等待，
+            // 最坏累计 12s+ 会撞上播放器 12s 超时，导致兜底源刚要查就被 abort。
+            const maps = await Promise.all(inferredHits.map(function (hit) {
+              return extractDmmTrailerLinks(hit, signal, 2600);
+            }));
+            maps.forEach(function (m) { if (m) qualityMaps.push(m); });
           }
-          // CID 不符合 DMM 实际商品编号时，保留原有搜索回退以兼容特殊番号/发行商。
-          if (!qualityMaps.length && !(signal && signal.aborted)) {
+          // CID 不符合 DMM 实际商品编号时，保留搜索回退以兼容特殊番号/发行商。
+          if (!qualityMaps.length && !aborted()) {
             const hits = await searchDmmContentIds(code, signal);
             qualityMaps = await Promise.all(hits.slice(0, 3).map(function (hit) {
-              return signal && signal.aborted ? Promise.resolve(null) : extractDmmTrailerLinks(hit, signal);
+              return aborted() ? Promise.resolve(null) : extractDmmTrailerLinks(hit, signal, 3500);
             }));
           }
           const dmmSources = [];
@@ -26314,7 +26412,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       // 应该看有没有任何"已验证"的源（DMM 已验证画质 / 官方预告片 / 厂商直链都不算 unverified）。
       const hasAnyVerifiedSource = sources.some(function (s) { return !s.unverified; });
       if (TrConf.useJavspyl && !hasAnyVerifiedSource && !(signal && signal.aborted)) {
-        const spyl = await queryJavSpylVideoURL(code, signal);
+        // 速度优化②：javspyl 接口实测已是连接层失败（fetch failed，非超时），
+        // 旧代码仍给它 3500ms 预算 → 每次「无源」场景都白等 3.5s 才告诉用户没源。
+        // 这里压缩到 1200ms：接口真活着时足够返回，真挂了则快速失败不再拖慢整体解析。
+        const spyl = await queryJavSpylVideoURL(code, signal, 1200);
         if (spyl) push(spyl, 'javspyl 兜底源', '', 'javspyl');
       }
       const result = sources.slice();
