@@ -22817,8 +22817,11 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   function buildHomeTabs(movieListEl) {
     if (!movieListEl) return;
     const parent = movieListEl.parentNode;
-    // 找到容器最顶部锚点（原生分类栏/工具栏或容器首个元素），导航按钮必须置于其上方
-    const topAnchor = parent ? (parent.querySelector('.tabs, .main-tabs, .toolbar') || parent.firstElementChild || movieListEl) : movieListEl;
+    // 找到容器最顶部锚点（原生分类栏/工具栏或容器首个元素），导航按钮必须置于其上方；
+    // querySelector 可能命中嵌套后代（非直接子节点），insertBefore 会抛 NotFoundError，
+    // 此处强制校验父子关系，非法时回退到 movieListEl（必为直接子节点）。
+    let topAnchor = parent ? (parent.querySelector('.tabs, .main-tabs, .toolbar') || parent.firstElementChild || movieListEl) : movieListEl;
+    if (!topAnchor || topAnchor.parentNode !== parent) topAnchor = movieListEl;
 
     if (homeTabsBuilt && homeTabsBar && homeTabsBar.isConnected) {
       // 已建过且在文档中：确保标签栏移到当前主页最顶部（置于原生分类条之上）
@@ -25529,7 +25532,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       });
       const ml = document.querySelector('.movie-list');
       if (ml && ml.parentNode) {
-        const topAnchor = ml.parentNode.querySelector('.tabs, .main-tabs, .toolbar') || ml.parentNode.firstElementChild || ml;
+        // 同 buildHomeTabs：锚点必须校验为直接子节点，否则 insertBefore 抛 NotFoundError
+        let topAnchor = ml.parentNode.querySelector('.tabs, .main-tabs, .toolbar') || ml.parentNode.firstElementChild || ml;
+        if (!topAnchor || topAnchor.parentNode !== ml.parentNode) topAnchor = ml;
         if (topAnchor && topAnchor !== tabsBar) {
           ml.parentNode.insertBefore(tabsBar, topAnchor);
         } else {
