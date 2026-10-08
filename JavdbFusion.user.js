@@ -21551,6 +21551,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     /* ---------- 预览画廊：详情页灯箱收藏按钮（B 方案） ---------- */
     function initGalleryCollect() {
       if (document.getElementById('efav-gallery-collect')) return; // 幂等
+      // document-start 时 <body> 可能尚未解析，其后所有 body 操作（appendChild/observe）都会抛错掐死整个脚本；
+      // body 未就绪则整体延后到 DOMContentLoaded（回归套件复现，真机 TM 恰好躲过）。
+      if (!document.body) {
+        document.addEventListener('DOMContentLoaded', initGalleryCollect, { once: true });
+        return;
+      }
       const btn = document.createElement('button');
       btn.id = 'efav-gallery-collect';
       btn.className = 'efav-gallery-collect';
