@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.361-regress-harness
+// @version      7.362-obs3-fixed
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -165,7 +165,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.361-regress-harness';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.362-obs3-fixed';
   var tabHome = null, tabFav = null, favPanel = null;
   var tabGallery = null, galleryPanel = null;
   var tabTop250 = null, top250Panel = null;
@@ -2371,7 +2371,11 @@ html.emby-skin .columns[data-controller="movie-tab"] .magnet-links .item { backg
 html.emby-skin .columns[data-controller="movie-tab"] .magnet-name a { color:var(--e-accent); word-break:break-all; }
 html.emby-skin .columns[data-controller="movie-tab"] .magnet-name .name { font-weight:600; }
 html.emby-skin .columns[data-controller="movie-tab"] .magnet-name .meta { color:var(--e-text3); font-size:.82em; }
-/* 顶部与内容广告位（纯推广 / 磁链评论区推广横幅）在 Emby 皮肤下全面隐藏，保持整洁 */
+/* 顶部与内容广告位（纯推广 / 磁链评论区推广横幅 / 官方App下载条）在 Emby 皮肤下全面隐藏，保持整洁 */
+html.emby-skin nav.app-desktop-banner,
+html.emby-skin nav.app-mobile-banner,
+html.emby-skin .app-desktop-banner,
+html.emby-skin .app-mobile-banner,
 html.emby-skin .moj-content,
 html.emby-skin .moj-container,
 html.emby-skin .moj-banner,
@@ -15705,6 +15709,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     const adSelectors = [
       '.moj-content', '.moj-container', '.moj-banner', '.moj-wrap', '[class*="moj-"]',
       '.sda-content', '.sda-container', '.sda-banner', '.sda-wrap', '[class*="sda-"]', '[class*="-sda"]',
+      'nav.app-desktop-banner', 'nav.app-mobile-banner', '.app-desktop-banner', '.app-mobile-banner',
       '#magnets-content .sda-content', '#magnets .sda-content', '.magnet-links .sda-content',
       '.columns[data-controller*="movie"] .moj-content', '.columns[data-controller*="movie"] .sda-content',
       '.columns .moj-content', '.columns .sda-content',
