@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.362-obs3-fixed
+// @version      7.363-top250-web-first
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -165,7 +165,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.362-obs3-fixed';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.363-top250-web-first';
   var tabHome = null, tabFav = null, favPanel = null;
   var tabGallery = null, galleryPanel = null;
   var tabTop250 = null, top250Panel = null;
@@ -10326,10 +10326,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         return { success: 1, data: { movies: flat }, fromCache: true };
       }
 
-      if (!getAuthToken()) {
-        return { success: 0, action: 'JWTVerificationError', message: '请登录账号' };
-      }
-
+      // VIP 网页会话优先：不再要求移动端 Token；fetchTop 内部先试网页端（/rankings/top），
+      // 只有网页端读不到且本地有 Token 时才走移动端 API。之前在此直接判 JWTVerificationError，
+      // 导致已登录 VIP 永远被索要移动端 Token（网页链路实际可用却走不到）。
       for (let i = 0; i < uncachedPages.length; i++) {
         const p = uncachedPages[i];
         if (onProgress) onProgress(i + 1, uncachedPages.length);
