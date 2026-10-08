@@ -1,13 +1,23 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.353-fusion-probetop
+// @version      7.355-merged-friendbase
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
 // @connect      api.github.com
 // @connect      gitee.com
+// @connect      cdn.jsdelivr.net
+// @connect      fastly.jsdelivr.net
+// @connect      raw.githubusercontent.com
+// @connect      translate.googleapis.com
+// @connect      translate-pa.googleapis.com
+// @connect      ja.wikipedia.org
+// @connect      icons.duckduckgo.com
+// @connect      sukebei.nyaa.si
+// @connect      api.javspyl.eu.org
 // @connect      *
+// NOTE: 保留末尾 * 仅用于用户自建 Emby/Jellyfin/qBittorrent 自定义服务器地址（任意内网域名/IP，无法预先白名单）；已知公网域名已在上方显式列出。
 // @description  JAVDB Emby 风格皮肤 x 融合增强：Emby/Jellyfin 媒体库跳转（多服务器+全库索引+入库徽章）、预告片多源播放（官方/DMM/直链/javspyl）、磁力工具箱（复制/qB/115/验车）、右侧磁力聚合搜索框。界面全面毛玻璃化融合。
 // @author       hy3 (skin) + dmdx (JavdbBuddy model) + ZiPenOk (trailer/magnet) + fusion
 // @icon         data:image/png;base64,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
@@ -113,11 +123,64 @@
     } catch (e) {}
   }
   ensureImageNoReferrer();
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.353-fusion-probetop';
+  try { setupImgFallbackDelegation(); } catch (e) {}
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.355-merged-friendbase';
   var tabHome = null, tabFav = null, favPanel = null;
   var tabGallery = null, galleryPanel = null;
   var tabTop250 = null, top250Panel = null;
   var scoreMemCache = new Map(); // 全局共享评分缓存，供通用评分提取与各榜单/详情联动
+  // LRU 上限：防止长会话无上限增长（Top250/列表页滚动会持续写入）
+  function memCacheSetCapped(map, key, value, maxSize) {
+    try {
+      map.set(key, value);
+      const max = maxSize || 500;
+      if (map.size > max) {
+        const oldest = map.keys().next().value;
+        map.delete(oldest);
+      }
+    } catch (e) { try { map.set(key, value); } catch (_e) {} }
+  }
+  // 全局网络调度：并发上限3 + 同URL GET去重 + 429指数退避，所有 gmHttp/gmReq 走此门
+  var __embyNetActive = 0; var __embyNetQueue = []; var __embyNetPending = new Map();
+  var EMBY_NET_MAX = 3;
+  function __embyNetPump() {
+    while (__embyNetActive < EMBY_NET_MAX && __embyNetQueue.length) {
+      const task = __embyNetQueue.shift();
+      __embyNetActive++;
+      task().then(function () { __embyNetActive--; __embyNetPump(); },
+                 function () { __embyNetActive--; __embyNetPump(); });
+    }
+  }
+  function embyNetRun(key, worker) {
+    // 同一 GET 短窗去重：避免列表/详情/徽章三处同时拉同一评分/索引
+    if (key && __embyNetPending.has(key)) return __embyNetPending.get(key);
+    const p = new Promise(function (resolve, reject) {
+      __embyNetQueue.push(function () {
+        let tries = 0;
+        const attempt = function () {
+          tries++;
+          return worker().then(function (v) { resolve(v); return v; }, function (err) {
+            const msg = (err && err.message) ? err.message : String(err);
+            if (tries < 3 && /429|403|Rate limit|Too Many/i.test(msg)) {
+              return new Promise(function (r) { setTimeout(r, 800 * tries + Math.random() * 400); }).then(attempt);
+            }
+            reject(err); throw err;
+          }).then(function (v) {
+            if (key) __embyNetPending.delete(key);
+            return v;
+          }, function (e) {
+            if (key) __embyNetPending.delete(key);
+            throw e;
+          });
+        };
+        return attempt();
+      });
+      __embyNetPump();
+    });
+    // 必须在返回后挂清理，避免同步 throw 导致 Map 残留
+    if (key) { __embyNetPending.set(key, p); p.then(function () {}, function () {}); }
+    return p;
+  }
   function log(m) { try { console.log('[JAVDB→Emby] ' + m); } catch (e) {} }
   log('脚本已注入页面');
   window.__javdbEmbyVersion = VERSION;
@@ -143,6 +206,77 @@
     const clean = u.trim();
     try { return new URL(clean, base || location.href).href; }
     catch (e) { return clean.startsWith('http') ? clean : (location.origin + (clean.startsWith('/') ? '' : '/') + clean); }
+  }
+
+  // 字体异步加载：Google Fonts <link> 非阻塞 + 预连接，失败回退系统字体；替代 CSS 内 @import（注入 style 首部的同步 @import 会阻塞首次渲染，国内直连 googleapis 亦慢）
+  function ensureFontLinks() {
+    try {
+      if (document.getElementById('emby-font-mi')) return;
+      const pre1 = document.createElement('link');
+      pre1.rel = 'preconnect'; pre1.href = 'https://fonts.googleapis.com'; pre1.id = 'emby-font-pre1';
+      const pre2 = document.createElement('link');
+      pre2.rel = 'preconnect'; pre2.href = 'https://fonts.gstatic.com'; pre2.setAttribute('crossorigin', 'anonymous'); pre2.id = 'emby-font-pre2';
+      const l1 = document.createElement('link');
+      l1.id = 'emby-font-mi'; l1.rel = 'stylesheet';
+      l1.href = 'https://fonts.googleapis.com/icon?family=Material+Icons&display=swap';
+      const l2 = document.createElement('link');
+      l2.id = 'emby-font-mso'; l2.rel = 'stylesheet';
+      l2.href = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400,1,0&display=swap';
+      (document.head || document.documentElement).appendChild(pre1);
+      (document.head || document.documentElement).appendChild(pre2);
+      (document.head || document.documentElement).appendChild(l1);
+      (document.head || document.documentElement).appendChild(l2);
+    } catch (e) {}
+  }
+  // 图片容错全局委托（捕获阶段）：替代模板内联 onerror=，CSP 干净且逻辑单点维护
+  // 策略与原内联 handler 等价：data-large → small_covers→thumbs → rhe951l4q→c0 → 官方头像 → 隐藏
+  function handleImgFallback(img) {
+    try {
+      if (!img || img.tagName !== 'IMG' || img.dataset.imgFbDone) return;
+      const d = img.dataset;
+      // 站点 logo：首次走 DuckDuckGo favicon 兜底（原 renderSiteLogoHtml 内联逻辑），二次失败再隐藏
+      if (img.classList && img.classList.contains('emby-site-logo')) {
+        if (!d.fb) {
+          d.fb = '1';
+          try {
+            const h = new URL(img.src).hostname;
+            if (h && h.indexOf('duckduckgo') === -1) { img.src = 'https://icons.duckduckgo.com/ip3/' + h + '.ico'; return; }
+          } catch (e) {}
+        }
+        img.style.display = 'none';
+        if (img.nextElementSibling) img.nextElementSibling.style.display = 'inline-flex';
+        img.dataset.imgFbDone = '1'; return;
+      }
+      if (d.imgFbHide) { img.style.display = 'none'; img.dataset.imgFbDone = '1'; return; }
+      if (d.officialAvatar && img.src !== d.officialAvatar) { img.src = d.officialAvatar; return; }
+      if (d.large && img.src !== d.large) { img.src = d.large; return; }
+      if (img.src.indexOf('/small_covers/') !== -1) { img.src = img.src.replace('/small_covers/', '/thumbs/'); return; }
+      if (img.src.indexOf('c0.jdbstatic.com') === -1 && /https:\/\/.*?\/rhe951l4q/.test(img.src)) {
+        img.src = img.src.replace(/https:\/\/.*?\/rhe951l4q/g, 'https://c0.jdbstatic.com'); return;
+      }
+      // 头像类无后备则隐藏并露出首字母占位（原内联 else 分支行为）
+      if (d.officialAvatar !== undefined || d.gfriendsActress !== undefined) {
+        img.style.display = 'none';
+        if (img.nextElementSibling) img.nextElementSibling.style.display = 'inline-flex';
+        img.dataset.imgFbDone = '1'; return;
+      }
+      img.dataset.imgFbDone = '1';
+    } catch (e) {}
+  }
+  function setupImgFallbackDelegation() {
+    try {
+      if (window.__embyImgFbBound) return;
+      window.__embyImgFbBound = true;
+      document.addEventListener('error', function (e) {
+        const t = e.target;
+        if (t && t.tagName === 'IMG') {
+          // 仅接管脚本自有图片（带我们的数据标记或站点 logo 类），原生站内图保持原生行为
+          if (t.dataset && (t.dataset.large || t.dataset.officialAvatar !== undefined || t.dataset.gfriendsActress !== undefined || t.dataset.imgFbHide !== undefined || (t.classList && t.classList.contains('emby-site-logo')))) {
+            handleImgFallback(t);
+          }
+        }
+      }, true);
+    } catch (e) {}
   }
 
   /* GM_* 安全垫片：grant 缺失/被禁用时回退 Web 标准 API，只求不抛错、功能降级。
@@ -915,9 +1049,7 @@
   
 function buildEmbyCSS(accent) {
     return `
-@import url('https://fonts.googleapis.com/icon?family=Material+Icons');
-/* Material Symbols（填充态）：新图标（crown/cards_star/file_json 等）不在经典 Material Icons 字体内 */
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400,1,0&display=block');
+/* 字体由 ensureFontLinks() 以 <link> 异步加载，此处不再 @import，避免阻塞首屏 */
 /* ====== 全局变量 —— 来自真实 Emby 抓取 ====== */
 html.emby-skin {
   --e-bg:#16181d; --e-card:#1c1f26; --e-hover:#23272f;
@@ -6580,6 +6712,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   border-color: #38bdf8;
   transform: scale(1.06);
 }
+/* 低动效/低性能兜底：关闭大面积毛玻璃与 heavy transform，列表滚动不再卡 */
+@media (prefers-reduced-motion: reduce) {
+  html.emby-skin .item .box, html.emby-skin .emby-masonry .item { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+}
 
 `;
   }
@@ -8297,7 +8433,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             } else if (det.rating.text) {
               rating = '<span class="ecb-score">' + escapeHtml(det.rating.text) + '</span>';
             }
-            if (det.rating.count) rating += '<span class="ecb-count"> · 由' + det.rating.count + '人評價</span>';
+            if (det.rating.count) rating += '<span class="ecb-count"> · 由' + escapeHtml(String(det.rating.count)) + '人評價</span>';
           }
         }
       } catch (e) { log('紧凑条元数据解析失败: ' + e.message); }
@@ -9331,9 +9467,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   /* =======================================================================
    * 通用安全 HTTP 请求客户端 (支持 GM_xmlhttpRequest 跨域无阻，自动回退 fetch)
    * ===================================================================== */
-  const gmHttp = {
-    request: function (options) {
-      return new Promise(function (resolve, reject) {
+  function gmHttpRawRequest(options) {
+    return new Promise(function (resolve, reject) {
         const method = (options.method || 'GET').toUpperCase();
         const url = options.url;
         const headers = options.headers || {};
@@ -9387,7 +9522,20 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           return res.text();
         }).then(function (value) { finish(resolve, value); }).catch(function (err) { finish(reject, err); });
       });
+  }
+  const gmHttp = {
+    request: function (options) {
+      const opts = options || {};
+      const m = ((opts.method) || 'GET').toUpperCase();
+      const u = opts.url;
+      const dedupeKey = (m === 'GET' && u) ? ('GET ' + u) : null;
+      const run = function () { return gmHttpRawRequest(opts); };
+      try {
+        if (typeof embyNetRun === 'function') return embyNetRun(dedupeKey, run);
+      } catch (e) {}
+      return run();
     },
+    rawRequest: function (options) { return gmHttpRawRequest(options); },
     get: function (url, headers) { return this.request({ method: 'GET', url: url, headers: headers }); },
     post: function (url, data, headers) { return this.request({ method: 'POST', url: url, data: data, headers: headers }); }
   };
@@ -9498,7 +9646,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           req.onsuccess = function () {
             const res = req.result;
             if (res && res.data && (Date.now() - res.time < ttlMs)) {
-              memCache.set(key, { time: res.time, data: res.data });
+              if (typeof memCacheSetCapped === 'function') memCacheSetCapped(memCache, key, { time: res.time, data: res.data }, 300); else memCache.set(key, { time: res.time, data: res.data });
               resolve(res.data);
             } else {
               resolve(null);
@@ -9514,7 +9662,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     async function setCachedMany(entries) {
       const now = Date.now();
       (entries || []).forEach(function (entry) {
-        if (entry && entry.key) memCache.set(entry.key, { time: now, data: entry.data });
+        if (entry && entry.key) { if (typeof memCacheSetCapped === 'function') memCacheSetCapped(memCache, entry.key, { time: now, data: entry.data }, 300); else memCache.set(entry.key, { time: now, data: entry.data }); }
       });
       try {
         const db = await openDB();
@@ -9742,7 +9890,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           try {
             const cached = await getCached('movie_score_' + id, 7 * 86400000);
             if (cached && typeof cached.score !== 'undefined') {
-              scoreMemCache.set(id, cached);
+              memCacheSetCapped(scoreMemCache, id, cached, 500);
               applyScoreToDom(id, cached.score);
               continue;
             }
@@ -9759,7 +9907,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               const score = res.data.movie.score != null ? parseFloat(res.data.movie.score) : 0;
               const watched = res.data.movie.watched_count || 0;
               const info = { score: score, watchedCount: watched };
-              scoreMemCache.set(id, info);
+              memCacheSetCapped(scoreMemCache, id, info, 500);
               await setCached('movie_score_' + id, info);
               applyScoreToDom(id, score);
             }
@@ -9966,7 +10114,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               const score = (mov.score != null && mov.score !== '') ? parseFloat(mov.score) : 0;
               const watched = mov.watched_count != null ? mov.watched_count : 0;
               const sInfo = { score: score, watchedCount: watched };
-              scoreMemCache.set(item.id, sInfo);
+              memCacheSetCapped(scoreMemCache, item.id, sInfo, 500);
 
               const curAward = { name: getCurrentBoardAwardName(state), rank: item._topRank };
               const mergedAwards = mergeMovieAwards(existingRec.awards || (item.itemRef && item.itemRef.awards), curAward);
@@ -10681,7 +10829,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
                   '<img loading="lazy" referrerpolicy="no-referrer" src="' + escapeAttr(coverSrc) + '"' +
                     (coverLargeSrc ? ' data-large="' + escapeAttr(coverLargeSrc) + '"' : '') +
                     (coverThumbSrc ? ' data-thumb="' + escapeAttr(coverThumbSrc) + '"' : '') +
-                    ' alt="" onerror="this.onerror=null;if(this.dataset.large&&this.src!==this.dataset.large){this.src=this.dataset.large;}else if(this.src.indexOf(\'/small_covers/\')!==-1){this.src=this.src.replace(\'/small_covers/\',\'/thumbs/\');}else if(this.src.indexOf(\'c0.jdbstatic.com\')===-1){this.src=this.src.replace(/https:\\/\\/.*?\\/rhe951l4q/g,\'https://c0.jdbstatic.com\');}">' +
+                    ' alt="">' +
                 '</div>' +
                 '<div class="video-title">' +
                   '<strong>' + escapeHtml(code) + '</strong> ' + escapeHtml(title) +
@@ -11077,7 +11225,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
                     '<img loading="lazy" referrerpolicy="no-referrer" src="' + escapeAttr(coverSrc) + '"' +
                       (coverLargeSrc ? ' data-large="' + escapeAttr(coverLargeSrc) + '"' : '') +
                       (coverThumbSrc ? ' data-thumb="' + escapeAttr(coverThumbSrc) + '"' : '') +
-                      ' alt="" onerror="this.onerror=null;if(this.dataset.large&&this.src!==this.dataset.large){this.src=this.dataset.large;}else if(this.src.indexOf(\'/small_covers/\')!==-1){this.src=this.src.replace(\'/small_covers/\',\'/thumbs/\');}else if(this.src.indexOf(\'c0.jdbstatic.com\')===-1){this.src=this.src.replace(/https:\\/\\/.*?\\/rhe951l4q/g,\'https://c0.jdbstatic.com\');}">' +
+                      ' alt="">' +
                   '</div>' +
                   '<div class="video-title">' +
                     '<strong>' + escapeHtml(m.number || '') + '</strong> ' + escapeHtml(m.origin_title || m.title || '') +
@@ -12775,22 +12923,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     }
     // 关键防盗链与兜底策略：
     // 1. referrerpolicy="no-referrer" 消除向外部站点传递 Referer: javdb.com，破解防盗链/反爬 403；
-    // 2. 首次 onerror 时自动尝试通过 DuckDuckGo Favicon CDN 兜底；二次失败才平滑回退为纯文字微标。
-    const errHandler =
-      "if(!this.dataset.fb){" +
-        "this.dataset.fb='1';" +
-        "try{" +
-          "var h=new URL(this.src).hostname;" +
-          "if(h&&h.indexOf('duckduckgo')===-1){this.src='https://icons.duckduckgo.com/ip3/'+h+'.ico';return;}" +
-        "}catch(e){}" +
-      "}" +
-      "this.style.display='none';" +
-      "if(this.nextElementSibling)this.nextElementSibling.style.display='inline-flex';";
-
+    // 2. 加载失败由全局图片容错委托接管（handleImgFallback 的 emby-site-logo 分支：DuckDuckGo favicon 兜底→隐藏），此处不再内联 onerror。
     return (
       '<span class="emby-site-logo-wrap">' +
-        '<img class="emby-site-logo" src="' + escapeAttr(iconUrl) + '" alt="" loading="lazy" referrerpolicy="no-referrer" ' +
-          'onerror="' + escapeAttr(errHandler) + '" />' +
+        '<img class="emby-site-logo" src="' + escapeAttr(iconUrl) + '" alt="" loading="lazy" referrerpolicy="no-referrer" />' +
         '<span class="emby-site-logo-fallback" style="display:none;">' + initial + '</span>' +
       '</span>'
     );
@@ -15463,27 +15599,33 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (RE.test(el.textContent || '')) { el.classList.add('emby-hide-announce'); found = true; }
     });
     if (found) return;
-    // 3) 兜底：含关键词且自身直接文本的块容器（全 DOM 扫描较重，每个路由只跑一次）
+    // 3) 兜底：含关键词且自身直接文本的块容器（TreeWalker 限量扫描，每个路由只跑一次，避免 body * 全量快照）
     if (announceFallbackDone) return;
     announceFallbackDone = true;
-    Array.from(document.querySelectorAll('body *')).forEach(function (el) {
-      if (el.children.length !== 0) return;
-      const t = (el.textContent || '').trim();
-      if (!t || !RE.test(t) || t.length > 160) return;
-      let n = el;
+    try {
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, null);
+      let node; let scanned = 0; const BUDGET = 2500;
+      while ((node = walker.nextNode()) && scanned < BUDGET) {
+        scanned++;
+        // 只看叶子或小容器，跳过明显的大子树根（select/script/style/视频网格等由 1)/2) 覆盖）
+        if (node.children && node.children.length !== 0) continue;
+        const t = (node.textContent || '').trim();
+        if (!t || !RE.test(t) || t.length > 160) continue;
+      let n = node;
       while (n && n !== document.body) {
         const tag = n.tagName;
         if (n.classList && (n.classList.contains('notification') || n.classList.contains('sub-header'))) {
-          n.classList.add('emby-hide-announce'); return;
+          n.classList.add('emby-hide-announce'); break;
         }
         if (/^(DIV|SECTION|ARTICLE|MAIN|HEADER|NAV)$/.test(tag)) {
           if (n.querySelectorAll('img').length === 0 && n.querySelectorAll('a').length <= 3) {
-            n.classList.add('emby-hide-announce'); return;
+            n.classList.add('emby-hide-announce'); break;
           }
         }
         n = n.parentNode;
       }
-    });
+      }
+    } catch (e) {}
   }
 
   /* =======================================================================
@@ -19686,7 +19828,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         var bgGrad = gradColors[Math.abs(hash) % gradColors.length];
 
         var avaHtml = '<span class="efav-actor-ava-wrap">' +
-          (avaUrl ? '<img class="efav-actor-avatar" loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(a.name) + '" data-official-avatar="' + escapeAttr(officialAva) + '" src="' + escapeAttr(avaUrl) + '" alt="" onerror="if(this.dataset.officialAvatar && this.src !== this.dataset.officialAvatar){this.src=this.dataset.officialAvatar;}else{this.style.display=\'none\';if(this.nextElementSibling)this.nextElementSibling.style.display=\'inline-flex\';}" />' : '') +
+          (avaUrl ? '<img class="efav-actor-avatar" loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(a.name) + '" data-official-avatar="' + escapeAttr(officialAva) + '" src="' + escapeAttr(avaUrl) + '" alt="" />' : '') +
           '<span class="efav-actor-ava-fallback" style="background:' + bgGrad + ';' + (avaUrl ? 'display:none;' : '') + '">' + escapeHtml(initial) + '</span>' +
         '</span>';
 
@@ -19737,7 +19879,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           for (var sc = 0; sc < sa.name.length; sc++) sHash = (sHash * 31 + sa.name.charCodeAt(sc)) & 0xffff;
           var sGrad = gradColors[Math.abs(sHash) % gradColors.length];
           stackCirclesHtml += '<span class="efav-stack-circle">' +
-            (sAva ? '<img src="' + escapeAttr(sAva) + '" alt="" loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(sa.name) + '" data-official-avatar="' + escapeAttr(sOfficialAva) + '" onerror="if(this.dataset.officialAvatar && this.src !== this.dataset.officialAvatar){this.src=this.dataset.officialAvatar;}else{this.style.display=\'none\';if(this.nextElementSibling)this.nextElementSibling.style.display=\'inline-flex\';}" />' : '') +
+            (sAva ? '<img src="' + escapeAttr(sAva) + '" alt="" loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(sa.name) + '" data-official-avatar="' + escapeAttr(sOfficialAva) + '" />' : '') +
             '<span class="efav-stack-circle-fallback" style="background:' + sGrad + ';' + (sAva ? 'display:none;' : '') + '">' + escapeHtml(sInitial) + '</span>' +
           '</span>';
         }
@@ -19797,7 +19939,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         ? '<img loading="lazy" referrerpolicy="no-referrer" src="' + escapeAttr(cover) + '"' +
           (coverLargeUrl ? ' data-large="' + escapeAttr(coverLargeUrl) + '"' : '') +
           (coverThumbUrl ? ' data-thumb="' + escapeAttr(coverThumbUrl) + '"' : '') +
-          ' alt="" onerror="this.onerror=null;if(this.dataset.large&&this.src!==this.dataset.large){this.src=this.dataset.large;}else if(this.src.indexOf(\'/small_covers/\')!==-1){this.src=this.src.replace(\'/small_covers/\',\'/thumbs/\');}else if(this.src.indexOf(\'c0.jdbstatic.com\')===-1){this.src=this.src.replace(/https:\\/\\/.*?\\/rhe951l4q/g,\'https://c0.jdbstatic.com\');}">'
+          ' alt="">'
         : '';
       // 金标奖章：明黄皇冠胶囊（方案 A：微型皇冠 + 粗体 TOP250 + 最佳名次 + 多标角标）
       const awardIcon = buildAwardBadgeHtml(v.awards);
@@ -20393,7 +20535,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               if (typeof GfriendsAvatarService !== 'undefined') {
                 finalAv = GfriendsAvatarService.getAvatarUrl(o.v, officialAv);
               }
-              const imgTag = finalAv ? '<img class="efav-opt-av" loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(o.v) + '" data-official-avatar="' + escapeAttr(officialAv) + '" src="' + escapeAttr(finalAv) + '" alt="" onerror="if(this.dataset.officialAvatar && this.src !== this.dataset.officialAvatar){this.src=this.dataset.officialAvatar;}else{this.style.display=\'none\';}">' : '';
+              const imgTag = finalAv ? '<img class="efav-opt-av" loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(o.v) + '" data-official-avatar="' + escapeAttr(officialAv) + '" src="' + escapeAttr(finalAv) + '" alt="">' : '';
               // large：上大图下名字；small：左圆图右名字
               const innerHtml = large
                 ? imgTag + '<span class="efav-opt-name">' + inner + '</span>'
@@ -21127,7 +21269,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         // 封面 + 预览图堆叠层（封面在底，预览图从顶部错位探出小角 = 卡牌堆叠效果）
         const box = document.createElement('a');
         box.className = 'efav-gc-cbox';
-        box.href = 'javascript:;';
+        box.href = '#';
         box.title = (recs[0].code || v) + ' · ' + (recs[0].title || '');
         const ci = document.createElement('img');
         ci.src = galleryImgUrl(cover);
@@ -21509,7 +21651,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       function startPoll() {
         if (pollTimer) return;
         poll();
-        pollTimer = setInterval(poll, 200);
+        pollTimer = setInterval(poll, 500); // 灯箱打开期间局部轮询：200ms→500ms 足够跟随收藏状态，CPU 减半；关闭即 stopPoll，无常驻空转
       }
       function stopPoll() {
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
@@ -24211,7 +24353,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     const actorsSectionHtml =
       '<div class="emby-actors' + (hasInitialActors ? '' : ' has-no-actors') + '" id="emby-actors-list">' +
         actorsHtml +
-        '<a class="emby-actor-chip emby-actor-add-chip" id="emby-actor-add-chip" href="javascript:void(0);" title="编辑演员">' +
+        '<a class="emby-actor-chip emby-actor-add-chip" id="emby-actor-add-chip" href="#" title="编辑演员">' +
           '<span class="ava"><span class="material-symbols-outlined" style="font-size:32px;">add</span></span>' +
           '<span class="nm">编辑演员</span>' +
         '</a>' +
@@ -24530,7 +24672,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       '</div>';
     }
 
-    const imgTag = finalAvatar ? '<img loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(a.name) + '" data-official-avatar="' + escapeAttr(cleanOfficial) + '" src="' + escapeAttr(cleanAvatar) + '" alt="" onerror="if(this.dataset.officialAvatar && this.src !== this.dataset.officialAvatar){this.src=this.dataset.officialAvatar;}else{this.style.display=\'none\';}" />' : '';
+    const imgTag = finalAvatar ? '<img loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(a.name) + '" data-official-avatar="' + escapeAttr(cleanOfficial) + '" src="' + escapeAttr(cleanAvatar) + '" alt="" />' : '';
 
     return '<a class="emby-actor-chip' + favCls + delCls + customCls + (a.isCustom ? ' has-custom-tooltip' : '') + '" href="' + escapeAttr(safeHref(a.href, '#')) + '" rel="noopener" data-actor-name="' + escapeAttr(a.name) + '">' +
       customTooltip +
@@ -24927,7 +25069,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       // C. 编辑按钮在演员的最后面（同款 chip 样式，绿色虚线圆圈 + 图标）
       const addChip = document.createElement('a');
       addChip.className = 'emby-actor-chip emby-actor-add-chip' + (isActorEditMode ? ' is-active' : '');
-      addChip.href = 'javascript:void(0);';
+      addChip.href = '#';;
       addChip.title = isActorEditMode ? '完成编辑' : '编辑演员';
       addChip.innerHTML =
         '<span class="ava"><span class="material-symbols-outlined" style="font-size:32px;">' + (isActorEditMode ? 'done' : 'add') + '</span></span>' +
@@ -25041,7 +25183,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               finalAva = GfriendsAvatarService.getAvatarUrl(act.name, officialAva);
             }
             html += '<div class="actor-search-item" data-name="' + escapeAttr(act.name) + '" data-slug="' + escapeAttr(act.slug || '') + '" data-avatar="' + escapeAttr(act.avatar || '') + '" data-href="' + escapeAttr(act.href || '') + '">' +
-              (finalAva ? '<img src="' + escapeAttr(finalAva) + '" style="width:26px;height:26px;border-radius:50%;object-fit:cover;" onerror="this.style.display=\'none\';" />' : '<span style="width:26px;height:26px;border-radius:50%;background:#334155;display:inline-block;"></span>') +
+              (finalAva ? '<img src="' + escapeAttr(finalAva) + '" style="width:26px;height:26px;border-radius:50%;object-fit:cover;" data-img-fb-hide="1" />' : '<span style="width:26px;height:26px;border-radius:50%;background:#334155;display:inline-block;"></span>') +
               '<span style="font-size:12px;color:#f1f5f9;font-weight:500;">' + escapeHtml(act.name) + '</span>' +
             '</div>';
           });
@@ -25531,6 +25673,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
    * ===================================================================== */
   function applySkin(on) {
     if (on) {
+      try { ensureFontLinks(); } catch (e) {}
       if (!skinEl) {
         skinEl = document.createElement('style');
         skinEl.id = 'javdb-emby-skin';
@@ -25839,8 +25982,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     function flog(m) { try { console.log('[JAVDB→Emby] [Fusion] ' + m); } catch (e) {} }
     function ftoast(m) { try { showToast(m); } catch (e) {} }
 
-    /* ---------- 通用 HTTP（Promise 化 GM_xmlhttpRequest） ---------- */
-    function gmReq(opt) {
+    /* ---------- 通用 HTTP（Promise 化 GM_xmlhttpRequest，经全局 embyNetRun 限流去重；无 GM 时由顶部 __gmShim 回退 fetch） ---------- */
+    function gmReqRaw(opt) {
       return new Promise(function (resolve, reject) {
         const signal = opt.signal;
         let request = null;
@@ -25876,6 +26019,16 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           else signal.addEventListener('abort', onAbort, { once: true });
         }
       });
+    }
+    function gmReq(opt) {
+      const o = opt || {};
+      const m = ((o.method) || 'GET').toUpperCase();
+      const key = (m === 'GET' && o.url) ? ('GET ' + o.url) : null;
+      const run = function () { return gmReqRaw(o); };
+      try {
+        if (typeof embyNetRun === 'function') return embyNetRun(key, run);
+      } catch (e) {}
+      return run();
     }
     function debounce(fn, ms) {
       let t = null;
@@ -25917,7 +26070,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       get enableCheck() { return GM_getValue('jf_mag_check', true); },
       get qbtHost() { return GM_getValue('jf_qbt_host', 'http://127.0.0.1:18080'); },
       get qbtUser() { return GM_getValue('jf_qbt_user', 'admin'); },
-      get qbtPass() { return GM_getValue('jf_qbt_pass', 'adminadmin'); },
+      get qbtPass() { return GM_getValue('jf_qbt_pass', ''); }, // 默认密码留空：避免出厂默认口令残留,
       get u115Cid() { return GM_getValue('jf_115_cid', ''); }
     };
     var TrConf = {
@@ -27734,7 +27887,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       servers.forEach(async function (s) {
         const chip = document.createElement('a');
         chip.className = 'jf-lib-chip jf-lib-loading';
-        chip.href = 'javascript:void(0);';
+        chip.href = '#';
         chip.innerHTML = '<span class="jf-lib-dot"></span>' + escapeHtml(s.name);
         chip.title = s.name + '：入库查询中…';
         wrap.appendChild(chip);
