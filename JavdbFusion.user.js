@@ -1,13 +1,64 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.353-fusion-probetop
+// @version      7.361-regress-harness
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
 // @connect      api.github.com
 // @connect      gitee.com
+// @connect      cdn.jsdelivr.net
+// @connect      fastly.jsdelivr.net
+// @connect      raw.githubusercontent.com
+// @connect      translate.googleapis.com
+// @connect      translate-pa.googleapis.com
+// @connect      ja.wikipedia.org
+// @connect      icons.duckduckgo.com
+// @connect      sukebei.nyaa.si
+// @connect      bt4gprx.com
+// @connect      downloadtorrentfile.com
+// @connect      api.javspyl.eu.org
+// @connect      123av.com
+// @connect      njavtv.com
+// @connect      www.njav.com
+// @connect      njavtv.blog
+// @connect      missav.live
+// @connect      missav.ws
+// @connect      jable.tv
+// @connect      netflav.com
+// @connect      supjav.com
+// @connect      www.bestjavporn.com
+// @connect      pics.pornfhd.com
+// @connect      javmenu.com
+// @connect      www.av01.media
+// @connect      www.av01.xyz
+// @connect      theav.xyz
+// @connect      jav.guru
+// @connect      www.javmost.ws
+// @connect      javmost.cx
+// @connect      javtrailers.com
+// @connect      javfilms.com
+// @connect      avpreview.com
+// @connect      javsubtitled.com
+// @connect      7mmtv.sx
+// @connect      avmates.com
+// @connect      hohoj.tv
+// @connect      cn.xsz-av.com
+// @connect      javhd.today
+// @connect      www.javbus.com
+// @connect      www.javlibrary.com
+// @connect      www.dmm.co.jp
+// @connect      p.dmm.co.jp
+// @connect      api.dmm.com
+// @connect      cc3001.dmm.com
+// @connect      cc3001.dmm.co.jp
+// @connect      javtxt.com
+// @connect      javfree.me
+// @connect      javstore.net
+// @connect      blogjav.net
 // @connect      *
+// NOTE: 末尾 * 为用户自建 Emby/Jellyfin/qBittorrent 自定义服务器地址保留（任意内网域名/IP，无法预先白名单）。
+// 实测 TM5.5 下 * 不能覆盖播放站探测请求，故公网域名必须逐个显式列出（片源可用性探测/logo 取色经 GM_xhr 发起）。
 // @description  JAVDB Emby 风格皮肤 x 融合增强：Emby/Jellyfin 媒体库跳转（多服务器+全库索引+入库徽章）、预告片多源播放（官方/DMM/直链/javspyl）、磁力工具箱（复制/qB/115/验车）、右侧磁力聚合搜索框。界面全面毛玻璃化融合。
 // @author       hy3 (skin) + dmdx (JavdbBuddy model) + ZiPenOk (trailer/magnet) + fusion
 // @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAHeklEQVR42pWU+VMb9x2G+UOCPW7dTpp2pkk7iSHOOMSNJ0d9FDvGTlwyBSywkMxhc5hL6BY3Rpgj5haYy4RwCHMfkgAJxOpaaXe192olIcBNJ22TnzurlbCMyTSeeWfnO6PR87yfz+584w6C7PMgux/0hQLM7i9IyE/HZs/P7PvokNuzDzh3t4AAgQZYKujjQwZ8ZNzzIBsK+HZfn77nZ557sR+cyH8s4D/1pr3hebfyG8vAKEvjgTCaT1wowIRep3IYTe/7qB/c6E9O7Ptp417f9L5Ov6fTr9+pfNbwCHE7fSQWYAg+cbuvSQ+x9D5L/9uN/bgDHfTPHPTP7Ov0vMAkKB+XVzusZhKDWQr7P4Jj0NH637uQn1zYfph+0D+zF6aHeqeNgooxqWZn04gjboZE/TT+s4Jji/PPA4b60Yk+H1t6id437W//1pBRNlqp2jKtopCLxr0shfkpPO6XFN9lYwROz3+3PPs6Pb+cCP3xOFmvM6RzAoth2etxUjjiIzGWwiKC0M+h/XSQpYIstctSuz6KewEbwL8WLDw9pNPv9k37v/mWahiAJa2G9LLhcoV5bQlxOygsKjh+1yzXmkcHeIEvKlixHIwu7uv0uzp9sGeKbR8jG/phSYvrXh0nKFVsri7CoJ3EYIZAjxHwlQMxCfoidF6wt2Le5endk77WUaKm11Pa7MyvdebXGjLKR0oU6yvzMGjjBT7yZcER9BH6oSDQNRHsmmAejWDqLrC40ZFf48irduTXGAUVIyUK0/Ic5LKRaIwgdhuxiUUHGZIT+Ki9ZbOv7SmjHUaVHa6CekdetT2vio/hNjeBaXHW4wRIFIoIAq9wX9RnI9wgQwYYIsiQnGDJTD98gsjanfdqD9GHguESeayAIdCXBH6WZFkiNn6W5H7iLxaG4IZY2sQ13bF0W16VLVdjy9UYBZJYAU14OUH02iNYPuwxObxYuIGWNhBp2yEXCIc/GG9XDD+QGRefeZwA4YVoPCzg/8kyhC8c1kdgFLgOzU0Afb0bDWOWTiti4EaJCoKL65CkBYiiOXqOBshRA3fVRoFkqFhqnJ8JCzwRgT+K9jE4w2AmaHYRGtdtaBvmyvOHvsrQfSYaTG5ZkHsxkA3fLYE5g6e8mUPnqIEoGhCrALHKlFk5VCQ1zOvdjh0ciQpi6cvgxKJnvHDoH+KeFFHP9czOyzdbzl3Vnsno+FzWJ0YgB0th7PSyu7SJJx7GGo4pSzpUWBkWWHHEQ+FIRMAwGMNgO4hh0tGfo7sp7klJb7mY2vJxyqMPPq3/w7maUx9W/epKzbvNT+Qk4qFHZ90PHh6h74QTEczp3XYrjrgpLCxgGIymOUGPqV49dV/YfVXQcWnaMGBzrYsfp5yrOXVWc4KL+kRyWcKOeQ3VfXdEAITp2yKlSSgfLJDECmjCG0fTnICkkdLJdEHnxbT2z240n5s2Dvpp3Edhg/NtF+v+xAsuFJ3u7K53PR4Co4IdscoqUlpFyu1sxXa2wiRS9BWUGeb04KsCN279uv/8F9r3/9b43oWa300ZnlAYEp7Ru2leTFL8NlEZf77w16rqfGtdB/igEQijeS6fLaHClF/1+H6xYT4iIDGYxqMChHCk9CReqH0zqer0WdXJybUBCkMIL2RamStSZ3ACRfzl0j+W5KSty5vAkqZYdJgu38yUPRNVdqlVpqXZ8FcUK6AwmvTmPrnxgebk+8r4RGX8d6s60Lbd2qK6UpyYUH4iQRafII2/mvtnaX7WlqTJUVC3JVRY7sgtd+T8wZwl3xCpBoRFvc2Nm6uLHifACVCYwpE4js4J0L55bVL16cSwIFv7hVB2/cOy35ypfIOjy+L/In3zypfv1AhFROvwdraSp/MxZyk2BHLDvaoG4d2nfZ3WDQMM2iICDIljKIwfwgMBWW3JCTJOkKjgKnNnOVf/rORUsvC9W5fPj4hL2N6pWPpmpmIzU7EuUuoE95tkFfOTY/btTcTteCGITEBhFOE1mGZSVZ+cKTmRIOXQHF0a/+79Ny4L3rn2eULljVvs0wV7Yf1h8Qg9Sz4lkmju3tW1aTdWFkC71etx4l4PicIkBr8Q0CSKez1G01x5nfjj7LeTRG8lid9KuH7yk0u/v3Xpo4qbt8D2QeLR0BH6mqBSnyPVZAq1SunC5BhgWYdcNhR2EbwAjREwJEbhCAq5HFbz9PiQRlkozkjJzfiyIi2tN7uAGpwhW0fMWQpzVoRuzJA8Sy3UfZ2jFGTVVZRODfdvmVZBu5XfD/HqBAyFMQRKojAKuVz2bYtpZWV2ak3SAGn76e4J+4OHGwL5ZqZ8/bZ0MbV4JPlO15X06qt/l2ULG+UVk8P9FsOyC9iCQTsKu3Cvh/BCEQETRvtILgyB0oSXRGEMBiGXDbRbF9q7um7ntiend10T6FKE3dcELX9Nrbv0lTolVZKWriku6NbWz0+MbRlXnICFWw7k4utHBCgcx5AROi+IODAYRzwo5IJcto2Vhac9He1qRW1enjpHrC7MrykpalbJdG3ambGh9eU5wGICbdswaPN6nBgCcvXRyAtAYdf/AEaRr4AjFgVYAAAAAElFTkSuQmCC
@@ -113,11 +164,74 @@
     } catch (e) {}
   }
   ensureImageNoReferrer();
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.343';
+  try { setupImgFallbackDelegation(); } catch (e) {}
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.361-regress-harness';
   var tabHome = null, tabFav = null, favPanel = null;
   var tabGallery = null, galleryPanel = null;
   var tabTop250 = null, top250Panel = null;
   var scoreMemCache = new Map(); // 全局共享评分缓存，供通用评分提取与各榜单/详情联动
+  // LRU 上限：防止长会话无上限增长（Top250/列表页滚动会持续写入）
+  function memCacheSetCapped(map, key, value, maxSize) {
+    try {
+      map.set(key, value);
+      const max = maxSize || 500;
+      if (map.size > max) {
+        const oldest = map.keys().next().value;
+        map.delete(oldest);
+      }
+    } catch (e) { try { map.set(key, value); } catch (_e) {} }
+  }
+  // 全局网络调度：并发上限3 + 同URL GET去重 + 429指数退避，所有 gmHttp/gmReq 走此门
+  var __embyNetActive = 0; var __embyNetQueue = []; var __embyNetPending = new Map();
+  var EMBY_NET_MAX = 3;
+  // 墙钟熔断：不依赖后端（TM/fetch）内部超时是否可靠，调用方 opt.timeout 到点必落定；
+  // 实测 javspyl 在部分网络下是连接黑洞，TM 的 ontimeout 未能将其捞出，曾导致预告片解析 hang 满 12s。
+  function netTimeoutRace(promise, ms) {
+    let timer = null;
+    const timeout = (typeof ms === 'number' && ms > 0) ? ms : 15000;
+    return Promise.race([promise, new Promise(function (_, reject) {
+      timer = setTimeout(function () { reject(new Error('timeout')); }, timeout);
+    })]).then(function (v) { if (timer) clearTimeout(timer); return v; },
+               function (e) { if (timer) clearTimeout(timer); throw e; });
+  }
+  function __embyNetPump() {
+    while (__embyNetActive < EMBY_NET_MAX && __embyNetQueue.length) {
+      const task = __embyNetQueue.shift();
+      __embyNetActive++;
+      task().then(function () { __embyNetActive--; __embyNetPump(); },
+                 function () { __embyNetActive--; __embyNetPump(); });
+    }
+  }
+  function embyNetRun(key, worker) {
+    // 同一 GET 短窗去重：避免列表/详情/徽章三处同时拉同一评分/索引
+    if (key && __embyNetPending.has(key)) return __embyNetPending.get(key);
+    const p = new Promise(function (resolve, reject) {
+      __embyNetQueue.push(function () {
+        let tries = 0;
+        const attempt = function () {
+          tries++;
+          return worker().then(function (v) { resolve(v); return v; }, function (err) {
+            const msg = (err && err.message) ? err.message : String(err);
+            if (tries < 3 && /429|403|Rate limit|Too Many/i.test(msg)) {
+              return new Promise(function (r) { setTimeout(r, 800 * tries + Math.random() * 400); }).then(attempt);
+            }
+            reject(err); throw err;
+          }).then(function (v) {
+            if (key) __embyNetPending.delete(key);
+            return v;
+          }, function (e) {
+            if (key) __embyNetPending.delete(key);
+            throw e;
+          });
+        };
+        return attempt();
+      });
+      __embyNetPump();
+    });
+    // 必须在返回后挂清理，避免同步 throw 导致 Map 残留
+    if (key) { __embyNetPending.set(key, p); p.then(function () {}, function () {}); }
+    return p;
+  }
   function log(m) { try { console.log('[JAVDB→Emby] ' + m); } catch (e) {} }
   log('脚本已注入页面');
   window.__javdbEmbyVersion = VERSION;
@@ -144,6 +258,178 @@
     try { return new URL(clean, base || location.href).href; }
     catch (e) { return clean.startsWith('http') ? clean : (location.origin + (clean.startsWith('/') ? '' : '/') + clean); }
   }
+
+  // 字体异步加载：Google Fonts <link> 非阻塞 + 预连接，失败回退系统字体；替代 CSS 内 @import（注入 style 首部的同步 @import 会阻塞首次渲染，国内直连 googleapis 亦慢）
+  function ensureFontLinks() {
+    try {
+      if (document.getElementById('emby-font-mi')) return;
+      const pre1 = document.createElement('link');
+      pre1.rel = 'preconnect'; pre1.href = 'https://fonts.googleapis.com'; pre1.id = 'emby-font-pre1';
+      const pre2 = document.createElement('link');
+      pre2.rel = 'preconnect'; pre2.href = 'https://fonts.gstatic.com'; pre2.setAttribute('crossorigin', 'anonymous'); pre2.id = 'emby-font-pre2';
+      const l1 = document.createElement('link');
+      l1.id = 'emby-font-mi'; l1.rel = 'stylesheet';
+      l1.href = 'https://fonts.googleapis.com/icon?family=Material+Icons&display=swap';
+      const l2 = document.createElement('link');
+      l2.id = 'emby-font-mso'; l2.rel = 'stylesheet';
+      l2.href = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400,1,0&display=swap';
+      (document.head || document.documentElement).appendChild(pre1);
+      (document.head || document.documentElement).appendChild(pre2);
+      (document.head || document.documentElement).appendChild(l1);
+      (document.head || document.documentElement).appendChild(l2);
+    } catch (e) {}
+  }
+  // 图片容错全局委托（捕获阶段）：替代模板内联 onerror=，CSP 干净且逻辑单点维护
+  // 策略与原内联 handler 等价：data-large → small_covers→thumbs → rhe951l4q→c0 → 官方头像 → 隐藏
+  function handleImgFallback(img) {
+    try {
+      if (!img || img.tagName !== 'IMG' || img.dataset.imgFbDone) return;
+      const d = img.dataset;
+      // 站点 logo：首次走 DuckDuckGo favicon 兜底（原 renderSiteLogoHtml 内联逻辑），二次失败再隐藏
+      if (img.classList && img.classList.contains('emby-site-logo')) {
+        if (!d.fb) {
+          d.fb = '1';
+          try {
+            const h = new URL(img.src).hostname;
+            if (h && h.indexOf('duckduckgo') === -1) { img.src = 'https://icons.duckduckgo.com/ip3/' + h + '.ico'; return; }
+          } catch (e) {}
+        }
+        img.style.display = 'none';
+        if (img.nextElementSibling) img.nextElementSibling.style.display = 'inline-flex';
+        img.dataset.imgFbDone = '1'; return;
+      }
+      if (d.imgFbHide) { img.style.display = 'none'; img.dataset.imgFbDone = '1'; return; }
+      if (d.officialAvatar && img.src !== d.officialAvatar) { img.src = d.officialAvatar; return; }
+      if (d.large && img.src !== d.large) { img.src = d.large; return; }
+      if (img.src.indexOf('/small_covers/') !== -1) { img.src = img.src.replace('/small_covers/', '/thumbs/'); return; }
+      if (img.src.indexOf('c0.jdbstatic.com') === -1 && /https:\/\/.*?\/rhe951l4q/.test(img.src)) {
+        img.src = img.src.replace(/https:\/\/.*?\/rhe951l4q/g, 'https://c0.jdbstatic.com'); return;
+      }
+      // 头像类无后备则隐藏并露出首字母占位（原内联 else 分支行为）
+      if (d.officialAvatar !== undefined || d.gfriendsActress !== undefined) {
+        img.style.display = 'none';
+        if (img.nextElementSibling) img.nextElementSibling.style.display = 'inline-flex';
+        img.dataset.imgFbDone = '1'; return;
+      }
+      img.dataset.imgFbDone = '1';
+    } catch (e) {}
+  }
+  function setupImgFallbackDelegation() {
+    try {
+      if (window.__embyImgFbBound) return;
+      window.__embyImgFbBound = true;
+      document.addEventListener('error', function (e) {
+        const t = e.target;
+        if (t && t.tagName === 'IMG') {
+          // 仅接管脚本自有图片（带我们的数据标记或站点 logo 类），原生站内图保持原生行为
+          if (t.dataset && (t.dataset.large || t.dataset.officialAvatar !== undefined || t.dataset.gfriendsActress !== undefined || t.dataset.imgFbHide !== undefined || (t.classList && t.classList.contains('emby-site-logo')))) {
+            handleImgFallback(t);
+          }
+        }
+      }, true);
+    } catch (e) {}
+  }
+
+  /* GM_* 安全垫片：grant 缺失/被禁用时回退 Web 标准 API，只求不抛错、功能降级。
+   * 只向 globalThis 挂载、绝不在本作用域声明同名 var，否则会遮蔽油猴真实实现。 */
+  var __gmHost = (typeof globalThis !== 'undefined') ? globalThis : ((typeof window !== 'undefined') ? window : null);
+  (function __gmShim() {
+    if (!__gmHost) return;
+    try {
+      if (typeof GM_xmlhttpRequest === 'undefined') {
+        __gmHost.GM_xmlhttpRequest = function (d) {
+          d = d || {};
+          var ctrl = null, timer = null, done = false;
+          var task = {
+            abort: function () {
+              if (done) return; done = true;
+              try { if (timer) clearTimeout(timer); } catch (e) {}
+              try { if (ctrl) ctrl.abort(); } catch (e) {}
+              if (d.onabort) { try { d.onabort(); } catch (e) {} }
+            }
+          };
+          if (typeof fetch === 'undefined') {
+            if (d.onerror) { try { d.onerror(new Error('no fetch')); } catch (e) {} }
+            return task;
+          }
+          try {
+            try { ctrl = new AbortController(); } catch (e) { ctrl = null; }
+            if (d.timeout > 0) {
+              timer = setTimeout(function () {
+                task.abort();
+                if (d.ontimeout) { try { d.ontimeout(); } catch (e) {} }
+              }, d.timeout);
+            }
+            fetch(d.url, {
+              method: d.method || 'GET',
+              headers: d.headers || {},
+              body: (d.data != null ? d.data : undefined),
+              credentials: d.anonymous ? 'omit' : 'include',
+              signal: ctrl ? ctrl.signal : undefined
+            }).then(function (resp) {
+              resp.text().then(function (txt) {
+                if (done) return; done = true;
+                try { if (timer) clearTimeout(timer); } catch (e) {}
+                if (d.onload) { try { d.onload({ status: resp.status, statusText: resp.statusText, responseText: txt, response: txt, finalUrl: resp.url || d.url }); } catch (e) {} }
+              }).catch(function (err) {
+                if (done) return; done = true;
+                if (d.onerror) { try { d.onerror(err); } catch (e) {} }
+              });
+            }).catch(function (err) {
+              if (done) return; done = true;
+              try { if (timer) clearTimeout(timer); } catch (e) {}
+              if (d.onerror) { try { d.onerror(err); } catch (e) {} }
+            });
+          } catch (e) {
+            if (d.onerror) { try { d.onerror(e); } catch (e2) {} }
+          }
+          return task;
+        };
+      }
+    } catch (e) {}
+    try {
+      if (typeof GM_getValue === 'undefined') {
+        __gmHost.GM_getValue = function (k, def) {
+          try {
+            var raw = localStorage.getItem('gm:' + k);
+            if (raw === null || raw === undefined) return def;
+            try { return JSON.parse(raw); } catch (e) { return raw; }
+          } catch (e) { return def; }
+        };
+      }
+      if (typeof GM_setValue === 'undefined') {
+        __gmHost.GM_setValue = function (k, v) {
+          try { localStorage.setItem('gm:' + k, (typeof v === 'string') ? v : JSON.stringify(v)); } catch (e) {}
+        };
+      }
+    } catch (e) {}
+    try {
+      if (typeof GM_setClipboard === 'undefined') {
+        __gmHost.GM_setClipboard = function (txt) {
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(String(txt)).catch(function () {});
+              return;
+            }
+          } catch (e) {}
+          try {
+            var ta = document.createElement('textarea');
+            ta.value = String(txt == null ? '' : txt);
+            ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            ta.remove();
+          } catch (e) {}
+        };
+      }
+    } catch (e) {}
+    try {
+      if (typeof GM_registerMenuCommand === 'undefined') {
+        __gmHost.GM_registerMenuCommand = function () {};
+      }
+    } catch (e) {}
+  })();
 
   function getBackupFileName() {
     const d = new Date();
@@ -657,20 +943,30 @@
   }
 
   var noteTipBound = false;
+  var tipHoverQueued = false; // mouseover 高频，rAF 合并一帧只处理一次
   function bindNoteTips() {
     if (noteTipBound) return;
     noteTipBound = true;
     document.addEventListener('mouseover', function (e) {
-      var t = noteTipTarget(e.target);
-      if (t) {
-        showNoteTip(t);
-      } else {
-        if (noteTipEl && (noteTipEl === e.target || noteTipEl.contains(e.target))) {
-          if (hideTipTimer) { clearTimeout(hideTipTimer); hideTipTimer = null; }
+      if (tipHoverQueued) return;
+      tipHoverQueued = true;
+      // 卡死兜底：页面隐藏（最小化/切后台）时 rAF 不执行，queued 永久为 true 会导致恢复后所有悬停失效；
+      // 超时强制复位（rAF 正常执行时此复位无害）。
+      setTimeout(function () { tipHoverQueued = false; }, 800);
+      var evTarget = e.target;
+      requestAnimationFrame(function () {
+        tipHoverQueued = false;
+        var t = noteTipTarget(evTarget);
+        if (t) {
+          showNoteTip(t);
         } else {
-          hideNoteTip(180);
+          if (noteTipEl && (noteTipEl === evTarget || noteTipEl.contains(evTarget))) {
+            if (hideTipTimer) { clearTimeout(hideTipTimer); hideTipTimer = null; }
+          } else {
+            hideNoteTip(180);
+          }
         }
-      }
+      });
     });
     document.addEventListener('mouseout', function (e) {
       var t = noteTipTarget(e.target);
@@ -807,9 +1103,7 @@
   
 function buildEmbyCSS(accent) {
     return `
-@import url('https://fonts.googleapis.com/icon?family=Material+Icons');
-/* Material Symbols（填充态）：新图标（crown/cards_star/file_json 等）不在经典 Material Icons 字体内 */
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400,1,0&display=block');
+/* 字体由 ensureFontLinks() 以 <link> 异步加载，此处不再 @import，避免阻塞首屏 */
 /* ====== 全局变量 —— 来自真实 Emby 抓取 ====== */
 html.emby-skin {
   --e-bg:#16181d; --e-card:#1c1f26; --e-hover:#23272f;
@@ -6472,6 +6766,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   border-color: #38bdf8;
   transform: scale(1.06);
 }
+/* 低动效/低性能兜底：关闭大面积毛玻璃与 heavy transform，列表滚动不再卡 */
+@media (prefers-reduced-motion: reduce) {
+  html.emby-skin .item .box, html.emby-skin .emby-masonry .item { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+}
 
 `;
   }
@@ -7147,8 +7445,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     if (window.__embyScrollHandler) {
       window.removeEventListener('scroll', window.__embyScrollHandler);
     }
+    var backTopTicking = false; // scroll 高频，rAF 节流
     window.__embyScrollHandler = function () {
-      updateBackTop(window.scrollY || window.pageYOffset || 0);
+      if (backTopTicking) return;
+      backTopTicking = true;
+      requestAnimationFrame(function () {
+        backTopTicking = false;
+        updateBackTop(window.scrollY || window.pageYOffset || 0);
+      });
     };
     window.addEventListener('scroll', window.__embyScrollHandler, { passive: true });
     // 初始（如已滚动则显示）
@@ -8183,7 +8487,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             } else if (det.rating.text) {
               rating = '<span class="ecb-score">' + escapeHtml(det.rating.text) + '</span>';
             }
-            if (det.rating.count) rating += '<span class="ecb-count"> · 由' + det.rating.count + '人評價</span>';
+            if (det.rating.count) rating += '<span class="ecb-count"> · 由' + escapeHtml(String(det.rating.count)) + '人評價</span>';
           }
         }
       } catch (e) { log('紧凑条元数据解析失败: ' + e.message); }
@@ -8240,8 +8544,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     poster.dataset.cpTilt = '1';
     poster.style.transformOrigin = 'left top';
     let raf = null;
+    let cachedRect = null; // mouseenter 测一次，mousemove 复用，避免逐帧布局
+    poster.addEventListener('mouseenter', function () {
+      try { cachedRect = poster.getBoundingClientRect(); } catch (e) { cachedRect = null; }
+    });
     poster.addEventListener('mousemove', function (e) {
-      const r = poster.getBoundingClientRect();
+      const r = cachedRect || poster.getBoundingClientRect();
       const px = (e.clientX - r.left) / r.width;   // 0~1
       const py = (e.clientY - r.top) / r.height;   // 0~1
       const ry = (px - 0.5) * (TILT_MAX * 2);
@@ -8255,6 +8563,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     });
     poster.addEventListener('mouseleave', function () {
       if (raf) cancelAnimationFrame(raf);
+      cachedRect = null;
       poster.style.transform = '';
     });
   }
@@ -9212,9 +9521,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   /* =======================================================================
    * 通用安全 HTTP 请求客户端 (支持 GM_xmlhttpRequest 跨域无阻，自动回退 fetch)
    * ===================================================================== */
-  const gmHttp = {
-    request: function (options) {
-      return new Promise(function (resolve, reject) {
+  function gmHttpRawRequest(options) {
+    return new Promise(function (resolve, reject) {
         const method = (options.method || 'GET').toUpperCase();
         const url = options.url;
         const headers = options.headers || {};
@@ -9268,7 +9576,20 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           return res.text();
         }).then(function (value) { finish(resolve, value); }).catch(function (err) { finish(reject, err); });
       });
+  }
+  const gmHttp = {
+    request: function (options) {
+      const opts = options || {};
+      const m = ((opts.method) || 'GET').toUpperCase();
+      const u = opts.url;
+      const dedupeKey = (m === 'GET' && u) ? ('GET ' + u) : null;
+      const run = function () { return netTimeoutRace(gmHttpRawRequest(opts), opts.timeout || 15000); };
+      try {
+        if (typeof embyNetRun === 'function') return embyNetRun(dedupeKey, run);
+      } catch (e) {}
+      return run();
     },
+    rawRequest: function (options) { return gmHttpRawRequest(options); },
     get: function (url, headers) { return this.request({ method: 'GET', url: url, headers: headers }); },
     post: function (url, data, headers) { return this.request({ method: 'POST', url: url, data: data, headers: headers }); }
   };
@@ -9379,7 +9700,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           req.onsuccess = function () {
             const res = req.result;
             if (res && res.data && (Date.now() - res.time < ttlMs)) {
-              memCache.set(key, { time: res.time, data: res.data });
+              if (typeof memCacheSetCapped === 'function') memCacheSetCapped(memCache, key, { time: res.time, data: res.data }, 300); else memCache.set(key, { time: res.time, data: res.data });
               resolve(res.data);
             } else {
               resolve(null);
@@ -9395,7 +9716,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     async function setCachedMany(entries) {
       const now = Date.now();
       (entries || []).forEach(function (entry) {
-        if (entry && entry.key) memCache.set(entry.key, { time: now, data: entry.data });
+        if (entry && entry.key) { if (typeof memCacheSetCapped === 'function') memCacheSetCapped(memCache, entry.key, { time: now, data: entry.data }, 300); else memCache.set(entry.key, { time: now, data: entry.data }); }
       });
       try {
         const db = await openDB();
@@ -9623,7 +9944,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           try {
             const cached = await getCached('movie_score_' + id, 7 * 86400000);
             if (cached && typeof cached.score !== 'undefined') {
-              scoreMemCache.set(id, cached);
+              memCacheSetCapped(scoreMemCache, id, cached, 500);
               applyScoreToDom(id, cached.score);
               continue;
             }
@@ -9640,7 +9961,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               const score = res.data.movie.score != null ? parseFloat(res.data.movie.score) : 0;
               const watched = res.data.movie.watched_count || 0;
               const info = { score: score, watchedCount: watched };
-              scoreMemCache.set(id, info);
+              memCacheSetCapped(scoreMemCache, id, info, 500);
               await setCached('movie_score_' + id, info);
               applyScoreToDom(id, score);
             }
@@ -9847,7 +10168,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               const score = (mov.score != null && mov.score !== '') ? parseFloat(mov.score) : 0;
               const watched = mov.watched_count != null ? mov.watched_count : 0;
               const sInfo = { score: score, watchedCount: watched };
-              scoreMemCache.set(item.id, sInfo);
+              memCacheSetCapped(scoreMemCache, item.id, sInfo, 500);
 
               const curAward = { name: getCurrentBoardAwardName(state), rank: item._topRank };
               const mergedAwards = mergeMovieAwards(existingRec.awards || (item.itemRef && item.itemRef.awards), curAward);
@@ -10562,7 +10883,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
                   '<img loading="lazy" referrerpolicy="no-referrer" src="' + escapeAttr(coverSrc) + '"' +
                     (coverLargeSrc ? ' data-large="' + escapeAttr(coverLargeSrc) + '"' : '') +
                     (coverThumbSrc ? ' data-thumb="' + escapeAttr(coverThumbSrc) + '"' : '') +
-                    ' alt="" onerror="this.onerror=null;if(this.dataset.large&&this.src!==this.dataset.large){this.src=this.dataset.large;}else if(this.src.indexOf(\'/small_covers/\')!==-1){this.src=this.src.replace(\'/small_covers/\',\'/thumbs/\');}else if(this.src.indexOf(\'c0.jdbstatic.com\')===-1){this.src=this.src.replace(/https:\\/\\/.*?\\/rhe951l4q/g,\'https://c0.jdbstatic.com\');}">' +
+                    ' alt="">' +
                 '</div>' +
                 '<div class="video-title">' +
                   '<strong>' + escapeHtml(code) + '</strong> ' + escapeHtml(title) +
@@ -10958,7 +11279,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
                     '<img loading="lazy" referrerpolicy="no-referrer" src="' + escapeAttr(coverSrc) + '"' +
                       (coverLargeSrc ? ' data-large="' + escapeAttr(coverLargeSrc) + '"' : '') +
                       (coverThumbSrc ? ' data-thumb="' + escapeAttr(coverThumbSrc) + '"' : '') +
-                      ' alt="" onerror="this.onerror=null;if(this.dataset.large&&this.src!==this.dataset.large){this.src=this.dataset.large;}else if(this.src.indexOf(\'/small_covers/\')!==-1){this.src=this.src.replace(\'/small_covers/\',\'/thumbs/\');}else if(this.src.indexOf(\'c0.jdbstatic.com\')===-1){this.src=this.src.replace(/https:\\/\\/.*?\\/rhe951l4q/g,\'https://c0.jdbstatic.com\');}">' +
+                      ' alt="">' +
                   '</div>' +
                   '<div class="video-title">' +
                     '<strong>' + escapeHtml(m.number || '') + '</strong> ' + escapeHtml(m.origin_title || m.title || '') +
@@ -12656,22 +12977,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     }
     // 关键防盗链与兜底策略：
     // 1. referrerpolicy="no-referrer" 消除向外部站点传递 Referer: javdb.com，破解防盗链/反爬 403；
-    // 2. 首次 onerror 时自动尝试通过 DuckDuckGo Favicon CDN 兜底；二次失败才平滑回退为纯文字微标。
-    const errHandler =
-      "if(!this.dataset.fb){" +
-        "this.dataset.fb='1';" +
-        "try{" +
-          "var h=new URL(this.src).hostname;" +
-          "if(h&&h.indexOf('duckduckgo')===-1){this.src='https://icons.duckduckgo.com/ip3/'+h+'.ico';return;}" +
-        "}catch(e){}" +
-      "}" +
-      "this.style.display='none';" +
-      "if(this.nextElementSibling)this.nextElementSibling.style.display='inline-flex';";
-
+    // 2. 加载失败由全局图片容错委托接管（handleImgFallback 的 emby-site-logo 分支：DuckDuckGo favicon 兜底→隐藏），此处不再内联 onerror。
     return (
       '<span class="emby-site-logo-wrap">' +
-        '<img class="emby-site-logo" src="' + escapeAttr(iconUrl) + '" alt="" loading="lazy" referrerpolicy="no-referrer" ' +
-          'onerror="' + escapeAttr(errHandler) + '" />' +
+        '<img class="emby-site-logo" src="' + escapeAttr(iconUrl) + '" alt="" loading="lazy" referrerpolicy="no-referrer" />' +
         '<span class="emby-site-logo-fallback" style="display:none;">' + initial + '</span>' +
       '</span>'
     );
@@ -15344,27 +15653,33 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (RE.test(el.textContent || '')) { el.classList.add('emby-hide-announce'); found = true; }
     });
     if (found) return;
-    // 3) 兜底：含关键词且自身直接文本的块容器（全 DOM 扫描较重，每个路由只跑一次）
+    // 3) 兜底：含关键词且自身直接文本的块容器（TreeWalker 限量扫描，每个路由只跑一次，避免 body * 全量快照）
     if (announceFallbackDone) return;
     announceFallbackDone = true;
-    Array.from(document.querySelectorAll('body *')).forEach(function (el) {
-      if (el.children.length !== 0) return;
-      const t = (el.textContent || '').trim();
-      if (!t || !RE.test(t) || t.length > 160) return;
-      let n = el;
+    try {
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, null);
+      let node; let scanned = 0; const BUDGET = 2500;
+      while ((node = walker.nextNode()) && scanned < BUDGET) {
+        scanned++;
+        // 只看叶子或小容器，跳过明显的大子树根（select/script/style/视频网格等由 1)/2) 覆盖）
+        if (node.children && node.children.length !== 0) continue;
+        const t = (node.textContent || '').trim();
+        if (!t || !RE.test(t) || t.length > 160) continue;
+      let n = node;
       while (n && n !== document.body) {
         const tag = n.tagName;
         if (n.classList && (n.classList.contains('notification') || n.classList.contains('sub-header'))) {
-          n.classList.add('emby-hide-announce'); return;
+          n.classList.add('emby-hide-announce'); break;
         }
         if (/^(DIV|SECTION|ARTICLE|MAIN|HEADER|NAV)$/.test(tag)) {
           if (n.querySelectorAll('img').length === 0 && n.querySelectorAll('a').length <= 3) {
-            n.classList.add('emby-hide-announce'); return;
+            n.classList.add('emby-hide-announce'); break;
           }
         }
         n = n.parentNode;
       }
-    });
+      }
+    } catch (e) {}
   }
 
   /* =======================================================================
@@ -19567,7 +19882,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         var bgGrad = gradColors[Math.abs(hash) % gradColors.length];
 
         var avaHtml = '<span class="efav-actor-ava-wrap">' +
-          (avaUrl ? '<img class="efav-actor-avatar" loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(a.name) + '" data-official-avatar="' + escapeAttr(officialAva) + '" src="' + escapeAttr(avaUrl) + '" alt="" onerror="if(this.dataset.officialAvatar && this.src !== this.dataset.officialAvatar){this.src=this.dataset.officialAvatar;}else{this.style.display=\'none\';if(this.nextElementSibling)this.nextElementSibling.style.display=\'inline-flex\';}" />' : '') +
+          (avaUrl ? '<img class="efav-actor-avatar" loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(a.name) + '" data-official-avatar="' + escapeAttr(officialAva) + '" src="' + escapeAttr(avaUrl) + '" alt="" />' : '') +
           '<span class="efav-actor-ava-fallback" style="background:' + bgGrad + ';' + (avaUrl ? 'display:none;' : '') + '">' + escapeHtml(initial) + '</span>' +
         '</span>';
 
@@ -19618,7 +19933,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           for (var sc = 0; sc < sa.name.length; sc++) sHash = (sHash * 31 + sa.name.charCodeAt(sc)) & 0xffff;
           var sGrad = gradColors[Math.abs(sHash) % gradColors.length];
           stackCirclesHtml += '<span class="efav-stack-circle">' +
-            (sAva ? '<img src="' + escapeAttr(sAva) + '" alt="" loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(sa.name) + '" data-official-avatar="' + escapeAttr(sOfficialAva) + '" onerror="if(this.dataset.officialAvatar && this.src !== this.dataset.officialAvatar){this.src=this.dataset.officialAvatar;}else{this.style.display=\'none\';if(this.nextElementSibling)this.nextElementSibling.style.display=\'inline-flex\';}" />' : '') +
+            (sAva ? '<img src="' + escapeAttr(sAva) + '" alt="" loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(sa.name) + '" data-official-avatar="' + escapeAttr(sOfficialAva) + '" />' : '') +
             '<span class="efav-stack-circle-fallback" style="background:' + sGrad + ';' + (sAva ? 'display:none;' : '') + '">' + escapeHtml(sInitial) + '</span>' +
           '</span>';
         }
@@ -19678,7 +19993,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         ? '<img loading="lazy" referrerpolicy="no-referrer" src="' + escapeAttr(cover) + '"' +
           (coverLargeUrl ? ' data-large="' + escapeAttr(coverLargeUrl) + '"' : '') +
           (coverThumbUrl ? ' data-thumb="' + escapeAttr(coverThumbUrl) + '"' : '') +
-          ' alt="" onerror="this.onerror=null;if(this.dataset.large&&this.src!==this.dataset.large){this.src=this.dataset.large;}else if(this.src.indexOf(\'/small_covers/\')!==-1){this.src=this.src.replace(\'/small_covers/\',\'/thumbs/\');}else if(this.src.indexOf(\'c0.jdbstatic.com\')===-1){this.src=this.src.replace(/https:\\/\\/.*?\\/rhe951l4q/g,\'https://c0.jdbstatic.com\');}">'
+          ' alt="">'
         : '';
       // 金标奖章：明黄皇冠胶囊（方案 A：微型皇冠 + 粗体 TOP250 + 最佳名次 + 多标角标）
       const awardIcon = buildAwardBadgeHtml(v.awards);
@@ -20274,7 +20589,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               if (typeof GfriendsAvatarService !== 'undefined') {
                 finalAv = GfriendsAvatarService.getAvatarUrl(o.v, officialAv);
               }
-              const imgTag = finalAv ? '<img class="efav-opt-av" loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(o.v) + '" data-official-avatar="' + escapeAttr(officialAv) + '" src="' + escapeAttr(finalAv) + '" alt="" onerror="if(this.dataset.officialAvatar && this.src !== this.dataset.officialAvatar){this.src=this.dataset.officialAvatar;}else{this.style.display=\'none\';}">' : '';
+              const imgTag = finalAv ? '<img class="efav-opt-av" loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(o.v) + '" data-official-avatar="' + escapeAttr(officialAv) + '" src="' + escapeAttr(finalAv) + '" alt="">' : '';
               // large：上大图下名字；small：左圆图右名字
               const innerHtml = large
                 ? imgTag + '<span class="efav-opt-name">' + inner + '</span>'
@@ -21008,7 +21323,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         // 封面 + 预览图堆叠层（封面在底，预览图从顶部错位探出小角 = 卡牌堆叠效果）
         const box = document.createElement('a');
         box.className = 'efav-gc-cbox';
-        box.href = 'javascript:;';
+        box.href = '#';
         box.title = (recs[0].code || v) + ' · ' + (recs[0].title || '');
         const ci = document.createElement('img');
         ci.src = galleryImgUrl(cover);
@@ -21236,6 +21551,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     /* ---------- 预览画廊：详情页灯箱收藏按钮（B 方案） ---------- */
     function initGalleryCollect() {
       if (document.getElementById('efav-gallery-collect')) return; // 幂等
+      // document-start 时 <body> 可能尚未解析，其后所有 body 操作（appendChild/observe）都会抛错掐死整个脚本；
+      // body 未就绪则整体延后到 DOMContentLoaded（回归套件复现，真机 TM 恰好躲过）。
+      if (!document.body) {
+        document.addEventListener('DOMContentLoaded', initGalleryCollect, { once: true });
+        return;
+      }
       const btn = document.createElement('button');
       btn.id = 'efav-gallery-collect';
       btn.className = 'efav-gallery-collect';
@@ -21390,7 +21711,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       function startPoll() {
         if (pollTimer) return;
         poll();
-        pollTimer = setInterval(poll, 200);
+        pollTimer = setInterval(poll, 500); // 灯箱打开期间局部轮询：200ms→500ms 足够跟随收藏状态，CPU 减半；关闭即 stopPoll，无常驻空转
       }
       function stopPoll() {
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
@@ -22556,8 +22877,11 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   function buildHomeTabs(movieListEl) {
     if (!movieListEl) return;
     const parent = movieListEl.parentNode;
-    // 找到容器最顶部锚点（原生分类栏/工具栏或容器首个元素），导航按钮必须置于其上方
-    const topAnchor = parent ? (parent.querySelector('.tabs, .main-tabs, .toolbar') || parent.firstElementChild || movieListEl) : movieListEl;
+    // 找到容器最顶部锚点（原生分类栏/工具栏或容器首个元素），导航按钮必须置于其上方；
+    // querySelector 可能命中嵌套后代（非直接子节点），insertBefore 会抛 NotFoundError，
+    // 此处强制校验父子关系，非法时回退到 movieListEl（必为直接子节点）。
+    let topAnchor = parent ? (parent.querySelector('.tabs, .main-tabs, .toolbar') || parent.firstElementChild || movieListEl) : movieListEl;
+    if (!topAnchor || topAnchor.parentNode !== parent) topAnchor = movieListEl;
 
     if (homeTabsBuilt && homeTabsBar && homeTabsBar.isConnected) {
       // 已建过且在文档中：确保标签栏移到当前主页最顶部（置于原生分类条之上）
@@ -24092,7 +24416,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     const actorsSectionHtml =
       '<div class="emby-actors' + (hasInitialActors ? '' : ' has-no-actors') + '" id="emby-actors-list">' +
         actorsHtml +
-        '<a class="emby-actor-chip emby-actor-add-chip" id="emby-actor-add-chip" href="javascript:void(0);" title="编辑演员">' +
+        '<a class="emby-actor-chip emby-actor-add-chip" id="emby-actor-add-chip" href="#" title="编辑演员">' +
           '<span class="ava"><span class="material-symbols-outlined" style="font-size:32px;">add</span></span>' +
           '<span class="nm">编辑演员</span>' +
         '</a>' +
@@ -24411,7 +24735,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       '</div>';
     }
 
-    const imgTag = finalAvatar ? '<img loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(a.name) + '" data-official-avatar="' + escapeAttr(cleanOfficial) + '" src="' + escapeAttr(cleanAvatar) + '" alt="" onerror="if(this.dataset.officialAvatar && this.src !== this.dataset.officialAvatar){this.src=this.dataset.officialAvatar;}else{this.style.display=\'none\';}" />' : '';
+    const imgTag = finalAvatar ? '<img loading="lazy" referrerpolicy="no-referrer" data-gfriends-actress="' + escapeAttr(a.name) + '" data-official-avatar="' + escapeAttr(cleanOfficial) + '" src="' + escapeAttr(cleanAvatar) + '" alt="" />' : '';
 
     return '<a class="emby-actor-chip' + favCls + delCls + customCls + (a.isCustom ? ' has-custom-tooltip' : '') + '" href="' + escapeAttr(safeHref(a.href, '#')) + '" rel="noopener" data-actor-name="' + escapeAttr(a.name) + '">' +
       customTooltip +
@@ -24808,7 +25132,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       // C. 编辑按钮在演员的最后面（同款 chip 样式，绿色虚线圆圈 + 图标）
       const addChip = document.createElement('a');
       addChip.className = 'emby-actor-chip emby-actor-add-chip' + (isActorEditMode ? ' is-active' : '');
-      addChip.href = 'javascript:void(0);';
+      addChip.href = '#';;
       addChip.title = isActorEditMode ? '完成编辑' : '编辑演员';
       addChip.innerHTML =
         '<span class="ava"><span class="material-symbols-outlined" style="font-size:32px;">' + (isActorEditMode ? 'done' : 'add') + '</span></span>' +
@@ -24922,7 +25246,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               finalAva = GfriendsAvatarService.getAvatarUrl(act.name, officialAva);
             }
             html += '<div class="actor-search-item" data-name="' + escapeAttr(act.name) + '" data-slug="' + escapeAttr(act.slug || '') + '" data-avatar="' + escapeAttr(act.avatar || '') + '" data-href="' + escapeAttr(act.href || '') + '">' +
-              (finalAva ? '<img src="' + escapeAttr(finalAva) + '" style="width:26px;height:26px;border-radius:50%;object-fit:cover;" onerror="this.style.display=\'none\';" />' : '<span style="width:26px;height:26px;border-radius:50%;background:#334155;display:inline-block;"></span>') +
+              (finalAva ? '<img src="' + escapeAttr(finalAva) + '" style="width:26px;height:26px;border-radius:50%;object-fit:cover;" data-img-fb-hide="1" />' : '<span style="width:26px;height:26px;border-radius:50%;background:#334155;display:inline-block;"></span>') +
               '<span style="font-size:12px;color:#f1f5f9;font-weight:500;">' + escapeHtml(act.name) + '</span>' +
             '</div>';
           });
@@ -25268,7 +25592,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       });
       const ml = document.querySelector('.movie-list');
       if (ml && ml.parentNode) {
-        const topAnchor = ml.parentNode.querySelector('.tabs, .main-tabs, .toolbar') || ml.parentNode.firstElementChild || ml;
+        // 同 buildHomeTabs：锚点必须校验为直接子节点，否则 insertBefore 抛 NotFoundError
+        let topAnchor = ml.parentNode.querySelector('.tabs, .main-tabs, .toolbar') || ml.parentNode.firstElementChild || ml;
+        if (!topAnchor || topAnchor.parentNode !== ml.parentNode) topAnchor = ml;
         if (topAnchor && topAnchor !== tabsBar) {
           ml.parentNode.insertBefore(tabsBar, topAnchor);
         } else {
@@ -25412,6 +25738,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
    * ===================================================================== */
   function applySkin(on) {
     if (on) {
+      try { ensureFontLinks(); } catch (e) {}
       if (!skinEl) {
         skinEl = document.createElement('style');
         skinEl.id = 'javdb-emby-skin';
@@ -25720,8 +26047,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     function flog(m) { try { console.log('[JAVDB→Emby] [Fusion] ' + m); } catch (e) {} }
     function ftoast(m) { try { showToast(m); } catch (e) {} }
 
-    /* ---------- 通用 HTTP（Promise 化 GM_xmlhttpRequest） ---------- */
-    function gmReq(opt) {
+    /* ---------- 通用 HTTP（Promise 化 GM_xmlhttpRequest，经全局 embyNetRun 限流去重；无 GM 时由顶部 __gmShim 回退 fetch） ---------- */
+    function gmReqRaw(opt) {
       return new Promise(function (resolve, reject) {
         const signal = opt.signal;
         let request = null;
@@ -25757,6 +26084,16 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           else signal.addEventListener('abort', onAbort, { once: true });
         }
       });
+    }
+    function gmReq(opt) {
+      const o = opt || {};
+      const m = ((o.method) || 'GET').toUpperCase();
+      const key = (m === 'GET' && o.url) ? ('GET ' + o.url) : null;
+      const run = function () { return netTimeoutRace(gmReqRaw(o), o.timeout || 15000); };
+      try {
+        if (typeof embyNetRun === 'function') return embyNetRun(key, run);
+      } catch (e) {}
+      return run();
     }
     function debounce(fn, ms) {
       let t = null;
@@ -25798,7 +26135,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       get enableCheck() { return GM_getValue('jf_mag_check', true); },
       get qbtHost() { return GM_getValue('jf_qbt_host', 'http://127.0.0.1:18080'); },
       get qbtUser() { return GM_getValue('jf_qbt_user', 'admin'); },
-      get qbtPass() { return GM_getValue('jf_qbt_pass', 'adminadmin'); },
+      get qbtPass() { return GM_getValue('jf_qbt_pass', ''); }, // 默认密码留空：避免出厂默认口令残留,
       get u115Cid() { return GM_getValue('jf_115_cid', ''); }
     };
     var TrConf = {
@@ -27135,10 +27472,11 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       });
       return out;
     }
-    // BT4G：搜索页只有标题+详情链接，磁力需抓详情页（限前 8 条并行）
-    async function parseBt4g(html) {
+    // BT4G：搜索页只有标题+详情链接，磁力需抓详情页（限前 4 条并行，支持外部 Abort）
+    async function parseBt4g(html, signal) {
+      if (signal && signal.aborted) return [];
       const doc = new DOMParser().parseFromString(html, 'text/html');
-      const items = Array.prototype.slice.call(doc.querySelectorAll('.list-group-item.result-item')).slice(0, 8);
+      const items = Array.prototype.slice.call(doc.querySelectorAll('.list-group-item.result-item')).slice(0, 4);
       const out = [];
       await Promise.all(items.map(async function (it) {
         const a = it.querySelector('h5 a[href*="/magnet/"]');
@@ -27147,7 +27485,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         const detailUrl = /^https?:/i.test(rel) ? rel : ('https://bt4gprx.com' + (rel.charAt(0) === '/' ? '' : '/') + rel);
         const title = (a.textContent || '').trim();
         try {
-          const r = await gmReq({ url: detailUrl, timeout: 12000 });
+          const r = await gmReq({ url: detailUrl, timeout: 12000, signal: signal });
           const d2 = new DOMParser().parseFromString(r.responseText || '', 'text/html');
           const btn = d2.querySelector('a[href*="downloadtorrentfile.com/hash/"]');
           if (!btn) return;
@@ -27187,21 +27525,21 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         GM_setValue('jf_magpanel_cache', JSON.stringify(c));
       } catch (e) {}
     }
-    async function fetchMagnetResults(code, siteId) {
+    async function fetchMagnetResults(code, siteId, signal) {
       const site = MAG_SEARCH_SITES.find(function (s) { return s.id === siteId; }) || MAG_SEARCH_SITES[0];
       const cacheKey = site.id + ':' + code.toUpperCase();
       const cached = magPanelCacheGet(cacheKey);
       if (cached) return { rows: cached, fromCache: true };
       const url = site.search.replace('{code}', encodeURIComponent(code));
-      const r = await gmReq({ url: url, timeout: 20000, headers: { 'Accept': 'text/html' } });
+      const r = await gmReq({ url: url, timeout: 20000, headers: { 'Accept': 'text/html' }, signal: signal });
       const html = r.responseText || '';
       let rows = [];
       if (site.id === 'sukebei') rows = parseSukebei(html);
-      else if (site.id === 'bt4g') rows = await parseBt4g(html);
+      else if (site.id === 'bt4g') rows = await parseBt4g(html, signal);
       magPanelCacheSet(cacheKey, rows);
       return { rows: rows, fromCache: false };
     }
-    // 详情页右侧磁力搜索面板（fixed 悬浮，可折叠，不侵入皮肤文档流）
+    // 详情页磁力聚合条（嵌入 #magnets-content 顶部，随文档流，可折叠）
     function injectMagnetPanel() {
       if (!isPluginEnabled('fusionMagnet')) return;
       if (!GM_getValue('jf_mag_panel', true)) return;
@@ -27211,7 +27549,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       const oldPanel = document.getElementById('jf-magnet-panel');
       if (oldPanel) {
         if (oldPanel.dataset.code === code) return; // 同番号已注入
-        oldPanel.remove(); // SPA 切换番号，重建
+        try { if (typeof oldPanel._abortLoad === 'function') oldPanel._abortLoad(); } catch (e) {}
+        oldPanel.remove(); // SPA 切换番号，中止旧请求后重建
       }
 
       const panel = document.createElement('div');
@@ -27235,13 +27574,18 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             }).join('') +
           '</select>' +
           '<select class="jf-magpanel-sel" id="jfMagSort">' +
-            '<option value="default">默认排序</option>' +
+            '<option value="default">智能排序</option>' +
             '<option value="size">按大小</option>' +
             '<option value="seeds">按做种数</option>' +
           '</select>' +
+          '<button type="button" class="jf-magtool-btn" id="jfMagTop3" title="复制前 3 条（精简链接）">复制Top3</button>' +
+          (MagConf.enableQb ? '<button type="button" class="jf-magtool-btn" id="jfMagBestQb" title="推送做种最多的一条到 qB">推最佳→qB</button>' : '') +
+          (MagConf.enable115 ? '<button type="button" class="jf-magtool-btn" id="jfMagBest115" title="发送做种最多的一条到 115">推最佳→115</button>' : '') +
+          '<button type="button" class="jf-magtool-btn" id="jfMagOpenSite" title="在源站打开搜索页">源站搜↗</button>' +
         '</div>' +
-        '<div class="jf-magpanel-list" id="jfMagList"><div class="jf-magpanel-status">点击 ⟳ 搜索磁力资源；折叠时不会自动请求</div></div>';
-      document.body.appendChild(panel);
+        '<div class="jf-magpanel-list" id="jfMagList"><div class="jf-magpanel-status">搜索中…</div></div>';
+      var magMount = document.querySelector('#magnets-content') || bodyEl;
+      magMount.insertBefore(panel, magMount.firstChild);
 
       let lastRows = [];
       const listEl = panel.querySelector('#jfMagList');
@@ -27250,49 +27594,195 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       let loaded = false;
       sortSel.value = GM_getValue('jf_mag_panel_sort', 'default');
 
-      function renderRows() {
-        const sort = sortSel.value;
-        let rows = lastRows.slice();
+      function magRowKey(m) {
+        var mt = /xt=urn:btih:([a-z0-9]+)/i.exec(m || '');
+        return mt ? ('btih:' + mt[1].toLowerCase()) : ('raw:' + (m || ''));
+      }
+      function extractMagTags(title) {
+        var t = String(title || '');
+        var tags = [];
+        if (/无码|無碼|uncensored|流出/i.test(t)) tags.push('无码');
+        if (/中字|中文字幕|字幕/i.test(t)) tags.push('中字');
+        if (/4k|2160/i.test(t)) tags.push('4K');
+        else if (/1080|720|[^a-z]hd[^a-z]|高清|blu-?ray/i.test(t)) tags.push('高清');
+        return tags;
+      }
+      function inSizeSweet(row) {
+        var b = row.sizeBytes || 0;
+        return (b >= 1073741824 && b <= 10737418240) ? 1 : 0;
+      }
+      // btih 去重（保留做种最多）+ 排序（智能=做种优先、同分 1~10GB 优先）
+      function preparedRows() {
+        var seen = {}, uniq = [];
+        lastRows.forEach(function (r) {
+          if (!r || !r.magnet) return;
+          var k = magRowKey(r.magnet);
+          if (seen[k]) {
+            if ((r.seedNum || 0) > (seen[k].seedNum || 0)) {
+              var i = uniq.indexOf(seen[k]);
+              if (i >= 0) uniq[i] = r;
+              seen[k] = r;
+            }
+            return;
+          }
+          seen[k] = r;
+          uniq.push(r);
+        });
+        var sort = sortSel.value;
+        var rows = uniq.slice();
         if (sort === 'size') rows.sort(function (a, b) { return (b.sizeBytes || 0) - (a.sizeBytes || 0); });
         else if (sort === 'seeds') rows.sort(function (a, b) { return (b.seedNum || 0) - (a.seedNum || 0); });
+        else rows.sort(function (a, b) { return ((b.seedNum || 0) - (a.seedNum || 0)) || (inSizeSweet(b) - inSizeSweet(a)); });
+        return rows;
+      }
+      function aggSrcUrl() {
+        var site = MAG_SEARCH_SITES.find(function (s) { return s.id === siteSel.value; }) || MAG_SEARCH_SITES[0];
+        return { site: site, url: site.search.replace('{code}', encodeURIComponent(code)) };
+      }
+      // 聚合行操作：文字按钮（复制/验车）+ qB/115 收进 ⋯ 二级菜单
+      function createAggActions(row) {
+        var wrap = document.createElement('div');
+        wrap.className = 'jf-mag-actions';
+        var copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'jf-mag-textbtn';
+        copyBtn.textContent = '复制';
+        copyBtn.title = '左键复制精简链接，右键复制完整链接';
+        copyBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          GM_setClipboard(simplifyMagnetLink(row.magnet), 'text');
+          magToast('📋 精简链接已复制（右键可复制完整）');
+        });
+        copyBtn.addEventListener('contextmenu', function (e) {
+          e.preventDefault(); e.stopPropagation();
+          GM_setClipboard(row.magnet, 'text');
+          magToast('📋 完整链接已复制');
+        });
+        wrap.appendChild(copyBtn);
+        if (MagConf.enableCheck) {
+          var checkBtn = document.createElement('button');
+          checkBtn.type = 'button';
+          checkBtn.className = 'jf-mag-textbtn';
+          checkBtn.textContent = '验车';
+          checkBtn.title = 'whatslink 验车（截图/文件信息）';
+          checkBtn.addEventListener('click', function (e) { e.stopPropagation(); handleCheckCar(row.magnet, checkBtn); });
+          wrap.appendChild(checkBtn);
+        }
+        var menuItems = [];
+        if (MagConf.enableQb) menuItems.push({ label: '推送到 qB', fn: function () { pushToQb(row.magnet); } });
+        if (MagConf.enable115) {
+          if ((MagConf.u115Cid || '').trim()) menuItems.push({ label: '发送到 115', fn: function () { pushTo115(row.magnet); } });
+          else menuItems.push({ label: '设置 115 目录…', fn: function () { openFusionSettings('magnet'); } });
+        }
+        if (menuItems.length) {
+          var moreWrap = document.createElement('div');
+          moreWrap.className = 'jf-mag-morewrap';
+          var moreBtn = document.createElement('button');
+          moreBtn.type = 'button';
+          moreBtn.className = 'jf-mag-morebtn';
+          moreBtn.textContent = '⋯';
+          moreBtn.title = '更多推送';
+          var menu = document.createElement('div');
+          menu.className = 'jf-mag-menu';
+          menuItems.forEach(function (it) {
+            var mi = document.createElement('button');
+            mi.type = 'button';
+            mi.textContent = it.label;
+            mi.addEventListener('click', function (e) {
+              e.stopPropagation();
+              menu.classList.remove('open');
+              it.fn();
+            });
+            menu.appendChild(mi);
+          });
+          moreBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var willOpen = !menu.classList.contains('open');
+            menu.classList.toggle('open', willOpen);
+            if (willOpen) {
+              var closer = function (ev) {
+                if (!menu.contains(ev.target)) {
+                  menu.classList.remove('open');
+                  document.removeEventListener('click', closer);
+                }
+              };
+              setTimeout(function () { document.addEventListener('click', closer); }, 0);
+            }
+          });
+          moreWrap.appendChild(moreBtn);
+          moreWrap.appendChild(menu);
+          wrap.appendChild(moreWrap);
+        }
+        return wrap;
+      }
+      function renderRows() {
+        var rows = preparedRows();
         if (!rows.length) {
-          listEl.innerHTML = '<div class="jf-magpanel-status">未找到磁力资源</div>';
+          listEl.innerHTML = '';
+          var st = document.createElement('div');
+          st.className = 'jf-magpanel-status';
+          st.textContent = '未找到磁力资源 · ';
+          var src = aggSrcUrl();
+          var a = document.createElement('a');
+          a.className = 'jf-magsrc-link';
+          a.href = src.url;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.textContent = '去 ' + src.site.name + ' 搜 ' + code + ' ↗';
+          st.appendChild(a);
+          listEl.appendChild(st);
           return;
         }
         listEl.innerHTML = '';
         rows.slice(0, 40).forEach(function (row) {
-          const item = document.createElement('div');
+          var item = document.createElement('div');
           item.className = 'jf-magrow';
-          const titleA = document.createElement('a');
+          var titleA = document.createElement('a');
           titleA.className = 'jf-magrow-title';
           titleA.href = row.magnet;
-          titleA.title = row.title + '\n（点击复制磁力链接）';
+          titleA.title = row.title + '\n（点击打开磁力链接）';
           titleA.textContent = row.title;
-          titleA.addEventListener('click', function (e) {
-            e.preventDefault();
-            GM_setClipboard(simplifyMagnetLink(row.magnet), 'text');
-            magToast('📋 磁力链接已复制');
-          });
-          const meta = document.createElement('div');
-          meta.className = 'jf-magrow-meta';
-          meta.textContent = [row.size, row.seeds ? ('做种 ' + row.seeds) : '', row.date].filter(Boolean).join(' · ');
-          const actionRow = document.createElement('div');
-          actionRow.className = 'jf-magrow-actions';
-          actionRow.appendChild(meta);
-          actionRow.appendChild(createMagBtnGroup(row.magnet));
           item.appendChild(titleA);
+          var tags = extractMagTags(row.title);
+          if (tags.length) {
+            var chips = document.createElement('div');
+            chips.className = 'jf-magchips';
+            tags.forEach(function (tg) {
+              var c = document.createElement('span');
+              c.className = 'jf-magchip';
+              c.textContent = tg;
+              chips.appendChild(c);
+            });
+            item.appendChild(chips);
+          }
+          var metaParts = [row.size, row.seeds ? ('做种 ' + row.seeds) : '', row.date].filter(Boolean);
+          var actionRow = document.createElement('div');
+          actionRow.className = 'jf-magrow-actions';
+          if (metaParts.length) {
+            var meta = document.createElement('div');
+            meta.className = 'jf-magrow-meta';
+            meta.textContent = metaParts.join(' · ');
+            actionRow.appendChild(meta);
+          }
+          actionRow.appendChild(createAggActions(row));
           item.appendChild(actionRow);
           listEl.appendChild(item);
         });
         if (rows.length > 40) {
-          const more = document.createElement('div');
+          var more = document.createElement('div');
           more.className = 'jf-magpanel-status';
           more.textContent = '… 共 ' + rows.length + ' 条，仅显示前 40 条';
           listEl.appendChild(more);
         }
       }
+      let loadGen = 0; // 代际计数：切源/切番号时旧请求回包直接丢弃
       async function load(force) {
         loaded = true;
+        var gen = ++loadGen;
+        try { if (typeof panel._abortLoad === 'function') panel._abortLoad(); } catch (e) {}
+        var ctrl = null;
+        try { ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null; } catch (e) { ctrl = null; }
+        panel._abortLoad = function () { try { if (ctrl) ctrl.abort(); } catch (e) {} };
         listEl.innerHTML = '<div class="jf-magpanel-status"><span class="jf-spinner" style="width:18px;height:18px;border-width:2px;"></span> 搜索中…</div>';
         if (force) {
           const c = magPanelCacheRead();
@@ -27300,18 +27790,18 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           GM_setValue('jf_magpanel_cache', JSON.stringify(c));
         }
         try {
-          const r = await fetchMagnetResults(code, siteSel.value);
-          if (!document.body.contains(panel)) return;
+          const r = await fetchMagnetResults(code, siteSel.value, ctrl ? ctrl.signal : null);
+          if (gen !== loadGen || !panel.isConnected) return;
           lastRows = r.rows;
           renderRows();
         } catch (e) {
-          if (!document.body.contains(panel)) return;
+          if (gen !== loadGen || !panel.isConnected) return;
           listEl.innerHTML = '<div class="jf-magpanel-status err">搜索失败：' + escapeHtml(e.message === 'timeout' ? '连接超时' : '网络错误') + '，点 ⟳ 重试</div>';
         }
       }
       siteSel.addEventListener('change', function () {
         GM_setValue('jf_mag_panel_site', siteSel.value);
-        if (!panel.classList.contains('collapsed') && loaded) load();
+        load(); // 切源立即重搜，不再等“已加载”状态
       });
       sortSel.addEventListener('change', function () { GM_setValue('jf_mag_panel_sort', sortSel.value); renderRows(); });
       panel.querySelector('#jfMagRefresh').addEventListener('click', function () { load(true); });
@@ -27322,6 +27812,30 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         panel.querySelector('#jfMagToggle').textContent = c ? '«' : '»';
         if (!c && !loaded) load(false);
       });
+      var top3Btn = panel.querySelector('#jfMagTop3');
+      if (top3Btn) top3Btn.addEventListener('click', function () {
+        var top = preparedRows().slice(0, 3);
+        if (!top.length) { magToast('暂无可复制的磁力', false); return; }
+        GM_setClipboard(top.map(function (r) { return simplifyMagnetLink(r.magnet); }).join('\n'), 'text');
+        magToast('📋 已复制 Top' + top.length);
+      });
+      var bestQbBtn = panel.querySelector('#jfMagBestQb');
+      if (bestQbBtn) bestQbBtn.addEventListener('click', function () {
+        var best = preparedRows()[0];
+        if (!best) { magToast('暂无可推送的磁力', false); return; }
+        pushToQb(best.magnet);
+      });
+      var best115Btn = panel.querySelector('#jfMagBest115');
+      if (best115Btn) best115Btn.addEventListener('click', function () {
+        var best = preparedRows()[0];
+        if (!best) { magToast('暂无可推送的磁力', false); return; }
+        pushTo115(best.magnet);
+      });
+      var openSiteBtn = panel.querySelector('#jfMagOpenSite');
+      if (openSiteBtn) openSiteBtn.addEventListener('click', function () {
+        try { window.open(aggSrcUrl().url, '_blank', 'noopener'); } catch (e) {}
+      });
+      load(false); // 详情页打开即自动搜索，不再要点 ⟳
     }
 
 
@@ -27438,7 +27952,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       servers.forEach(async function (s) {
         const chip = document.createElement('a');
         chip.className = 'jf-lib-chip jf-lib-loading';
-        chip.href = 'javascript:void(0);';
+        chip.href = '#';
         chip.innerHTML = '<span class="jf-lib-dot"></span>' + escapeHtml(s.name);
         chip.title = s.name + '：入库查询中…';
         wrap.appendChild(chip);
@@ -27944,7 +28458,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<label class="jf-set-row"><input type="checkbox" id="jfUiMagnet" ' + (isPluginEnabled('fusionMagnet') ? 'checked' : '') + '> 磁力工具箱</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfUiListBadge" ' + (GM_getValue('jf_ui_listbadge', true) ? 'checked' : '') + '> 列表页入库角标（需先同步索引）</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfUiLibPlay" ' + (GM_getValue('jf_ui_libplay', true) ? 'checked' : '') + '> 已入库醒目播放按钮</label>' +
-            '<label class="jf-set-row"><input type="checkbox" id="jfUiMagPanel" ' + (GM_getValue('jf_mag_panel', true) ? 'checked' : '') + '> 详情页右侧磁力搜索框</label>' +
+            '<label class="jf-set-row"><input type="checkbox" id="jfUiMagPanel" ' + (GM_getValue('jf_mag_panel', true) ? 'checked' : '') + '> 详情页磁力聚合（站外搜索条）</label>' +
           '</div>' +
           '<label class="jf-set-row" style="justify-content:space-between;gap:14px;margin-top:10px;">' +
             '<span>列表封面按钮位置（预览片 + 媒体库）</span>' +
@@ -27970,7 +28484,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         body.querySelector('#jfUiMagPanel').addEventListener('change', function (e) {
           GM_setValue('jf_mag_panel', e.target.checked);
           const p = document.getElementById('jf-magnet-panel');
-          if (!e.target.checked && p) p.remove();
+          if (!e.target.checked && p) {
+            try { if (typeof p._abortLoad === 'function') p._abortLoad(); } catch (err) {}
+            p.remove();
+          }
           if (e.target.checked) fullScan();
         });
       }
@@ -28126,22 +28643,19 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         'select.jf-inp{appearance:auto;}',
         'select.jf-inp option{background:#1a1e26;color:#e6eaf2;}',
         /* 磁力搜索面板（详情页右侧悬浮栏） */
-        '.jf-magnet-panel{position:fixed;top:110px;right:18px;z-index:990;width:400px;max-width:calc(100vw - 36px);max-height:72vh;display:flex;flex-direction:column;border-radius:14px;overflow:hidden;background:rgba(22,26,34,.82);border:1px solid rgba(255,255,255,.13);box-shadow:0 18px 48px rgba(0,0,0,.5);backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2);transition:width .2s ease;}',
-        '.jf-magnet-panel.collapsed{width:0;min-width:0;border:none;overflow:visible;background:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;}',
+        '.jf-magnet-panel{margin:0 0 14px;width:100%;box-sizing:border-box;display:flex;flex-direction:column;border-radius:14px;overflow:hidden;background:rgba(22,26,34,.82);border:1px solid rgba(255,255,255,.13);box-shadow:0 8px 26px rgba(0,0,0,.4);}',
+        '.jf-magnet-panel.collapsed .jf-magpanel-tools,.jf-magnet-panel.collapsed .jf-magpanel-list{display:none;}',
         '.jf-magpanel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.09);flex-shrink:0;}',
         '.jf-magpanel-title{font-size:13px;font-weight:800;color:#fff;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
         '.jf-magpanel-code{color:var(--e-accent,#00a4dc);font-weight:700;margin-left:2px;}',
         '.jf-magpanel-head-btns{display:flex;gap:4px;flex-shrink:0;}',
         '.jf-magpanel-hbtn{width:26px;height:26px;border:none;border-radius:7px;background:rgba(255,255,255,.08);color:#cfd6e4;font-size:14px;cursor:pointer;line-height:1;transition:background .15s;}',
         '.jf-magpanel-hbtn:hover{background:rgba(255,255,255,.18);color:#fff;}',
-        '.jf-magnet-panel.collapsed .jf-magpanel-tools,.jf-magnet-panel.collapsed .jf-magpanel-list,.jf-magnet-panel.collapsed .jf-magpanel-title,.jf-magnet-panel.collapsed #jfMagRefresh{display:none;}',
-        '.jf-magnet-panel.collapsed .jf-magpanel-head{position:fixed;right:0;top:110px;border-radius:10px 0 0 10px;background:rgba(22,26,34,.9);border:1px solid rgba(255,255,255,.13);border-right:none;padding:8px 6px;}',
-        '.jf-magnet-panel.collapsed .jf-magpanel-head-btns{flex-direction:column;}',
-        '.jf-magnet-panel.collapsed #jfMagToggle{writing-mode:vertical-rl;}',
+        '.jf-magnet-panel.collapsed .jf-magpanel-head{border-bottom:none;}',
         '.jf-magpanel-tools{display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0;}',
         '.jf-magpanel-sel{flex:1;background:rgba(255,255,255,.07);color:#e6eaf2;border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:5px 8px;font-size:12px;outline:none;}',
         '.jf-magpanel-sel option{background:#1a1e26;color:#e6eaf2;}',
-        '.jf-magpanel-list{overflow-y:auto;overflow-x:hidden;padding:6px;flex:1;min-height:60px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent;}',
+        '.jf-magpanel-list{overflow-y:auto;overflow-x:hidden;padding:6px;flex:1;min-height:60px;max-height:430px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent;}',
         '.jf-magpanel-list::-webkit-scrollbar{width:6px;}',
         '.jf-magpanel-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:6px;}',
         '.jf-magpanel-status{padding:18px 10px;text-align:center;font-size:12.5px;color:rgba(230,234,242,.6);display:flex;align-items:center;justify-content:center;gap:8px;}',
@@ -28153,7 +28667,23 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         '.jf-magrow-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:5px;}',
         '.jf-magrow-meta{font-size:11px;color:rgba(230,234,242,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;}',
         '.jf-magrow .jf-mag-btn-group{margin-left:0!important;flex-shrink:0;}',
-        '@media (max-width:900px){.jf-magnet-panel{width:330px;}}',
+        '.jf-magtool-btn{flex-shrink:0;background:rgba(255,255,255,.07);color:#e6eaf2;border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;white-space:nowrap;}',
+        '.jf-magtool-btn:hover{background:rgba(255,255,255,.16);color:#fff;}',
+        '.jf-mag-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;}',
+        '.jf-mag-textbtn{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);border-radius:6px;color:#cfd6e4;font-size:11.5px;padding:3px 10px;cursor:pointer;white-space:nowrap;}',
+        '.jf-mag-textbtn:hover{background:rgba(255,255,255,.16);color:#fff;}',
+        '.jf-mag-morewrap{position:relative;}',
+        '.jf-mag-morebtn{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);border-radius:6px;color:#cfd6e4;font-size:12px;width:26px;height:22px;line-height:1;cursor:pointer;}',
+        '.jf-mag-morebtn:hover{background:rgba(255,255,255,.16);color:#fff;}',
+        '.jf-mag-menu{display:none;position:absolute;right:0;top:calc(100% + 4px);min-width:150px;z-index:5;background:rgba(22,26,34,.97);border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:4px;box-shadow:0 10px 28px rgba(0,0,0,.5);}',
+        '.jf-mag-menu.open{display:block;}',
+        '.jf-mag-menu button{display:block;width:100%;box-sizing:border-box;text-align:left;background:none;border:none;color:#e6eaf2;font-size:12px;padding:7px 10px;border-radius:6px;cursor:pointer;}',
+        '.jf-mag-menu button:hover{background:rgba(255,255,255,.1);}',
+        '.jf-magchips{display:flex;flex-wrap:wrap;gap:4px;margin:5px 0 0;}',
+        '.jf-magchip{font-size:10.5px;line-height:1.6;padding:0 7px;border-radius:99px;background:rgba(0,164,220,.16);border:1px solid rgba(0,164,220,.4);color:#9ecbff;white-space:nowrap;}',
+        '.jf-magsrc-link{color:#9ecbff;text-decoration:none;font-weight:700;}',
+        '.jf-magsrc-link:hover{text-decoration:underline;}',
+        '@media (max-width:900px){.jf-magpanel-tools{flex-wrap:wrap;}}',
         /* 已入库醒目播放按钮（渐变胶囊，与主播放按钮同高 48px） */
         '.jf-lib-play-wrap{display:inline-flex;position:relative;vertical-align:middle;}',
         '.jf-lib-play-split{display:inline-flex;align-items:center;height:48px;border-radius:999px;overflow:hidden;box-sizing:border-box;}',
