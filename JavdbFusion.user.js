@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.358-connect-all
+// @version      7.359-debug-notetip
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -165,7 +165,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.358-connect-all';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.359-debug-notetip';
   var tabHome = null, tabFav = null, favPanel = null;
   var tabGallery = null, galleryPanel = null;
   var tabTop250 = null, top250Panel = null;
@@ -780,8 +780,12 @@
 
     if (isActor && isPluginEnabled('actressInfo') && actorName) {
       try {
+        try { console.log('[JAVDB→Emby] TEMP-DEBUG fetching actress: ' + actorName); } catch (e) {}
         actorData = await ActressService.getActressData(actorName);
-      } catch (e) {}
+        try { console.log('[JAVDB→Emby] TEMP-DEBUG actress done: ' + actorName + ' hasData=' + !!actorData); } catch (e) {}
+      } catch (e) {
+        try { console.log('[JAVDB→Emby] TEMP-DEBUG actress ERR: ' + (e && e.message)); } catch (e2) {}
+      }
     }
 
     if (!noteTipEl) {
@@ -947,6 +951,7 @@
   function bindNoteTips() {
     if (noteTipBound) return;
     noteTipBound = true;
+    try { console.log('[JAVDB→Emby] TEMP-DEBUG noteTips bound'); } catch (e) {}
     document.addEventListener('mouseover', function (e) {
       if (tipHoverQueued) return;
       tipHoverQueued = true;
