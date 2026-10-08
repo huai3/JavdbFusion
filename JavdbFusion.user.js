@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.357-net-timeout-race
+// @version      7.358-connect-all
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -15,9 +15,50 @@
 // @connect      ja.wikipedia.org
 // @connect      icons.duckduckgo.com
 // @connect      sukebei.nyaa.si
+// @connect      bt4gprx.com
+// @connect      downloadtorrentfile.com
 // @connect      api.javspyl.eu.org
+// @connect      123av.com
+// @connect      njavtv.com
+// @connect      www.njav.com
+// @connect      njavtv.blog
+// @connect      missav.live
+// @connect      missav.ws
+// @connect      jable.tv
+// @connect      netflav.com
+// @connect      supjav.com
+// @connect      www.bestjavporn.com
+// @connect      pics.pornfhd.com
+// @connect      javmenu.com
+// @connect      www.av01.media
+// @connect      www.av01.xyz
+// @connect      theav.xyz
+// @connect      jav.guru
+// @connect      www.javmost.ws
+// @connect      javmost.cx
+// @connect      javtrailers.com
+// @connect      javfilms.com
+// @connect      avpreview.com
+// @connect      javsubtitled.com
+// @connect      7mmtv.sx
+// @connect      avmates.com
+// @connect      hohoj.tv
+// @connect      cn.xsz-av.com
+// @connect      javhd.today
+// @connect      www.javbus.com
+// @connect      www.javlibrary.com
+// @connect      www.dmm.co.jp
+// @connect      p.dmm.co.jp
+// @connect      api.dmm.com
+// @connect      cc3001.dmm.com
+// @connect      cc3001.dmm.co.jp
+// @connect      javtxt.com
+// @connect      javfree.me
+// @connect      javstore.net
+// @connect      blogjav.net
 // @connect      *
-// NOTE: 保留末尾 * 仅用于用户自建 Emby/Jellyfin/qBittorrent 自定义服务器地址（任意内网域名/IP，无法预先白名单）；已知公网域名已在上方显式列出。
+// NOTE: 末尾 * 为用户自建 Emby/Jellyfin/qBittorrent 自定义服务器地址保留（任意内网域名/IP，无法预先白名单）。
+// 实测 TM5.5 下 * 不能覆盖播放站探测请求，故公网域名必须逐个显式列出（片源可用性探测/logo 取色经 GM_xhr 发起）。
 // @description  JAVDB Emby 风格皮肤 x 融合增强：Emby/Jellyfin 媒体库跳转（多服务器+全库索引+入库徽章）、预告片多源播放（官方/DMM/直链/javspyl）、磁力工具箱（复制/qB/115/验车）、右侧磁力聚合搜索框。界面全面毛玻璃化融合。
 // @author       hy3 (skin) + dmdx (JavdbBuddy model) + ZiPenOk (trailer/magnet) + fusion
 // @icon         data:image/png;base64,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
@@ -124,7 +165,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.357-net-timeout-race';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.358-connect-all';
   var tabHome = null, tabFav = null, favPanel = null;
   var tabGallery = null, galleryPanel = null;
   var tabTop250 = null, top250Panel = null;
