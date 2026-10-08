@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.356-fix-tabs-anchor
+// @version      7.357-net-timeout-race
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -124,7 +124,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.356-fix-tabs-anchor';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.357-net-timeout-race';
   var tabHome = null, tabFav = null, favPanel = null;
   var tabGallery = null, galleryPanel = null;
   var tabTop250 = null, top250Panel = null;
@@ -143,6 +143,16 @@
   // 全局网络调度：并发上限3 + 同URL GET去重 + 429指数退避，所有 gmHttp/gmReq 走此门
   var __embyNetActive = 0; var __embyNetQueue = []; var __embyNetPending = new Map();
   var EMBY_NET_MAX = 3;
+  // 墙钟熔断：不依赖后端（TM/fetch）内部超时是否可靠，调用方 opt.timeout 到点必落定；
+  // 实测 javspyl 在部分网络下是连接黑洞，TM 的 ontimeout 未能将其捞出，曾导致预告片解析 hang 满 12s。
+  function netTimeoutRace(promise, ms) {
+    let timer = null;
+    const timeout = (typeof ms === 'number' && ms > 0) ? ms : 15000;
+    return Promise.race([promise, new Promise(function (_, reject) {
+      timer = setTimeout(function () { reject(new Error('timeout')); }, timeout);
+    })]).then(function (v) { if (timer) clearTimeout(timer); return v; },
+               function (e) { if (timer) clearTimeout(timer); throw e; });
+  }
   function __embyNetPump() {
     while (__embyNetActive < EMBY_NET_MAX && __embyNetQueue.length) {
       const task = __embyNetQueue.shift();
@@ -9529,7 +9539,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       const m = ((opts.method) || 'GET').toUpperCase();
       const u = opts.url;
       const dedupeKey = (m === 'GET' && u) ? ('GET ' + u) : null;
-      const run = function () { return gmHttpRawRequest(opts); };
+      const run = function () { return netTimeoutRace(gmHttpRawRequest(opts), opts.timeout || 15000); };
       try {
         if (typeof embyNetRun === 'function') return embyNetRun(dedupeKey, run);
       } catch (e) {}
@@ -26029,7 +26039,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       const o = opt || {};
       const m = ((o.method) || 'GET').toUpperCase();
       const key = (m === 'GET' && o.url) ? ('GET ' + o.url) : null;
-      const run = function () { return gmReqRaw(o); };
+      const run = function () { return netTimeoutRace(gmReqRaw(o), o.timeout || 15000); };
       try {
         if (typeof embyNetRun === 'function') return embyNetRun(key, run);
       } catch (e) {}
