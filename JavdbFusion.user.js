@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.363-top250-web-first
+// @version      7.364-top250-dedupe
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -165,7 +165,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.363-top250-web-first';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.364-top250-dedupe';
   var tabHome = null, tabFav = null, favPanel = null;
   var tabGallery = null, galleryPanel = null;
   var tabTop250 = null, top250Panel = null;
@@ -9863,7 +9863,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     async function fetchOfficialTop(handleType, typeValue, page) {
       const pageNo = Math.max(1, parseInt(page, 10) || 1);
       const params = [];
-      if (pageNo > 1) params.push('p=' + pageNo);
+      // 分页参数用 page（站方惯例，list_detail/收藏清单同款）；曾误用 p=（在榜单页 p=周期），
+      // 站方忽略未知参数导致每页都返回第 1 页——TOP250 出现“第 41 部变回第 1 部”的整页重复。
+      if (pageNo > 1) params.push('page=' + pageNo);
       if (handleType === 'video_type' && typeValue) params.push('t=' + encodeURIComponent(typeValue));
       else if (handleType === 'year' && typeValue) params.push('t=' + encodeURIComponent('y' + typeValue));
       const qs = params.length ? '?' + params.join('&') : '';
@@ -10304,44 +10306,67 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       }
     }
 
-    // 3. 全量获取 TOP250 榜单（共 5 页 250 部，一站式拉取）
+    // 3. 全量获取 TOP250 榜单（动态分页，一站式拉取）
+    // 页数不写死：官方站约 40 条/页（曾按 50 条/页只拉 5 页，且分页参数误用 p= 导致整页重复）。
+    // 逐页拉到空页为止（上限 8 页），按视频 id 去重兜底——参数/页大小再变也不会出现“第 41 部变回第 1 部”。
     async function fetchFullTop(handleType, typeValue, onProgress) {
-      const allMovies = [];
-      const uncachedPages = [];
-
-      for (let p = 1; p <= 5; p++) {
+      const seen = new Set();
+      const all = [];
+      // 缓存版本隔离：p= 参数时代写入的整页重复缓存与新键同名，必须废弃，否则去重后只能看到 40 条。
+      let cacheValid = false;
+      try { cacheValid = (await getCached('top_web_schema', 86400000 * 30)) === 2; } catch (e) {}
+      if (cacheValid) {
+      // 先扫已有缓存（免重复请求），缺的页再拉
+      for (let p = 1; p <= 8; p++) {
         // 与 fetchTop 保持同一套缓存键。网页端结果统一落在 top_web_*，
         // 不再依赖 isJavdbVipUser() 判断（该判断已因脆弱被移除）。
         const cacheKey = 'top_web_' + handleType + '_' + typeValue + '_p' + p;
         const cached = await getCached(cacheKey, 86400000);
         if (cached && cached.length) {
-          allMovies[p - 1] = cached;
+          cached.forEach(function (m) {
+            const k = String((m && (m.id || m.code || m.number)) || '');
+            if (k && !seen.has(k)) { seen.add(k); all.push(m); }
+          });
         } else {
-          uncachedPages.push(p);
+          break; // 缓存断档：后面页都要走网络，直接进入拉取循环
+        }
+        if (p === 8) {
+          try { await setCached('top_full_' + handleType + '_' + typeValue, { count: all.length, at: Date.now() }); await setCached('top_web_schema', 2); } catch (e) {}
+          return { success: 1, data: { movies: all }, fromCache: true };
         }
       }
-
-      if (uncachedPages.length === 0 && allMovies.length === 5) {
-        const flat = allMovies.flat();
-        return { success: 1, data: { movies: flat }, fromCache: true };
-      }
+      } // 旧缓存不可用（版本隔离）时跳过本段，直接走网络拉取
 
       // VIP 网页会话优先：不再要求移动端 Token；fetchTop 内部先试网页端（/rankings/top），
       // 只有网页端读不到且本地有 Token 时才走移动端 API。之前在此直接判 JWTVerificationError，
       // 导致已登录 VIP 永远被索要移动端 Token（网页链路实际可用却走不到）。
-      for (let i = 0; i < uncachedPages.length; i++) {
-        const p = uncachedPages[i];
-        if (onProgress) onProgress(i + 1, uncachedPages.length);
-        const res = await fetchTop(handleType, typeValue, p, false);
-        if (res.success !== 1) return res;
-        allMovies[p - 1] = (res.data && res.data.movies) || [];
-        if (i < uncachedPages.length - 1) {
-          await new Promise(r => setTimeout(r, 600 + Math.floor(Math.random() * 400)));
+      for (let p = 1; p <= 8; p++) {
+        if (onProgress) onProgress(p, 8);
+        let movies = [];
+        try {
+          const res = await fetchTop(handleType, typeValue, p, false);
+          if (res.success !== 1) {
+            // 网页会话失效等真实错误：已有部分数据则先用，未有则透出
+            if (!all.length) return res;
+            break;
+          }
+          movies = (res.data && res.data.movies) || [];
+        } catch (e) {
+          if (!all.length) throw e;
+          break;
         }
+        if (!movies.length) break; // 空页 = 到底
+        let added = 0;
+        movies.forEach(function (m) {
+          const k = String((m && (m.id || m.code || m.number)) || '');
+          if (k && !seen.has(k)) { seen.add(k); all.push(m); added++; }
+        });
+        if (added === 0 && p > 1) break; // 整页重复 = 参数失效或到底，止损
+        if (p < 8) await new Promise(r => setTimeout(r, 600 + Math.floor(Math.random() * 400)));
       }
 
-      const flat = allMovies.flat();
-      return { success: 1, data: { movies: flat } };
+      try { await setCached('top_full_' + handleType + '_' + typeValue, { count: all.length, at: Date.now() }); await setCached('top_web_schema', 2); } catch (e) {}
+      return { success: 1, data: { movies: all } };
     }
 
     // 3. 一键离线缓存全部 250 部影片（组合架构：后台自动入库）
