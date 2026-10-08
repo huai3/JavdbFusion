@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.359-debug-notetip
+// @version      7.360-hover-stuck-guard
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -165,7 +165,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.359-debug-notetip';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.360-hover-stuck-guard';
   var tabHome = null, tabFav = null, favPanel = null;
   var tabGallery = null, galleryPanel = null;
   var tabTop250 = null, top250Panel = null;
@@ -780,12 +780,8 @@
 
     if (isActor && isPluginEnabled('actressInfo') && actorName) {
       try {
-        try { console.log('[JAVDB→Emby] TEMP-DEBUG fetching actress: ' + actorName); } catch (e) {}
         actorData = await ActressService.getActressData(actorName);
-        try { console.log('[JAVDB→Emby] TEMP-DEBUG actress done: ' + actorName + ' hasData=' + !!actorData); } catch (e) {}
-      } catch (e) {
-        try { console.log('[JAVDB→Emby] TEMP-DEBUG actress ERR: ' + (e && e.message)); } catch (e2) {}
-      }
+      } catch (e) {}
     }
 
     if (!noteTipEl) {
@@ -951,10 +947,12 @@
   function bindNoteTips() {
     if (noteTipBound) return;
     noteTipBound = true;
-    try { console.log('[JAVDB→Emby] TEMP-DEBUG noteTips bound'); } catch (e) {}
     document.addEventListener('mouseover', function (e) {
       if (tipHoverQueued) return;
       tipHoverQueued = true;
+      // 卡死兜底：页面隐藏（最小化/切后台）时 rAF 不执行，queued 永久为 true 会导致恢复后所有悬停失效；
+      // 超时强制复位（rAF 正常执行时此复位无害）。
+      setTimeout(function () { tipHoverQueued = false; }, 800);
       var evTarget = e.target;
       requestAnimationFrame(function () {
         tipHoverQueued = false;
