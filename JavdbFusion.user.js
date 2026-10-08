@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.360-hover-stuck-guard
+// @version      7.361-regress-harness
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -165,7 +165,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.360-hover-stuck-guard';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.361-regress-harness';
   var tabHome = null, tabFav = null, favPanel = null;
   var tabGallery = null, galleryPanel = null;
   var tabTop250 = null, top250Panel = null;
