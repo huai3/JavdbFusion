@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.375-push115
+// @version      7.376-official-only
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -165,7 +165,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.375-push115';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.376-official-only';
   // 记录启动时的 hash 深链接：JAVDB 自己的脚本/跳转可能在 DOMContentLoaded 前就把 # 清掉
   var JF_BOOT_HASH = (location.hash || '').replace('#emby-dtab-', '');
   var tabHome = null, tabFav = null, favPanel = null;
@@ -12068,7 +12068,11 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     },
 
     _idxPromise: null,
+    _idxFailAt: 0,
     getRepoIndex: async function () {
+      // 两个 CDN 都 404 时旧实现每次调用都会重试 2 个域名；
+      // 详情页多个模块各调一次 → 4~6 个重复失败请求。失败后 10 分钟内直接返回 null。
+      if (this._idxFailAt && Date.now() - this._idxFailAt < 600000) return null;
       if (this._idxMem) return this._idxMem;
       // 【去重 2026-10】缓存要等请求结束才写入，并发调用会同时查不到缓存 →
       // 重复下载同一份索引。这里用 _idxPromise 承接在途请求。
@@ -12104,7 +12108,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       for (const base of [this.repoBase, this.repoBaseFallback]) {
         try { txt = await gmHttp.get(base + 'index.json'); if (txt) break; } catch (e) {}
       }
-      if (!txt) return null;
+      if (!txt) { this._idxFailAt = Date.now(); return null; }
       try {
         const d = JSON.parse(txt);
         this._idxMem = d;
@@ -24304,15 +24308,27 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   function buildDetailPlayDropdownHtml(code, root) {
     if (!code) return '';
     const isOtherSiteEn = isPluginEnabled('otherSite');
+    // 默认只用 JAVDB 官方播放：VIP 用户不需要外部站点跳转；
+    // 关闭后不再对 123AV/MissAV/Jable 等站点发可用性探针（详情页重复请求的主要来源）。
+    const onlyOfficial = GM_getValue('jf_only_official_play', true) !== false;
     const nativePlay = extractNativePlayInfo(root);
     const sites = getPlaySiteConfigs().filter(function (s) { return s.enabled !== false; });
 
-    // 模式 A：未启用外部站点插件，且当前番号有 JAVDB 官方播放源时，直接展示官方播放按钮
-    if (!isOtherSiteEn && nativePlay) {
+    const officialButton = function (info) {
       return (
-        '<a class="emby-play-btn emby-play-native-btn" id="emby-play-btn" style="--btn-logo-rgb:0, 164, 220;" href="' + escapeAttr(nativePlay.href) + '" target="_blank" rel="noopener" title="JAVDB 官方播放">' +
+        '<a class="emby-play-btn emby-play-native-btn" id="emby-play-btn" style="--btn-logo-rgb:0, 164, 220;" href="' + escapeAttr(info.href) + '" target="_blank" rel="noopener" title="JAVDB 官方播放">' +
           '<span class="emby-play-btn-logo" id="emby-play-btn-logo">' + renderSiteLogoHtml('https://javdb.com/favicon.ico', '官方播放', 'javdb_native') + '</span>' +
-          '<span class="emby-play-label">' + escapeHtml(nativePlay.text || '播放正片') + '</span></a>'
+          '<span class="emby-play-label">' + escapeHtml(info.text || '播放正片') + '</span></a>'
+      );
+    };
+
+    // 模式 A：只用官方播放 / 外部站点插件关闭 —— 不再回退到外部站点，也不发探针
+    if (onlyOfficial || !isOtherSiteEn) {
+      if (nativePlay) return officialButton(nativePlay);
+      return (
+        '<a class="emby-play-btn emby-play-native-btn" id="emby-play-btn" style="--btn-logo-rgb:0, 164, 220;" href="' + escapeAttr(location.pathname + location.search) + '" target="_self" rel="noopener" title="JAVDB 页面（暂无官方在线播放）">' +
+          '<span class="emby-play-btn-logo" id="emby-play-btn-logo">' + renderSiteLogoHtml('https://javdb.com/favicon.ico', 'JAVDB', 'javdb_native') + '</span>' +
+          '<span class="emby-play-label">JAVDB 页面</span></a>'
       );
     }
 
@@ -30669,6 +30685,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<label class="jf-set-row"><input type="checkbox" id="jfUiLibPlay" ' + (GM_getValue('jf_ui_libplay', true) ? 'checked' : '') + '> 已入库醒目播放按钮</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfUiMagPanel" ' + (GM_getValue('jf_mag_panel', true) ? 'checked' : '') + '> 详情页磁力聚合（站外搜索条）</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfUiLtx" ' + (GM_getValue('jf_ltx_enabled', true) ? 'checked' : '') + '> LTX 影片高亮 / 只看 LTX 按钮</label>' +
+            '<label class="jf-set-row"><input type="checkbox" id="jfUiOnlyOfficial" ' + (GM_getValue('jf_only_official_play', true) ? 'checked' : '') + '> 只用 JAVDB 官方播放（关闭外部站点探测，VIP 推荐）</label>' +
           '</div>' +
           '<div class="jf-set-sub">概览下方区块（不想要独立页签时勾选）</div>' +
           '<div class="jf-set-grid">' +
@@ -30697,6 +30714,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         body.querySelector('#jfUiLibPlay').addEventListener('change', function (e) {
           GM_setValue('jf_ui_libplay', e.target.checked);
           if (!e.target.checked) { const w = document.querySelector('.jf-lib-play-wrap'); if (w) w.remove(); }
+        });
+        body.querySelector('#jfUiOnlyOfficial').addEventListener('change', function (e) {
+          GM_setValue('jf_only_official_play', e.target.checked);
+          try { rebuildDetailPlayButton(); } catch (err) { flog('重建播放按钮失败: ' + err.message); }
         });
         body.querySelector('#jfUiLtx').addEventListener('change', function (e) {
           GM_setValue('jf_ltx_enabled', e.target.checked);
