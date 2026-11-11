@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.371-review-sort-inline
+// @version      7.375-push115
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -165,7 +165,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.371-review-sort-inline';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.375-push115';
   // 记录启动时的 hash 深链接：JAVDB 自己的脚本/跳转可能在 DOMContentLoaded 前就把 # 清掉
   var JF_BOOT_HASH = (location.hash || '').replace('#emby-dtab-', '');
   var tabHome = null, tabFav = null, favPanel = null;
@@ -2216,6 +2216,15 @@ html.emby-skin .emby-play-btn:hover {
   text-decoration:none; margin:.12em .35em .12em 0; transition:opacity .18s, transform .18s, background-color .18s, color .18s, border-color .18s, border-left-color .18s, box-shadow .18s, border-radius .18s ease;
 }
 .em-cat:hover { background:rgba(255,255,255,.15); color:var(--e-text); }
+/* LTX 标签高亮：详情页類別 chip + 列表卡片红框/角标 + 只看 LTX */
+.em-cat.jf-ltx-cat { background:rgba(244,63,94,.22) !important; border-color:rgba(244,63,94,.65) !important; color:#ffd0d8 !important; font-weight:700; }
+#jf-ltx-btn { color:#ffd0d8; border:1px solid rgba(244,63,94,.55); border-radius:999px; padding:.22em .85em; font-weight:800; font-size:.82em; letter-spacing:.04em; }
+#jf-ltx-btn:hover { background:rgba(244,63,94,.28); color:#fff; }
+#jf-ltx-btn.active { background:#e11d48; border-color:#e11d48; color:#fff; }
+html.emby-skin .item.jf-ltx-hit .box { outline:2px solid rgba(244,63,94,.9); outline-offset:2px; box-shadow:0 0 0 3px rgba(244,63,94,.18), 0 10px 24px rgba(0,0,0,.45) !important; }
+html.emby-skin .jf-ltx-badge { position:absolute; top:6px; right:6px; z-index:6; background:linear-gradient(135deg,#ff4d6d,#c9184a); color:#fff; font-size:10px; font-weight:900; letter-spacing:.08em; padding:2px 7px; border-radius:999px; box-shadow:0 2px 8px rgba(0,0,0,.55); pointer-events:none; }
+html.emby-skin .movie-list.jf-ltx-only .item:not(.jf-ltx-hit) { display:none !important; }
+html.emby-skin .movie-list.jf-ltx-only .item.jf-ltx-hit { display:block !important; }
 
 /* 元数据可点 chip（番號/導演/片商/系列 — 与類別标签视觉统一，白色文字） */
 .em-meta-chip {
@@ -7347,6 +7356,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         '<span class="material-symbols-outlined">menu</span></button>' +
       '<div class="logo-nav-wrap">' + javdbLogoHtml() + '<nav class="emby-topnav"></nav></div>' +
       '<span class="spacer"></span>' +
+      '<button class="hb jf-ltx-btn" id="jf-ltx-btn" title="LTX 影片（点击筛选）" aria-label="LTX 影片筛选" style="display:none;">LTX</button>' +
       '<button class="hb" id="emby-search-trigger" title="搜索（按 / 快速打开）" aria-label="搜索（按 / 快速打开）" aria-keyshortcuts="/" role="search">' +
         '<span class="material-symbols-outlined">search</span></button>' +
       '<button id="emby-settings-btn" title="设置" aria-label="设置">' +
@@ -7610,6 +7620,17 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       trig.dataset.bound = '1';
       trig.addEventListener('click', openSearchModal);
     }
+    // LTX 筛选按钮：有索引时切换「只看 LTX」，没有时先同步标签页
+    const ltxBtn = document.getElementById('jf-ltx-btn');
+    if (ltxBtn && !ltxBtn.dataset.bound) {
+      ltxBtn.dataset.bound = '1';
+      ltxBtn.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        if (isDetailPage()) { window.open(LTX_TAG_URL, '_blank', 'noopener'); return; }
+        ltxOnButton();
+      });
+    }
+    ltxUpdateButton();
     // 设置齿轮（鼠标悬停浮出快捷面板，点击弹出完整大设置弹窗）
     const gear = document.getElementById('emby-settings-btn');
     if (gear && !gear.dataset.bound) {
@@ -23311,7 +23332,191 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
        records.forEach(function (r, index) { r.item.style.order = String(index); });
      }
    }
-   function restructureGrid() {
+   /* =======================================================================
+   * LTX 影片：标签索引 / 列表高亮 / 只看 LTX
+   * -----------------------------------------------------------------------
+   * JAVDB 列表卡片默认不带類別标签，唯一可靠的判断来源是「LTX破解」标签页
+   * （/tags?c7=390）。这里按需同步标签页里的 /v/ id + 番号做本地索引，
+   * 再给列表卡片加红框/LTX 角标；顶部 LTX 按钮可切换「只看 LTX」。
+   * ===================================================================== */
+  const LTX_TAG_URL = 'https://javdb.com/tags?c7=390';
+  const LTX_INDEX_KEY = 'jf_ltx_index_v1';
+  const LTX_INDEX_TTL = 7 * 24 * 60 * 60 * 1000;
+  let ltxIndexCache = null;
+  let ltxFilterOn = GM_getValue('jf_ltx_filter_on', false) === true;
+  let ltxSyncing = false;
+  let ltxSyncPromise = null;
+
+  function ltxNormalizeCode(v) { return String(v || '').replace(/\s+/g, '').toUpperCase(); }
+  function ltxEnabled() { return GM_getValue('jf_ltx_enabled', true) !== false; }
+  function ltxReadIndex() {
+    if (ltxIndexCache) return ltxIndexCache;
+    try {
+      const raw = GM_getValue(LTX_INDEX_KEY, '');
+      if (!raw) return null;
+      const o = JSON.parse(raw);
+      if (!o || !Array.isArray(o.ids)) return null;
+      ltxIndexCache = { ts: Number(o.ts) || 0, ids: new Set(o.ids), codes: new Set(o.codes || []) };
+      return ltxIndexCache;
+    } catch (e) { return null; }
+  }
+  function ltxWriteIndex(ids, codes) {
+    const payload = { ts: Date.now(), ids: Array.from(ids), codes: Array.from(codes) };
+    try { GM_setValue(LTX_INDEX_KEY, JSON.stringify(payload)); } catch (e) {}
+    ltxIndexCache = { ts: payload.ts, ids: new Set(payload.ids), codes: new Set(payload.codes) };
+    return ltxIndexCache;
+  }
+  function ltxCardHit(item, idx) {
+    if (!item || !idx) return false;
+    const a = item.querySelector('a.box[href*="/v/"], a[href*="/v/"]');
+    const href = a ? (a.getAttribute('href') || '') : '';
+    const m = href.match(/\/v\/([^\/?#]+)/);
+    const id = m ? m[1] : '';
+    const codeEl = item.querySelector('.video-title strong, .video-number');
+    const code = ltxNormalizeCode(codeEl ? codeEl.textContent : '');
+    return !!(id && idx.ids.has(id)) || !!(code && idx.codes.has(code));
+  }
+  function ltxApplyItem(item) {
+    if (!ltxEnabled() || !item || item.nodeType !== 1) return;
+    const idx = ltxReadIndex();
+    if (!idx) return;
+    const hit = ltxCardHit(item, idx);
+    item.classList.toggle('jf-ltx-hit', hit);
+    if (hit) {
+      const box = item.querySelector('.box') || item;
+      const cover = box.querySelector('.cover') || box;
+      if (cover && !cover.querySelector('.jf-ltx-badge')) {
+        const b = document.createElement('span');
+        b.className = 'jf-ltx-badge';
+        b.textContent = 'LTX';
+        cover.appendChild(b);
+      }
+    } else {
+      const old = item.querySelector('.jf-ltx-badge');
+      if (old) old.remove();
+    }
+  }
+  function ltxApply() {
+    const idx = ltxReadIndex();
+    if (!ltxEnabled() || !idx) return;
+    document.querySelectorAll('.movie-list .item, .emby-row .item').forEach(function (item) { ltxApplyItem(item); });
+    document.querySelectorAll('.movie-list').forEach(function (list) {
+      list.classList.toggle('jf-ltx-only', !!ltxFilterOn);
+    });
+  }
+  function ltxSetFilter(on) {
+    ltxFilterOn = !!on;
+    try { GM_setValue('jf_ltx_filter_on', ltxFilterOn); } catch (e) {}
+    document.querySelectorAll('.movie-list').forEach(function (list) {
+      list.classList.toggle('jf-ltx-only', ltxFilterOn);
+    });
+    ltxUpdateButton();
+  }
+  function ltxUpdateButton() {
+    const btn = document.getElementById('jf-ltx-btn');
+    if (!btn) return;
+    const show = ltxEnabled() && !isDetailPage();
+    btn.style.display = show ? '' : 'none';
+    const idx = ltxReadIndex();
+    const filterActive = !!(ltxFilterOn && idx);
+    btn.textContent = ltxSyncing ? 'LTX…' : (filterActive ? 'LTX ✓' : 'LTX');
+    btn.classList.toggle('active', !!(filterActive || ltxSyncing));
+    if (ltxSyncing) btn.title = '正在同步 LTX 标签索引…';
+    else if (idx) {
+      const stale = Date.now() - idx.ts > LTX_INDEX_TTL;
+      btn.title = 'LTX 影片 ' + idx.ids.size + ' 部' + (stale ? '（索引已过期，点击会先更新）' : '') +
+        ' · 点击' + (ltxFilterOn ? '取消筛选' : '只看 LTX');
+    } else btn.title = '点击同步「LTX破解」标签索引（需要登录 JAVDB）';
+  }
+  async function ltxFetchTagPage(page) {
+    const url = LTX_TAG_URL + '&page=' + page;
+    const html = await gmHttp.get(url, { 'Accept': 'text/html' });
+    const head = String(html || '').slice(0, 240);
+    if (/openAuthModal|location\.href\s*=\s*["']\/login/i.test(head)) {
+      const err = new Error('需要登录 JAVDB 才能读取 LTX 标签页');
+      err.code = 'NEED_LOGIN';
+      throw err;
+    }
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const items = Array.prototype.slice.call(doc.querySelectorAll('.movie-list .item'));
+    const out = { ids: [], codes: [], maxPage: page };
+    items.forEach(function (it) {
+      const a = it.querySelector('a.box[href*="/v/"], a[href*="/v/"]');
+      const href = a ? (a.getAttribute('href') || '') : '';
+      const m = href.match(/\/v\/([^\/?#]+)/);
+      if (m) out.ids.push(m[1]);
+      const codeEl = it.querySelector('.video-title strong, .video-number');
+      const code = ltxNormalizeCode(codeEl ? codeEl.textContent : '');
+      if (code) out.codes.push(code);
+    });
+    doc.querySelectorAll('nav.pagination a[href*="page="], .pagination a[href*="page="]').forEach(function (a) {
+      const mm = (a.getAttribute('href') || '').match(/[?&]page=(\d+)/);
+      if (mm) out.maxPage = Math.max(out.maxPage, parseInt(mm[1], 10) || 1);
+    });
+    return out;
+  }
+  function ltxSync() {
+    if (ltxSyncPromise) return ltxSyncPromise;
+    ltxSyncing = true;
+    ltxUpdateButton();
+    showToast('正在同步 LTX 标签索引…');
+    const ids = new Set();
+    const codes = new Set();
+    ltxSyncPromise = (async function () {
+      let page = 1;
+      let maxPage = 1;
+      let lastSig = '';
+      let emptyPages = 0;
+      while (page <= maxPage && page <= 60) {
+        const part = await ltxFetchTagPage(page);
+        if (!part.ids.length && !part.codes.length) {
+          emptyPages++;
+          if (emptyPages >= 2 || page === 1) break;
+        }
+        part.ids.forEach(function (x) { ids.add(x); });
+        part.codes.forEach(function (x) { codes.add(x); });
+        maxPage = Math.max(maxPage, part.maxPage);
+        const sig = part.ids.slice(0, 3).join(',');
+        if (sig && sig === lastSig) break; // 站点忽略 page 参数时防止死循环
+        lastSig = sig;
+        page++;
+        if (page % 5 === 0) showToast('LTX 索引同步中… ' + ids.size + ' 部 / 第 ' + page + ' 页');
+      }
+      if (!ids.size && !codes.size) throw new Error('没有解析到 LTX 影片（标签页为空或需要登录）');
+      return ltxWriteIndex(ids, codes);
+    })().then(function (idx) {
+      ltxSyncing = false;
+      ltxSyncPromise = null;
+      ltxApply();
+      ltxUpdateButton();
+      showToast('LTX 索引已更新：' + idx.ids.size + ' 部');
+      return idx;
+    }).catch(function (e) {
+      ltxSyncing = false;
+      ltxSyncPromise = null;
+      ltxUpdateButton();
+      showToast(e && e.code === 'NEED_LOGIN' ? '❌ 请先登录 JAVDB 再同步 LTX' : ('❌ LTX 同步失败：' + (e && e.message || '网络错误')));
+      throw e;
+    });
+    return ltxSyncPromise;
+  }
+  async function ltxOnButton() {
+    if (ltxSyncing) { showToast('LTX 索引同步中，请稍候…'); return; }
+    let idx = ltxReadIndex();
+    const stale = !idx || (Date.now() - idx.ts > LTX_INDEX_TTL);
+    if (stale) {
+      try { idx = await ltxSync(); }
+      catch (e) {
+        if (!idx) return;
+        showToast('LTX 索引更新失败，继续使用旧索引');
+      }
+    }
+    if (!idx) return;
+    ltxSetFilter(!ltxFilterOn);
+    showToast(ltxFilterOn ? ('只看 LTX：' + idx.ids.size + ' 部') : '已显示全部影片');
+  }
+
+  function restructureGrid() {
      if (!enabled) return;
      // 布局类自愈 + 引擎残留清理（必须先于 movieLists 过滤执行——
      // 收藏夹面板内的懒加载 mutation 也会走到这里，若面板内是唯一 .movie-list，
@@ -23345,6 +23550,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       const box = item.querySelector('.box');
       if (!box) return;
       try { applyStatusPriority(item); } catch (e) {}
+      try { ltxApplyItem(item); } catch (e) {}
       // 注入 Steam 高光层
       if (!box.querySelector('.emby-card-shine')) {
         const shine = document.createElement('span');
@@ -23822,10 +24028,23 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         var ed2k = r115.getAttribute('data-ed2k') || '';
         if (!/^ed2k:\/\//i.test(ed2k)) return;
         if (typeof FUSION !== 'undefined' && FUSION && typeof FUSION.push115 === 'function') {
+          if (r115.disabled) return;
+          r115.disabled = true;
           r115.textContent = '推送中…';
-          try { showToast('正在推送到 115…'); } catch (err) {}
-          FUSION.push115(ed2k);
-          setTimeout(function () { r115.textContent = '再推一次'; }, 2500);
+          const reset = function (label, ok) {
+            r115.disabled = false;
+            r115.textContent = label;
+            r115.classList.toggle('is-ok', !!ok);
+          };
+          const p = FUSION.push115(ed2k);
+          if (p && typeof p.then === 'function') {
+            p.then(function (res) {
+              reset(res && res.ok ? '已推送' : '重试推送', res && res.ok);
+              setTimeout(function () { if (r115.isConnected) reset('推送 115', false); }, res && res.ok ? 4000 : 2500);
+            }).catch(function () { reset('重试推送', false); });
+          } else {
+            setTimeout(function () { reset('推送 115', false); }, 2500);
+          }
         } else {
           try { showToast('115 推送未就绪，请刷新页面重试'); } catch (err) {}
         }
@@ -24687,7 +24906,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     // 類別行
     let cats = '';
     (d.categories || []).forEach(function (c) {
-      cats += '<a class="em-cat" href="' + escapeAttr(c.href) + '" rel="noopener" data-cat="' + escapeAttr(c.text) + '">' + escapeHtml(c.text) + '</a>';
+      cats += '<a class="em-cat' + (/LTX/i.test(c.text) ? ' jf-ltx-cat' : '') + '" href="' + escapeAttr(c.href) + '" rel="noopener" data-cat="' + escapeAttr(c.text) + '">' + escapeHtml(c.text) + '</a>';
     });
     fieldsHtml += '<div class="em-row em-cat-row group/row" data-meta-row="categories"><span class="em-k">類別</span>' +
       '<span class="em-v" id="em-categories-wrap">' + cats + '</span>' +
@@ -25028,6 +25247,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       '.jf-review-link:hover{text-decoration:underline;}',
       '.jf-review-115{display:inline-flex;align-items:center;gap:4px;margin-left:6px;border:1px solid rgba(52,206,87,.5);background:rgba(52,206,87,.12);color:#9ae6b4;border-radius:6px;padding:2px 8px;font-size:11.5px;cursor:pointer;vertical-align:baseline;white-space:nowrap;}',
       '.jf-review-115:hover{background:rgba(52,206,87,.26);color:#fff;}',
+      '.jf-review-115:disabled{cursor:progress;opacity:.7;}',
+      '.jf-review-115.is-ok{border-color:rgba(52,206,87,.9);background:rgba(52,206,87,.3);color:#d9ffe3;}',
       '.jf-review-ed2k-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}',
       '.jf-review-empty,.jf-review-error{padding:18px 4px;font-size:13px;color:rgba(255,255,255,.65);}',
       '.jf-review-error{color:#fca5a5;}',
@@ -26040,7 +26261,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       officialCats.forEach(function (c) {
         const isDel = delCats.has(c.text);
         html += '<span class="em-cat-wrap" style="display:inline-flex;align-items:center;margin-right:6px;margin-bottom:4px;' + (isDel ? 'opacity:0.5;' : '') + '">' +
-          '<a class="em-cat" href="' + escapeAttr(c.href) + '" rel="noopener" style="' + (isDel ? 'color:#ef4444!important;text-decoration:line-through!important;' : '') + '">' +
+          '<a class="em-cat' + (/LTX/i.test(c.text) ? ' jf-ltx-cat' : '') + '" href="' + escapeAttr(c.href) + '" rel="noopener" style="' + (isDel ? 'color:#ef4444!important;text-decoration:line-through!important;' : '') + '">' +
             escapeHtml(c.text) +
           '</a>';
         if (isCatEditMode) {
@@ -26402,6 +26623,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     sec.innerHTML = h;
     // 绑定 STEAM 风格卡牌 3D 倾斜 + 高光（不弹悬停封面预览：详情页推荐行按需求排除）
     sec.querySelectorAll('.item .box').forEach(function (b) { attachCard3D(b, { noPreview: true }); });
+    try { sec.querySelectorAll('.item').forEach(function (it) { ltxApplyItem(it); }); } catch (e) {}
     return sec;
   }
 
@@ -28097,27 +28319,43 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     // 复用同一次网络请求，避免并发重复打接口（DMM API / ItemList 搜索都限流敏感）。
     const trailerInFlight = new Map();
     // 汇总解析：DMM/FANZA 高清源优先，其次 JAVDB 官方/厂商直链，最后 javspyl。
+    // 只保留「片源本身」的字段：_dead/_probe/_altTried 是播放器运行期状态，
+    // 一旦跟着 cache/in-flight 复用，第二次打开会把上次探测的失败状态当成片源结论（误判无源）。
+    function cleanTrailerSource(s) {
+      return {
+        url: s.url, label: s.label, quality: s.quality || '', source: s.source || '',
+        unverified: !!s.unverified, alt: s.alt || ''
+      };
+    }
     function resolveTrailer(code, onUpdate, signal) {
       const cacheKey = (normalizeCode(code) || String(code || '').toUpperCase()) + '|' +
         [TrConf.useOfficial, TrConf.useDmm, TrConf.useDirect, TrConf.useJavspyl].map(function (v) { return v ? '1' : '0'; }).join('');
       const cached = trailerResolveCache.get(cacheKey);
       if (cached && cached.expires > Date.now()) {
-        const copy = cached.sources.map(function (s) { return Object.assign({}, s); });
+        const copy = cached.sources.map(cleanTrailerSource);
         if (onUpdate && copy.length) onUpdate(copy);
         return Promise.resolve(copy);
       }
       const inflight = trailerInFlight.get(cacheKey);
       if (inflight) {
-        // 已有同番号解析在跑（多半是悬停预取触发的）：等它结束直接复用结果，
-        // 只把最终结果回调给这次调用方，不重复过程中的渐进式候选。
-        return inflight.then(function (result) {
-          if (onUpdate && result.length) onUpdate(result.slice());
-          return result.map(function (s) { return Object.assign({}, s); });
-        });
+        // 已有同番号解析在跑（多半是悬停/后台预热触发的）：挂到同一个任务的监听器上，
+        // 这样播放器也能立刻收到「猜测直链」这批渐进候选，不用干等最终结果。
+        // 旧逻辑只把最终结果回调给第二个调用方 → 预热先跑时，播放器要空转 6~8 秒才出线路。
+        if (onUpdate && typeof inflight._jfAddListener === 'function') inflight._jfAddListener(onUpdate);
+        return inflight.then(function (result) { return result.map(cleanTrailerSource); });
       }
-      const task = doResolveTrailer(code, cacheKey, onUpdate, signal).finally(function () {
+      const listeners = [];
+      if (onUpdate) listeners.push(onUpdate);
+      const notify = function (list) {
+        const clean = list.map(cleanTrailerSource);
+        listeners.forEach(function (fn) {
+          try { fn(clean); } catch (e) {}
+        });
+      };
+      const task = doResolveTrailer(code, cacheKey, notify, signal).finally(function () {
         trailerInFlight.delete(cacheKey);
       });
+      task._jfAddListener = function (fn) { if (typeof fn === 'function') listeners.push(fn); };
       trailerInFlight.set(cacheKey, task);
       return task;
     }
@@ -28202,7 +28440,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       const result = sources.slice();
       // 仅有按模板猜出的 DMM 地址时不缓存，避免一次错误规则让后续点击跳过搜索回退。
       if (result.length && result.some(function (s) { return !s.unverified; })) {
-        trailerResolveCache.set(cacheKey, { sources: result, expires: Date.now() + TRAILER_CACHE_TTL });
+        trailerResolveCache.set(cacheKey, { sources: result.map(cleanTrailerSource), expires: Date.now() + TRAILER_CACHE_TTL });
         if (trailerResolveCache.size > 80) trailerResolveCache.delete(trailerResolveCache.keys().next().value);
       }
       if (onUpdate && result.length) onUpdate(result.slice());
@@ -28385,12 +28623,21 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       };
       const isHlsUrl = function (u) { return /\.m3u8(\?|#|$)/i.test(u || ''); };
       const rememberQuality = function (label) { try { GM_setValue('jf_tr_quality', label || ''); } catch (e) {} };
+      const firstAlive = function (pred) {
+        for (let i = 0; i < sources.length; i++) { if (!sources[i]._dead && (!pred || pred(sources[i]))) return i; }
+        return -1;
+      };
       const preferredIndex = function () {
         let last = '';
         try { last = GM_getValue('jf_tr_quality', ''); } catch (e) { last = ''; }
-        if (!last) return sources.findIndex(function (s) { return !s.unverified; });
-        for (let i = 0; i < sources.length; i++) if (sources[i].label === last) return i;
-        return sources.findIndex(function (s) { return !s.unverified; });
+        if (last) {
+          for (let i = 0; i < sources.length; i++) {
+            if (!sources[i]._dead && sources[i].label === last) return i;
+          }
+        }
+        // 优先选「已验证且未失效」的线路；没有时再退到任意未失效线路
+        const verified = firstAlive(function (s) { return !s.unverified; });
+        return verified >= 0 ? verified : Math.max(0, firstAlive(null));
       };
 
       const renderRoutes = function () {
@@ -28435,6 +28682,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         const s = sources[i];
         if (!s || closed) return;
         idx = i;
+        // 用户手动点线路 = 明确要重试这条，清掉之前的失效标记
+        if (opts.manual || opts.resetFail) { s._dead = false; failCount = 0; }
         if (video.dataset.jfSrc !== s.url) {
           video.dataset.jfSrc = s.url;
           video.referrerPolicy = isHlsUrl(s.url) ? 'origin' : 'no-referrer';
@@ -28527,8 +28776,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             running--;
             if (closed || token !== probeToken) return;
             s._probe = ok === null ? undefined : ok;
-            // 只有「不是正在播的那条」才因探测失败标死，避免误杀能播的线路
-            if (ok === false && i !== idx) s._dead = true;
+            // 只让「猜测直链」因探测失败标死；DMM/FANZA 已验证的真实地址即使 1 字节探测
+            // 被 CDN 拒绝（403/Range 不支持），也不能判死 —— 视频元素本身仍可能正常播放。
+            // 旧逻辑会把验证源标死，播放失败后自动跳线直接跳过它们，表现为「点开没源，重开才有」。
+            if (ok === false && s.unverified && i !== idx) s._dead = true;
             renderRoutes();
             next();
           });
@@ -28540,16 +28791,27 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       const receiveSources = function (next) {
         if (closed || !Array.isArray(next)) return;
         const currentUrl = sources[idx] && sources[idx].url;
+        const hadFailed = failCount > 0;
         sources = sortSourcesByQuality(next);
         if (currentUrl) {
           const ni = sources.findIndex(function (s) { return s.url === currentUrl; });
           if (ni >= 0) idx = ni;
         }
-        renderRoutes();
-        if (!sourceLoaded && sources.length) {
+        const cur = sources[idx];
+        const currentDead = !cur || !!cur._dead;
+        const hasVerifiedAlive = sources.some(function (s) { return !s.unverified && !s._dead; });
+        // 关键修复：首批「猜测直链」先到、播放/加载失败后，后续真正的 DMM 验证源才到；
+        // 旧逻辑只在 !sourceLoaded 时选源，失败过的线路一旦加载过就再也不会切到新源，
+        // 用户看到的就是「明明有预告片，但要点关闭再重开/手动选线路」。
+        // 还没开始播时，若当前只是「猜测直链」而后到的验证源可用，静默升级到验证源；
+        // 已经开始播则不动，避免打断用户。
+        const needUpgrade = !started && cur && cur.unverified && hasVerifiedAlive;
+        if (sources.length && (!sourceLoaded || currentDead || needUpgrade || (hadFailed && hasVerifiedAlive))) {
           const prefer = preferredIndex();
-          selectSource(prefer >= 0 ? prefer : 0, { play: TrConf.autoplay });
+          const target = prefer >= 0 ? prefer : 0;
+          selectSource(target, { play: started || TrConf.autoplay, resetFail: true });
         }
+        renderRoutes();
         if (sources.length && !resolutionComplete) {
           hintEl.textContent = '已找到 ' + sources.length + ' 条线路，后台继续解析更高画质…';
         }
@@ -28903,46 +29165,84 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       };
     })();
 
+    // ed2k 规范化：115 只接受标准 ed2k://|file|名称|大小|32位hash|/ 形式。
+    // 评论区常见问题：尾部多一个 |/、hash 小写、夹带空格/中文标点、链接被换行截断。
+    // 这里统一裁掉尾部杂质并重建标准格式；明显残缺的链接直接报错，不再发给 115。
+    function normalizeEd2kLink(raw) {
+      let s = String(raw || '').trim().replace(/[\s"'<>]+$/, '');
+      if (!/^ed2k:\/\//i.test(s)) return null;
+      // 允许 ed2k://|file|name|size|hash|/ 以及尾部多一个 |/ 的变体
+      // 不强制要求尾部 |/：部分评论会漏掉最后的分隔符，115 仍能识别；重建时补成标准格式
+      const m = s.match(/^ed2k:\/\/\|file\|([^|]+)\|(\d+)\|([a-f0-9]{32})\|/i);
+      if (!m) return null;
+      const name = m[1].trim();
+      if (!name) return null;
+      return 'ed2k://|file|' + name + '|' + m[2] + '|' + m[3].toUpperCase() + '|/';
+    }
     function pushTo115(link) {
-      GM_xmlhttpRequest({
-        method: 'GET', url: 'https://115.com/?ct=offline&ac=space&_=' + Date.now(), anonymous: false,
-        headers: { 'Accept': 'application/json, text/plain, */*', 'Origin': 'https://115.com', 'Referer': 'https://115.com/?tab=offline&mode=wangpan' },
-        onload: function (signResponse) {
-          let signInfo = null;
-          try { signInfo = JSON.parse(signResponse.responseText); } catch (e) {}
-          if (!signInfo || !signInfo.state || !signInfo.sign || !signInfo.time) { magToast('❌ 115登录失效或签名获取失败', false); return; }
-          const data = new URLSearchParams();
-          data.set('url', link); data.set('sign', signInfo.sign); data.set('time', signInfo.time);
-          const cid = (MagConf.u115Cid || '').trim();
-          if (cid) data.set('wp_path_id', cid);
-          GM_xmlhttpRequest({
-            method: 'POST', url: 'https://115.com/web/lixian/?ct=lixian&ac=add_task_url', anonymous: false,
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-              'Accept': 'application/json, text/javascript, */*; q=0.01',
-              'Origin': 'https://115.com', 'Referer': 'https://115.com/?tab=offline&mode=wangpan',
-              'X-Requested-With': 'XMLHttpRequest'
-            },
-            data: data.toString(),
-            onload: function (response) {
-              try {
-                const res = JSON.parse(response.responseText);
-                if (res.state) {
-                  magToast(cid ? '✅ 已发送到 115 指定目录' : '✅ 已发送到 115');
-                  // 离线后整理：推送成功后打开整理面板（可一键清理 / 规范改名 / 归入目录）
-                  if (Pan115.conf().autoOrganize) {
-                    setTimeout(function () {
-                      try { Pan115.openPanel(currentPageCode ? currentPageCode() : '', cid); } catch (e) {}
-                    }, 400);
+      return new Promise(function (resolve) {
+        let settled = false;
+        const finish = function (ok, message) {
+          if (settled) return;
+          settled = true;
+          try { magToast(message, ok); } catch (e) {}
+          resolve({ ok: !!ok, message: message });
+        };
+        const isEd2k = /^ed2k:\/\//i.test(String(link || '').trim());
+        const target = isEd2k ? normalizeEd2kLink(link) : link;
+        if (isEd2k && !target) { finish(false, '❌ ed2k 链接格式不正确'); return; }
+        if (!target) { finish(false, '❌ 链接为空'); return; }
+        GM_xmlhttpRequest({
+          method: 'GET', url: 'https://115.com/?ct=offline&ac=space&_=' + Date.now(), anonymous: false,
+          headers: { 'Accept': 'application/json, text/plain, */*', 'Origin': 'https://115.com', 'Referer': 'https://115.com/?tab=offline&mode=wangpan' },
+          onload: function (signResponse) {
+            let signInfo = null;
+            try { signInfo = JSON.parse(signResponse.responseText); } catch (e) {}
+            if (!signInfo || !signInfo.state || !signInfo.sign || !signInfo.time) {
+              finish(false, '❌ 115登录失效或签名获取失败');
+              return;
+            }
+            const data = new URLSearchParams();
+            data.set('url', target); data.set('sign', signInfo.sign); data.set('time', signInfo.time);
+            const cid = (MagConf.u115Cid || '').trim();
+            if (cid) data.set('wp_path_id', cid);
+            GM_xmlhttpRequest({
+              method: 'POST', url: 'https://115.com/web/lixian/?ct=lixian&ac=add_task_url', anonymous: false,
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'Origin': 'https://115.com', 'Referer': 'https://115.com/?tab=offline&mode=wangpan',
+                'X-Requested-With': 'XMLHttpRequest'
+              },
+              data: data.toString(),
+              onload: function (response) {
+                try {
+                  const res = JSON.parse(response.responseText);
+                  if (res.state) {
+                    finish(true, cid ? '✅ 已发送到 115 指定目录' : '✅ 已发送到 115');
+                    // 离线后整理：推送成功后打开整理面板（可一键清理 / 规范改名 / 归入目录）
+                    try {
+                      if (Pan115.conf().autoOrganize) {
+                        setTimeout(function () {
+                          try { Pan115.openPanel(currentPageCode ? currentPageCode() : '', cid); } catch (e) {}
+                        }, 400);
+                      }
+                    } catch (e) {}
+                  } else {
+                    const msg = String(res.error_msg || res.msg || '未知错误');
+                    // 115 对重复链接返回的也是 state:false，单独给更明确的提示
+                    if (/任务已存在|重复的链接/.test(msg)) finish(false, '⚠️ 115 里已有这个任务');
+                    else finish(false, '❌ 115错误: ' + msg);
                   }
-                }
-                else magToast('❌ 115错误: ' + (res.error_msg || res.msg || '未知错误'), false);
-              } catch (e) { magToast('❌ 115 响应解析失败', false); }
-            },
-            onerror: function () { magToast('❌ 115 推送请求失败', false); }
-          });
-        },
-        onerror: function () { magToast('❌ 115 签名请求失败', false); }
+                } catch (e) { finish(false, '❌ 115 响应解析失败'); }
+              },
+              onerror: function () { finish(false, '❌ 115 推送请求失败'); },
+              ontimeout: function () { finish(false, '❌ 115 推送超时'); }
+            });
+          },
+          onerror: function () { finish(false, '❌ 115 签名请求失败'); },
+          ontimeout: function () { finish(false, '❌ 115 签名请求超时'); }
+        });
       });
     }
     // whatslink 验车
@@ -30368,6 +30668,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<label class="jf-set-row"><input type="checkbox" id="jfUiListBadge" ' + (GM_getValue('jf_ui_listbadge', true) ? 'checked' : '') + '> 列表页入库角标（需先同步索引）</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfUiLibPlay" ' + (GM_getValue('jf_ui_libplay', true) ? 'checked' : '') + '> 已入库醒目播放按钮</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfUiMagPanel" ' + (GM_getValue('jf_mag_panel', true) ? 'checked' : '') + '> 详情页磁力聚合（站外搜索条）</label>' +
+            '<label class="jf-set-row"><input type="checkbox" id="jfUiLtx" ' + (GM_getValue('jf_ltx_enabled', true) ? 'checked' : '') + '> LTX 影片高亮 / 只看 LTX 按钮</label>' +
           '</div>' +
           '<div class="jf-set-sub">概览下方区块（不想要独立页签时勾选）</div>' +
           '<div class="jf-set-grid">' +
@@ -30396,6 +30697,20 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         body.querySelector('#jfUiLibPlay').addEventListener('change', function (e) {
           GM_setValue('jf_ui_libplay', e.target.checked);
           if (!e.target.checked) { const w = document.querySelector('.jf-lib-play-wrap'); if (w) w.remove(); }
+        });
+        body.querySelector('#jfUiLtx').addEventListener('change', function (e) {
+          GM_setValue('jf_ltx_enabled', e.target.checked);
+          if (!e.target.checked) {
+            ltxSetFilter(false);
+            document.querySelectorAll('.jf-ltx-hit').forEach(function (it) {
+              it.classList.remove('jf-ltx-hit');
+              const b = it.querySelector('.jf-ltx-badge');
+              if (b) b.remove();
+            });
+          } else {
+            ltxApply();
+          }
+          ltxUpdateButton();
         });
         body.querySelector('#jfUiMagPanel').addEventListener('change', function (e) {
           GM_setValue('jf_mag_panel', e.target.checked);
@@ -30704,6 +31019,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           scanMagnetTables();
         } else {
           injectListBadges();
+          try { ltxApply(); } catch (e) {}
+          try { ltxUpdateButton(); } catch (e) {}
           // 非详情页：移除右侧磁力面板（它挂在 body 上，不随皮肤重构清理）
           const mp = document.getElementById('jf-magnet-panel');
           if (mp) mp.remove();

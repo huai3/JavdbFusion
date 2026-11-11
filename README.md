@@ -2,7 +2,7 @@
 
 JavdbFusion 是面向 JAVDB 的 Tampermonkey 用户脚本，融合 Emby 风格界面、Emby/Jellyfin 媒体库联动、预告片播放和磁力工具。
 
-当前版本：**7.369-trailer-diag**
+当前版本：**7.375-push115**
 
 ## 功能
 
@@ -14,6 +14,8 @@ JavdbFusion 是面向 JAVDB 的 Tampermonkey 用户脚本，融合 Emby 风格�
 - **首页视图切换栏**：`主页 / 收藏夹 / 预览画廊 / TOP250` 一级导航固定在内容列顶部并吸顶，与原生分类栏、筛选条保持同一左基线。
 - **状态优先级统一**：卡片封面左上角只挂一枚状态角标，优先级 `已入库 > 已收藏 > 已观看 > 想看 > 有评分`，不再各模块各挂各的。
 - **可读性**：卡片标题 / 评分 / 日期 / 标签的对比度均达到 WCAG AA（≥4.5:1），字号在 1440px 桌面上上调一档。
+- **短评增强**：最新 / 最热排序（JAVDB 短评接口），短评正文里的 `ed2k://` 一键推送 115 离线；可把短评 / 磁力整块放到「概览」下方，并设置短评默认展开。
+- **LTX 标签**：详情页「LTX破解」類別高亮；在女优作品、搜索、榜单、TOP250 等列表页，顶部 `LTX` 按钮可同步标签索引后切换「只看 LTX」，命中影片加红框 / LTX 角标（同步需登录 JAVDB，索引缓存 7 天）。
 - **收藏管理**、TOP250 / 热播榜入口、评论与清单加载、演员与影片信息、筛选、快捷搜索、无缝翻页等。
 
 ### Emby / Jellyfin 联动
@@ -24,6 +26,9 @@ JavdbFusion 是面向 JAVDB 的 Tampermonkey 用户脚本，融合 Emby 风格�
 ### 预告片
 
 - 整合 JAVDB 官方预告片、DMM/FANZA 多画质、厂商直链（加勒比 / 一本道 / HEYZO / 东京热）、javspyl 等来源，提供内嵌播放器、画质记忆与音量记忆。
+- **多线路平铺**：所有片源按线路按钮展示，后台对每条线路做 1 字节探测并标记可用/失效。
+- **默认停止播放**：打开播放器只预载片源、不自动出声；关掉弹窗解析仍继续，重开秒开。
+- **后台预热**：详情页空闲时先解析好片源（可在设置里关闭）。
 - 番号对应的 DMM content_id 采用多种补零形态并发试探（5 / 6 / 7 位 + 厂牌变体），命中率高。
 - **解析失败分类诊断**：区分「DMM 拒绝请求（限流 / 需要 Cookie / 地区）」「该番号在 DMM 没有商品」「DMM 没有该作品的预览视频」「地区限制」「网络错误」「已找到片源但全部播放失败（防盗链）」，并给出可对症的建议与可展开的诊断明细。
 
@@ -31,6 +36,7 @@ JavdbFusion 是面向 JAVDB 的 Tampermonkey 用户脚本，融合 Emby 风格�
 
 - 复制精简磁力链接、qBittorrent 与 115 离线推送、whatslink 验车。
 - **磁力聚合**：Sukebei / BT4G / BTDigg / U9A9 / BTSOW 五源并发聚合去重，标题标注来源，支持按大小 / 做种数 / 智能排序。
+- **逐源增量渲染**：进入页签才加载，哪个源先回就先显示；顶部状态条实时显示每源成功数量/失败原因。
 - **115 整理改名**：离线后整理面板，一键清理垃圾文件（0 字节 / 样片 / 广告 / readme）、按模板一键规范改名、按模板归入目录。模板支持 `${code}` `${actor}` `${maker}` `${series}` `${title}` `${suffix}` `${crack}` `${res}`。
 
 ### 性能与无障碍
@@ -55,6 +61,8 @@ JavdbFusion 是面向 JAVDB 的 Tampermonkey 用户脚本，融合 Emby 风格�
 ### 磁力与 115
 
 「融合扩展设置」→「磁力工具箱」中配置 qBittorrent WebUI、115 目录 CID，以及 115 整理的目录 / 文件名 / 文件夹名模板与「离线后整理」开关。磁力聚合的源站选择与排序在详情页磁力条上。
+
+短评里的 ed2k 链接会直接带「推送 115」按钮；也可以在「融合扩展设置」→「界面」里把短评 / 磁力放到概览下方，并设置短评区块是否默认展开。
 
 ### 其他服务
 
@@ -84,6 +92,9 @@ JavdbFusion 是面向 JAVDB 的 Tampermonkey 用户脚本，融合 Emby 风格�
 | [`OPTIMIZATION-REPORT.md`](OPTIMIZATION-REPORT.md) | 性能 / 可读性 / 排布的实测与优化 |
 | [`OPTIMIZATION-PHASE2.md`](OPTIMIZATION-PHASE2.md) | 预告片画质、详情页页签、磁力聚合、115 整理 |
 | [`OPTIMIZATION-PHASE3.md`](OPTIMIZATION-PHASE3.md) | 重复请求去重、预告片解析诊断 |
+| [`DEBUG-REPORT-2026-11.md`](DEBUG-REPORT-2026-11.md) | 2026-11 静态审计 + 动态复现（短评导航 / 预告片多路 / 磁力聚合 / 可读性） |
+| [`FULL-TEST-REPORT-2026-11-12.md`](FULL-TEST-REPORT-2026-11-12.md) | 登录态全量测试 + 115 推送专项 + 压力/性能报告 |
+| [`tools/pw/README-live.md`](tools/pw/README-live.md) | Playwright + GM 垫片动态自检（`live-check.js` / `review-mock.js`） |
 | [`JavdbFusion.optimize.patch`](JavdbFusion.optimize.patch) | 相对原版的完整 unified diff |
 | [`tools/`](tools/) | 补丁脚本 + Playwright 测试套件（性能对比、冒烟、预告片自检） |
 

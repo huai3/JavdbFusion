@@ -1,0 +1,14 @@
+{
+  "name": "javdbfusion-pw",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Playwright live self-check for JavdbFusion.users.js",
+  "scripts": {
+    "live": "node live-check.js",
+    "review": "node review-mock.js",
+    "lint": "eslint --no-ignore JavdbFusion.user.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}
