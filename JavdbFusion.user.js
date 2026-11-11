@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.376-official-only
+// @version      7.377-ltx-sync
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -165,7 +165,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.376-official-only';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.377-ltx-sync';
   // 记录启动时的 hash 深链接：JAVDB 自己的脚本/跳转可能在 DOMContentLoaded 前就把 # 清掉
   var JF_BOOT_HASH = (location.hash || '').replace('#emby-dtab-', '');
   var tabHome = null, tabFav = null, favPanel = null;
@@ -7627,7 +7627,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       ltxBtn.addEventListener('click', function (e) {
         e.preventDefault(); e.stopPropagation();
         if (isDetailPage()) { window.open(LTX_TAG_URL, '_blank', 'noopener'); return; }
-        ltxOnButton();
+        ltxOnButton(!!e.shiftKey);
       });
     }
     ltxUpdateButton();
@@ -23429,7 +23429,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     else if (idx) {
       const stale = Date.now() - idx.ts > LTX_INDEX_TTL;
       btn.title = 'LTX 影片 ' + idx.ids.size + ' 部' + (stale ? '（索引已过期，点击会先更新）' : '') +
-        ' · 点击' + (ltxFilterOn ? '取消筛选' : '只看 LTX');
+        ' · 点击' + (ltxFilterOn ? '取消筛选' : '只看 LTX') + ' · Shift+点击强制更新索引';
     } else btn.title = '点击同步「LTX破解」标签索引（需要登录 JAVDB）';
   }
   async function ltxFetchTagPage(page) {
@@ -23504,10 +23504,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     });
     return ltxSyncPromise;
   }
-  async function ltxOnButton() {
+  async function ltxOnButton(force) {
     if (ltxSyncing) { showToast('LTX 索引同步中，请稍候…'); return; }
     let idx = ltxReadIndex();
-    const stale = !idx || (Date.now() - idx.ts > LTX_INDEX_TTL);
+    const stale = !idx || force || (Date.now() - idx.ts > LTX_INDEX_TTL);
     if (stale) {
       try { idx = await ltxSync(); }
       catch (e) {
@@ -30685,6 +30685,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<label class="jf-set-row"><input type="checkbox" id="jfUiLibPlay" ' + (GM_getValue('jf_ui_libplay', true) ? 'checked' : '') + '> 已入库醒目播放按钮</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfUiMagPanel" ' + (GM_getValue('jf_mag_panel', true) ? 'checked' : '') + '> 详情页磁力聚合（站外搜索条）</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfUiLtx" ' + (GM_getValue('jf_ltx_enabled', true) ? 'checked' : '') + '> LTX 影片高亮 / 只看 LTX 按钮</label>' +
+            '<button type="button" class="jf-btn" id="jfUiLtxSync" style="margin-left:8px;">立即同步 LTX 索引</button>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfUiOnlyOfficial" ' + (GM_getValue('jf_only_official_play', true) ? 'checked' : '') + '> 只用 JAVDB 官方播放（关闭外部站点探测，VIP 推荐）</label>' +
           '</div>' +
           '<div class="jf-set-sub">概览下方区块（不想要独立页签时勾选）</div>' +
@@ -30714,6 +30715,16 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         body.querySelector('#jfUiLibPlay').addEventListener('change', function (e) {
           GM_setValue('jf_ui_libplay', e.target.checked);
           if (!e.target.checked) { const w = document.querySelector('.jf-lib-play-wrap'); if (w) w.remove(); }
+        });
+        const ltxSyncBtn = body.querySelector('#jfUiLtxSync');
+        if (ltxSyncBtn) ltxSyncBtn.addEventListener('click', function () {
+          ltxSyncBtn.disabled = true;
+          const oldText = ltxSyncBtn.textContent;
+          ltxSyncBtn.textContent = '同步中…';
+          Promise.resolve().then(function () { return ltxSync(); }).catch(function () {}).finally(function () {
+            ltxSyncBtn.disabled = false;
+            ltxSyncBtn.textContent = oldText;
+          });
         });
         body.querySelector('#jfUiOnlyOfficial').addEventListener('change', function (e) {
           GM_setValue('jf_only_official_play', e.target.checked);
