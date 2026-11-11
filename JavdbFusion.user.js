@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.369-trailer-diag
+// @version      7.371-review-sort-inline
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -165,7 +165,9 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.364-top250-dedupe';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.371-review-sort-inline';
+  // 记录启动时的 hash 深链接：JAVDB 自己的脚本/跳转可能在 DOMContentLoaded 前就把 # 清掉
+  var JF_BOOT_HASH = (location.hash || '').replace('#emby-dtab-', '');
   var tabHome = null, tabFav = null, favPanel = null;
   var tabGallery = null, galleryPanel = null;
   var tabTop250 = null, top250Panel = null;
@@ -2500,6 +2502,9 @@ html.emby-skin .columns[data-controller="movie-tab"] .magnet-name a { color:var(
 html.emby-skin .columns[data-controller="movie-tab"] .magnet-name .name { font-weight:600; }
 html.emby-skin .columns[data-controller="movie-tab"] .magnet-name .meta { color:var(--e-text3); font-size:.82em; }
 /* 顶部与内容广告位（纯推广 / 磁链评论区推广横幅 / 官方App下载条）在 Emby 皮肤下全面隐藏，保持整洁 */
+html.emby-skin nav.sub-header,
+html.emby-skin .site-announce,
+html.emby-skin .notification.site-announce,
 html.emby-skin nav.app-desktop-banner,
 html.emby-skin nav.app-mobile-banner,
 html.emby-skin .app-desktop-banner,
@@ -9390,6 +9395,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           '</dt>';
       });
       moreNode.insertAdjacentHTML('beforebegin', html);
+      // 新加载的短评里可能带 ed2k，补上「推送 115」按钮
+      try { enhanceNativeReviewEd2k(moreNode.parentElement); } catch (e) {}
     }
 
     function setupReviewUnlocker(node) {
@@ -9653,12 +9660,26 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       interceptListTab();
     }
 
+    // 短评 API（与竞品一致的 /v1/movies/:id/reviews）：sort_by=hotly|recently
+    // 复用本模块的 fetchData（自带 jdSignature），供「最新 / 最热」排序与 ed2k 提取使用。
+    async function fetchReviews(slug, opts) {
+      const o = opts || {};
+      const page = Math.max(1, parseInt(o.page, 10) || 1);
+      const limit = Math.min(50, Math.max(1, parseInt(o.limit, 10) || 20));
+      const sortBy = o.sortBy === 'hotly' ? 'hotly' : 'recently';
+      const url = API_BASE + '/v1/movies/' + encodeURIComponent(String(slug || '')) +
+        '/reviews?page=' + page + '&limit=' + limit + '&sort_by=' + sortBy;
+      const res = await fetchData(url);
+      if (!res || res.success !== 1) throw new Error((res && res.message) || '短评接口返回失败');
+      return (res.data && Array.isArray(res.data.reviews)) ? res.data.reviews : [];
+    }
     return {
       init: init,
       checkReviewButton: checkReviewButton,
       interceptListTab: interceptListTab,
       getSignature: getSignature,
-      fetchData: fetchData
+      fetchData: fetchData,
+      fetchReviews: fetchReviews
     };
   })();
 
@@ -10869,7 +10890,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
                 const pBtn = listEl.querySelector('#t250-prompt-login-btn');
                 if (pBtn) pBtn.addEventListener('click', function () { showLoginModal(function () { loadData(); }); });
                 const pbBtn = listEl.querySelector('#t250-prompt-playback-btn');
-                if (pbBtn) pbBtn.addEventListener('click', function () { switchMode('playback'); });
+                if (pbBtn) pbBtn.addEventListener('click', function () { Top250ViewManager.switchMode('playback'); });
               }
             } else if (msg) {
               // 网页会话解析失败（未登录 / Cookie 失效 / 结构变更）：
@@ -10892,7 +10913,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
                 const pBtn = listEl.querySelector('#t250-prompt-login-btn');
                 if (pBtn) pBtn.addEventListener('click', function () { showLoginModal(function () { loadData(); }); });
                 const pbBtn = listEl.querySelector('#t250-prompt-playback-btn');
-                if (pbBtn) pbBtn.addEventListener('click', function () { switchMode('playback'); });
+                if (pbBtn) pbBtn.addEventListener('click', function () { Top250ViewManager.switchMode('playback'); });
               }
             } else {
               throw new Error(res.message || '获取TOP250数据失败');
@@ -10914,7 +10935,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           const rBtn = listEl.querySelector('#t250-retry-btn');
           if (rBtn) rBtn.addEventListener('click', function () { loadData(); });
           const spbBtn = listEl.querySelector('#t250-switch-pb-btn');
-          if (spbBtn) spbBtn.addEventListener('click', function () { switchMode('playback'); });
+          if (spbBtn) spbBtn.addEventListener('click', function () { Top250ViewManager.switchMode('playback'); });
         }
       } finally {
         if (mySeq === top250LoadSeq) {
@@ -15566,7 +15587,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           const doc = new DOMParser().parseFromString(html, 'text/html');
           const officialDet = (typeof FAV !== 'undefined' && typeof FAV.parseDetail === 'function') ? FAV.parseDetail(doc) : null;
           if (officialDet && officialDet.code) {
-            const healed = (typeof tryAutoHealCustomMeta === 'function') ? tryAutoHealCustomMeta(m, officialDet) : false;
+            const healed = (typeof FAV !== 'undefined' && typeof FAV.tryAutoHealCustomMeta === 'function') ? FAV.tryAutoHealCustomMeta(m, officialDet) : false;
             if (healed) {
               healedCount++;
               await FAV.dbPutMovie(m);
@@ -22892,7 +22913,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             let m = await FAV.dbGetMovie(code);
             if (!m) {
               const imgEl = item ? item.querySelector('img') : null;
-              m = newMovieRecord({
+              m = FAV.newMovieRecord({
                 code: code,
                 title: (item ? (item.querySelector('.video-title')?.getAttribute('title') || item.querySelector('.video-title strong')?.textContent?.trim()) : '') || code,
                 date: item ? (item.querySelector('.meta')?.textContent?.trim() || '') : '',
@@ -23794,6 +23815,22 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       }
       var cp = t && t.closest ? t.closest('.em-copy') : null;
       if (cp) { handleCopyClick(cp); }
+      // 短评里的 ed2k → 一键推送 115
+      var r115 = t && t.closest ? t.closest('.jf-review-115') : null;
+      if (r115) {
+        e.preventDefault(); e.stopPropagation();
+        var ed2k = r115.getAttribute('data-ed2k') || '';
+        if (!/^ed2k:\/\//i.test(ed2k)) return;
+        if (typeof FUSION !== 'undefined' && FUSION && typeof FUSION.push115 === 'function') {
+          r115.textContent = '推送中…';
+          try { showToast('正在推送到 115…'); } catch (err) {}
+          FUSION.push115(ed2k);
+          setTimeout(function () { r115.textContent = '再推一次'; }, 2500);
+        } else {
+          try { showToast('115 推送未就绪，请刷新页面重试'); } catch (err) {}
+        }
+        return;
+      }
       // 磁链/短评/相关清单 Tab 切换时即时触发去广告
       var tabA = t && t.closest ? t.closest('.columns[data-controller="movie-tab"] .tabs a') : null;
       if (tabA) {
@@ -23823,6 +23860,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       timer = setTimeout(function () {
         if (document.getElementById('emby-detail-root') && isDetailPage()) {
           refreshReviewButtons();
+          try { enhanceNativeReviewEd2k(document); } catch (e) {}
           try { hideJavdbAds(); } catch (e) {}
         }
       }, 350);
@@ -24781,6 +24819,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     if (root.parentNode) { root.parentNode.insertBefore(dr, root); }
     else { document.body.appendChild(dr); }
     try { buildDetailUi(); } catch (e) { log('详情页选项卡构建失败: ' + e.message); }
+    // 后台预热预告片片源（默认暂停、不自动播放；解析结果写缓存，点开即用）
+    try { if (typeof FUSION !== 'undefined' && FUSION && FUSION.prefetch) FUSION.prefetch(code); } catch (e) {}
 
     // 事件用 document 委托（一次绑定）；点击时实时查找当前原生按钮，抗 javdb 重渲染
     currentReviewBtns = d.reviewBtns;
@@ -24913,11 +24953,113 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       'background:rgba(255,255,255,.05);color:var(--e-text2);text-decoration:none;',
       'border:1px solid rgba(255,255,255,.06);}',
       '.emby-sub-item:hover{background:rgba(255,255,255,.11);color:var(--e-text);}',
-      '.emby-sub-empty{font-size:.82em;color:var(--e-text3);padding:.5em 0;}'
+      '.emby-sub-empty{font-size:.82em;color:var(--e-text3);padding:.5em 0;}',
+      /* ===== 可读性 / 页签一致性（v7.370） ===== */
+      /* 页签栏改为实色并加分隔线：内容滚动时不再从渐变里透出来糊成一片 */
+      '.emby-dtabbar{background:rgba(19,22,28,.98);border-bottom:1px solid rgba(255,255,255,.09);',
+      'box-shadow:0 6px 18px rgba(0,0,0,.28);padding:.45em .1em;}',
+      '.emby-dtab{font-size:.93em;min-height:38px;color:#cbbdf2;}',
+      '.emby-dtab:hover{color:#fff;}',
+      '.emby-dtab .material-symbols-outlined{font-size:18px;}',
+      '.emby-dtab .emby-dtab-count{background:rgba(0,0,0,.22);border-radius:999px;padding:0 6px;line-height:1.55;}',
+      '.emby-dtab.active .emby-dtab-count{background:rgba(0,0,0,.18);}',
+      '.emby-anchor{width:36px;padding:8px 6px;gap:2px;}',
+      '.emby-anchor a{font-size:12px;padding:7px 4px;color:#cbbdf2;}',
+      '.emby-anchor a .material-symbols-outlined{font-size:17px!important;}',
+      '.emby-anchor-title{font-size:10px;color:#a99bc9;}',
+      'html.emby-has-anchor .emby-detail-body{padding-right:3.8em;}',
+      /* 原生 movie-tab：只保留内容，隐藏重复的原生页签条 */
+      'html.emby-skin .emby-dpane-native > .columns[data-controller="movie-tab"]{margin-top:.2em;width:100%;}',
+      'html.emby-skin .emby-dpane-native > .columns[data-controller="movie-tab"] > .column > .tabs.no-bottom{display:none!important;}',
+      'html.emby-skin .emby-dpane-native > .columns[data-controller="movie-tab"] .column{padding:0;}',
+      'html.emby-skin .emby-dpane-native{min-height:120px;background:rgba(17,20,26,.88);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px 20px;box-shadow:0 10px 30px rgba(0,0,0,.32);}',
+      'html.emby-skin .emby-dpane-native > .columns,html.emby-skin .emby-dpane-native .message,html.emby-skin .emby-dpane-native .message-body{background:transparent!important;}',
+      'html.emby-skin .emby-dpane-native .message-body{color:rgba(255,255,255,.9);font-size:15px;line-height:1.75;}',
+      'html.emby-skin .emby-dpane-native .message-body a{color:#8ed6ff!important;font-weight:600;}',
+      'html.emby-skin .emby-dpane-native > #jf-magnet-panel{margin-top:0;}',
+      /* 短评：正文 15px / 1.75 行高，标题与时间提高对比 */
+      'html.emby-skin .review-items .review-title{display:flex;flex-wrap:wrap;align-items:center;color:rgba(255,255,255,.9)!important;font-size:14px!important;gap:.55em;}',
+      'html.emby-skin .review-items .review-title .score-stars{margin-left:.1em;}',
+      'html.emby-skin .review-items .review-title .time{color:rgba(255,255,255,.62)!important;font-size:12.5px!important;}',
+      'html.emby-skin .review-items .content{color:rgba(255,255,255,.86)!important;}',
+      'html.emby-skin .review-items .content p{color:rgba(255,255,255,.86)!important;font-size:14.5px!important;line-height:1.78!important;letter-spacing:.01em;}',
+      'html.emby-skin .review-items .review-item{padding:14px 2px!important;border-bottom:1px solid rgba(255,255,255,.06);}',
+      'html.emby-skin .review-item.more,html.emby-skin .review-item.list-more{background:rgba(0,164,220,.12)!important;color:#9fdcf5!important;border:1px solid rgba(0,164,220,.3);}',
+      'html.emby-skin .review-item.more:hover,html.emby-skin .review-item.list-more:hover{background:rgba(0,164,220,.22)!important;color:#fff!important;}',
+      /* 原生磁力行：标题可读（原来是深蓝压在深色卡上） */
+      'html.emby-skin .columns[data-controller="movie-tab"] .magnet-name a{color:#9ecbff!important;font-size:13.5px!important;line-height:1.5!important;}',
+      'html.emby-skin .columns[data-controller="movie-tab"] .magnet-name .name{font-weight:650!important;}',
+      'html.emby-skin .columns[data-controller="movie-tab"] .magnet-name .meta{color:rgba(255,255,255,.66)!important;font-size:12px!important;}',
+      'html.emby-skin .columns[data-controller="movie-tab"] .magnet-links .item{background:rgba(255,255,255,.055)!important;border:1px solid rgba(255,255,255,.09)!important;}',
+      'html.emby-skin .columns[data-controller="movie-tab"] .magnet-links .item .tags .tag{font-size:11px!important;}',
+      'html.emby-skin .columns[data-controller="movie-tab"] .magnet-links .date .time{color:rgba(255,255,255,.6)!important;font-size:12px!important;}',
+      /* 推荐行：卡片宽一点、空行不再拉出一整块空白 */
+      '.emby-sec{margin-top:1.8em;}',
+      '.emby-row .item{width:var(--e-rel-w,196px);}',
+      '.emby-row .video-title{font-size:12.5px!important;line-height:1.45!important;color:rgba(255,255,255,.88)!important;}',
+      '.emby-row .video-number{font-size:11.5px!important;color:rgba(255,255,255,.6)!important;}',
+      /* 低特效 / 减少动态 */
+      /* ===== 短评增强 / 概览下方区块（v7.371） ===== */
+      '.emby-dtab[hidden],.emby-anchor a[hidden]{display:none!important;}',
+      '#jf-inline-sections{margin-top:1.6em;display:flex;flex-direction:column;gap:1.4em;}',
+      '.jf-review-sec,.jf-inline-magnet{background:rgba(17,20,26,.9);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px 18px;box-shadow:0 8px 26px rgba(0,0,0,.28);}',
+      '.jf-review-pane-sec{margin:0 0 14px;}',
+      '.jf-review-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}',
+      '.jf-review-title{display:inline-flex;align-items:center;gap:6px;font-size:15px;font-weight:700;color:#eaeaea;}',
+      '.jf-review-title .material-symbols-outlined{font-size:19px;color:var(--e-accent,#00a4dc);}',
+      '.jf-review-count{font-size:12px;color:rgba(255,255,255,.6);font-weight:600;}',
+      '.jf-review-tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}',
+      '.jf-review-sorts{display:inline-flex;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:2px;gap:2px;}',
+      '.jf-review-sorts button{border:none;background:none;color:#b9a7e8;font-size:12.5px;padding:5px 14px;border-radius:999px;cursor:pointer;transition:background .15s,color .15s;}',
+      '.jf-review-sorts button:hover{color:#fff;}',
+      '.jf-review-sorts button.active{background:var(--e-accent,#00a4dc);color:#04121a;font-weight:700;}',
+      '.jf-review-native-btn,.jf-review-expand,.jf-review-more,.jf-review-retry{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#dfe4ee;border-radius:999px;padding:5px 12px;font-size:12.5px;cursor:pointer;transition:background .15s,color .15s;}',
+      '.jf-review-native-btn:hover,.jf-review-expand:hover,.jf-review-more:hover,.jf-review-retry:hover{background:rgba(255,255,255,.16);color:#fff;}',
+      '.jf-review-body{margin-top:10px;}',
+      '.jf-review-body[hidden]{display:none!important;}',
+      '.jf-review-item{padding:12px 2px;border-top:1px solid rgba(255,255,255,.06);}',
+      '.jf-review-item:first-child{border-top:none;}',
+      '.jf-review-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px;color:rgba(255,255,255,.62);}',
+      '.jf-review-user{color:#eaeaea;font-weight:600;}',
+      '.jf-review-stars{color:#ffb000;letter-spacing:1px;font-size:12px;}',
+      '.jf-review-likes{margin-left:auto;color:rgba(255,255,255,.55);}',
+      '.jf-review-content{margin-top:6px;font-size:14.5px;line-height:1.78;color:rgba(255,255,255,.87);word-break:break-word;}',
+      '.jf-review-link{color:#8ed6ff;text-decoration:none;word-break:break-all;}',
+      '.jf-review-link:hover{text-decoration:underline;}',
+      '.jf-review-115{display:inline-flex;align-items:center;gap:4px;margin-left:6px;border:1px solid rgba(52,206,87,.5);background:rgba(52,206,87,.12);color:#9ae6b4;border-radius:6px;padding:2px 8px;font-size:11.5px;cursor:pointer;vertical-align:baseline;white-space:nowrap;}',
+      '.jf-review-115:hover{background:rgba(52,206,87,.26);color:#fff;}',
+      '.jf-review-ed2k-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}',
+      '.jf-review-empty,.jf-review-error{padding:18px 4px;font-size:13px;color:rgba(255,255,255,.65);}',
+      '.jf-review-error{color:#fca5a5;}',
+      '.jf-review-more{display:block;margin:12px auto 2px;}',
+      '.jf-inline-magnet .jf-inline-magnet-body{margin-top:10px;}',
+      '.jf-inline-magnet-body[hidden]{display:none!important;}',
+      'html.emby-skin #jf-inline-magnet .top-meta{display:none!important;}',
+      'html.emby-skin #jf-inline-magnet .magnet-links{background:transparent!important;}',
+      'html.emby-skin #jf-inline-magnet .magnet-links .item{background:rgba(255,255,255,.055)!important;border:1px solid rgba(255,255,255,.09)!important;border-radius:10px;margin-bottom:.6em;}',
+      'html.emby-skin #jf-inline-magnet .magnet-name a{color:#9ecbff!important;font-size:13.5px!important;line-height:1.5!important;word-break:break-all;}',
+      'html.emby-skin #jf-inline-magnet .magnet-name .name{font-weight:650!important;}',
+      'html.emby-skin #jf-inline-magnet .magnet-name .meta{color:rgba(255,255,255,.66)!important;font-size:12px!important;}',
+      'html.emby-skin #jf-inline-magnet .magnet-links .date .time{color:rgba(255,255,255,.6)!important;font-size:12px!important;}',
+      'html.emby-skin #jf-inline-magnet .message,html.emby-skin #jf-inline-magnet .message-body{background:transparent!important;}',
+      '@media (prefers-reduced-motion:reduce){.emby-dtab,.emby-anchor a{transition:none!important;}}',
+      '@media (max-width:768px){',
+      '.emby-dtab{font-size:.86em;padding:.45em .8em;flex:0 0 auto;}',
+      '.emby-dtabbar{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:.4em .2em;}',
+      '.emby-dtabbar::-webkit-scrollbar{display:none;}',
+      '.emby-anchor{display:none!important;}',
+      'html.emby-has-anchor .emby-detail-body{padding-right:0;}',
+      '.emby-dpane-native{padding:10px 10px!important;border-radius:10px;}',
+      '}',
+      '@media (max-width:420px){.emby-dtab{font-size:.8em;padding:.4em .62em;}.emby-dtab .emby-dtab-count{display:none;}}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(st);
   }
 
+  // 原生 movie-tab 组件被搬进页签面板后，重建/换页前必须先搬回原位，
+  // 否则 removeDetailDom() 删掉 #emby-detail-root 时会把 JAVDB 的组件一起销毁。
+  let nativeColHome = null;
+  let magnetsHome = null;
   function buildDetailUi() {
     const dr = document.getElementById('emby-detail-root');
     if (!dr) return;
@@ -24931,8 +25073,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     const ownSecs = [];
     body.querySelectorAll(':scope > .emby-sec').forEach(function (s) { ownSecs.push(s); });
     dr.querySelectorAll(':scope > .emby-sec').forEach(function (s) { ownSecs.push(s); });
-    // 原生 movie-tab 组件（磁链/短评/相关清单）—— 保留并搬进「原生内容」面板
+    // 原生 movie-tab 组件（磁链/短评/相关清单）—— 保留并搬进页签面板
     const nativeCol = document.querySelector('.columns[data-controller="movie-tab"]');
+    // 每个页面记录自己的「原生组件原位」；SPA 换页后旧 parent 已断开，必须更新，
+    // 否则下一次 removeDetailDom 会因 parent 不可用而无法把组件搬回来（组件随根节点一起被删）。
+    if (nativeCol && !nativeCol.closest('#emby-detail-root')) {
+      if (!nativeColHome || !nativeColHome.parent || !nativeColHome.parent.isConnected || nativeColHome.parent !== nativeCol.parentNode) {
+        nativeColHome = { parent: nativeCol.parentNode, next: nativeCol.nextSibling };
+      }
+    }
 
     let bar = dr.querySelector('.emby-dtabbar');
     if (!bar) {
@@ -24945,14 +25094,19 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     DETAIL_TAB_DEFS.forEach(function (def) {
       const a = document.createElement('a');
       a.className = 'emby-dtab';
-      a.href = '#emby-dtab-' + def.key;
       a.dataset.dtab = def.key;
+      // 用查询参数而不是 #hash：Chrome 对 #fragment 会触发自动滚动，
+      // 导致点页签时页面跳到内容中间、页签栏被顶栏盖住（短评页尤其明显）。
+      a.href = '?dtab=' + def.key;
+      a.setAttribute('role', 'tab');
       a.innerHTML = '<span class="material-symbols-outlined" style="font-size:1em;">' + def.icon + '</span>' + def.label;
       bar.appendChild(a);
       const pane = document.createElement('div');
       pane.className = 'emby-dpane';
       pane.id = 'emby-dtab-' + def.key;
       pane.hidden = true;
+      pane.setAttribute('role', 'tabpanel');
+      if (def.key === 'magnet' || def.key === 'review' || def.key === 'list') pane.classList.add('emby-dpane-native');
       body.appendChild(pane);
       panes[def.key] = pane;
     });
@@ -24960,47 +25114,192 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     // 概览面板：脚本自己的内容块 + 字幕搜索
     ownSecs.forEach(function (s) { panes.overview.appendChild(s); });
     panes.overview.appendChild(buildSubtitleBlock());
-
-    // 原生内容面板：把原生 movie-tab 搬进来（Stimulus 控制器跟随元素走，不受影响）
+    // 默认先挂到「磁力」页签（隐藏态），避免原生组件残留在 .video-detail 里
+    // 以未换肤的原始样式露在页面底部
     if (nativeCol) panes.magnet.appendChild(nativeCol);
 
-    // 磁力聚合面板：脚本的磁力搜索条（默认挂在 #magnets-content 里，这里搬进独立面板）
+    // 「放在概览下方」的短评 / 磁力区块（设置里分别开关）
+    const inlineReview = !!GM_getValue('jf_inline_review', false);
+    const inlineMagnet = !!GM_getValue('jf_inline_magnet', false);
+    const inlineHost = document.createElement('div');
+    inlineHost.id = 'jf-inline-sections';
+    panes.overview.appendChild(inlineHost);
+    let inlineReviewSec = null;
+    let inlineMagnetSec = null;
+    const tabReviewSec = buildReviewSection({ inline: false });
+    panes.review.insertBefore(tabReviewSec, panes.review.firstChild);
+
+    if (inlineMagnet) {
+      inlineMagnetSec = document.createElement('section');
+      inlineMagnetSec.className = 'jf-inline-magnet';
+      inlineMagnetSec.id = 'jf-inline-magnet';
+      const magExpanded = GM_getValue('jf_inline_magnet_expanded', true) !== false;
+      inlineMagnetSec.innerHTML =
+        '<div class="jf-review-head"><span class="jf-review-title">' +
+          '<span class="material-symbols-outlined">link</span> 磁力</span>' +
+          '<span class="jf-review-tools"><button type="button" class="jf-review-expand" aria-expanded="' + (magExpanded ? 'true' : 'false') + '">' + (magExpanded ? '收起' : '展开') + '</button></span>' +
+        '</div><div class="jf-inline-magnet-body"' + (magExpanded ? '' : ' hidden') + '></div>';
+      inlineHost.appendChild(inlineMagnetSec);
+      const magBody = inlineMagnetSec.querySelector('.jf-inline-magnet-body');
+      const magEl = document.getElementById('magnets');
+      if (magEl) {
+        if (!magnetsHome) magnetsHome = { parent: magEl.parentNode, next: magEl.nextSibling };
+        magBody.appendChild(magEl);
+      }
+      const magToggle = inlineMagnetSec.querySelector('.jf-review-expand');
+      if (magToggle) magToggle.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        const show = magBody.hidden;
+        magBody.hidden = !show;
+        magToggle.textContent = show ? '收起' : '展开';
+        magToggle.setAttribute('aria-expanded', show ? 'true' : 'false');
+        if (show) ensureAggLoaded();
+      });
+    }
+    if (inlineReview) {
+      inlineReviewSec = buildReviewSection({ inline: true });
+      inlineHost.appendChild(inlineReviewSec);
+    }
+
     const aggPane = panes.agg;
     const magHome = document.getElementById('magnets-content');
     let magPanel = document.getElementById('jf-magnet-panel');
 
-    function switchTab(key) {
+    // 磁力 / 短评 / 相关清单共用同一个 movie-tab 组件：切到哪个页签就把它挂到哪个页签。
+    // 旧实现把组件固定挂在「磁力」页签里，于是「短评 / 相关清单」页签永远是空面板，
+    // 原生页签条又跟着组件一起藏在隐藏的磁力面板里 —— 这就是「短评导航栏错位」的根因。
+    const NATIVE_PANE_KEYS = { magnet: 1, review: 1, list: 1 };
+    function mountNative(key) {
+      if (!nativeCol) return;
+      const pane = panes[key];
+      if (pane && nativeCol.parentNode !== pane) pane.appendChild(nativeCol);
+    }
+    // 原生页签条与 Emby 页签重复：隐藏原生条，把「短評(16)」的计数搬到 Emby 页签上，
+    // 只保留一套导航，避免用户在两套页签之间迷路。
+    function syncNativeCounts() {
+      if (!nativeCol) return;
+      [['review', 'a.review-tab'], ['list', 'a.list-tab']].forEach(function (pair) {
+        const link = nativeCol.querySelector(pair[1]);
+        const t = bar.querySelector('[data-dtab="' + pair[0] + '"]');
+        if (!t) return;
+        let cnt = '';
+        if (link) {
+          const m = (link.textContent || '').match(/[\(（]\s*(\d+)\s*[\)）]/);
+          if (m) cnt = m[1];
+        }
+        let badge = t.querySelector('.emby-dtab-count');
+        if (cnt) {
+          if (!badge) { badge = document.createElement('span'); badge.className = 'emby-dtab-count'; t.appendChild(badge); }
+          badge.textContent = cnt;
+        } else if (badge) badge.remove();
+      });
+    }
+    // 磁力聚合面板首次进入相关页签才加载，避免详情页一打开就并发打 5 个站外源
+    function ensureAggLoaded() {
+      const p = document.getElementById('jf-magnet-panel');
+      if (p && typeof p._ensureLoaded === 'function') { try { p._ensureLoaded(); } catch (e) {} }
+    }
+
+    function switchTab(key, opts) {
+      opts = opts || {};
+      // 被「放到概览下方」的页签不再参与切换，避免隐藏页签被深链接/锚点重新激活
+      if ((key === 'review' && inlineReview) || ((key === 'magnet' || key === 'agg') && inlineMagnet)) key = 'overview';
       DETAIL_TAB_DEFS.forEach(function (def) {
         const on = def.key === key;
         const pane = panes[def.key];
         if (pane) pane.hidden = !on;
         const t = bar.querySelector('[data-dtab="' + def.key + '"]');
-        if (t) t.classList.toggle('active', on);
+        if (t) { t.classList.toggle('active', on); t.setAttribute('aria-selected', on ? 'true' : 'false'); }
       });
       // 概览之外的页签隐藏 hero（把内容顶上来，避免大片空白封面挡住内容）
-      hero.style.display = (key === 'overview') ? '' : 'none';
+      // 用 !important 覆盖：cover-full 模式有 `.emby-detail-hero{display:block!important}`，
+      // 普通 inline display:none 会被它压过 —— 这正是「切到短评仍看到整张封面」的原因。
+      if (key === 'overview') hero.style.removeProperty('display');
+      else hero.style.setProperty('display', 'none', 'important');
+      // 原生组件挂到当前页签后再驱动原生子页签
+      if (NATIVE_PANE_KEYS[key]) mountNative(key);
       // 磁力聚合：把磁力条搬进独立面板；其它页签搬回原位
       if (key === 'agg') {
         magPanel = document.getElementById('jf-magnet-panel');
         if (magPanel && magPanel.parentNode !== aggPane) aggPane.appendChild(magPanel);
+        ensureAggLoaded();
       } else if (magPanel && magPanel.parentNode === aggPane) {
         const back = magHome || panes.magnet;
         if (back) back.insertBefore(magPanel, back.firstChild);
       }
-      // 驱动原生页签
-      const sel = NATIVE_TAB_SEL[key];
-      if (sel) {
-        const link = nativeCol ? nativeCol.querySelector(sel) : null;
-        if (link) { try { link.click(); } catch (e) {} }
-      } else if (key === 'magnet' && nativeCol) {
-        const first = nativeCol.querySelector('.tabs li a');
-        if (first) { try { first.click(); } catch (e) {} }
+      if (key === 'magnet') ensureAggLoaded();
+      // 驱动原生子页签（原生页签条已隐藏，只有这套 Emby 页签在驱动它）
+      if (!opts.fromNative) {
+        const sel = NATIVE_TAB_SEL[key];
+        if (sel) {
+          const link = nativeCol ? nativeCol.querySelector(sel) : null;
+          if (link) { try { link.click(); } catch (e) {} }
+          if (key === 'review') {
+            setTimeout(function () { enhanceNativeReviewEd2k(nativeCol); }, 500);
+            setTimeout(function () { enhanceNativeReviewEd2k(nativeCol); }, 1600);
+            if (tabReviewSec && typeof tabReviewSec._jfReapply === 'function') {
+              setTimeout(function () { tabReviewSec._jfReapply(); }, 60);
+              setTimeout(function () { tabReviewSec._jfReapply(); }, 600);
+            }
+          }
+        } else if (key === 'magnet' && nativeCol) {
+          const first = nativeCol.querySelector('.tabs li a');
+          if (first) { try { first.click(); } catch (e) {} }
+        }
       }
+      syncNativeCounts();
+      [tabReviewSec, inlineReviewSec].forEach(function (sec) {
+        if (sec && typeof sec._jfRefreshCount === 'function') { try { sec._jfRefreshCount(); } catch (e) {} }
+      });
       // 锚点高亮
       document.querySelectorAll('.emby-anchor a').forEach(function (a) {
         a.classList.toggle('current', a.dataset.dtab === key);
+        a.setAttribute('aria-current', a.dataset.dtab === key ? 'page' : 'false');
       });
-      try { history.replaceState(null, '', '#emby-dtab-' + key); } catch (e) {}
+      // 地址栏只保留 ?dtab=，不写 #hash，避免浏览器按锚点自动滚走
+      if (!opts.noUrl) {
+        try {
+          const u = new URL(location.href);
+          u.hash = '';
+          if (key === 'overview') u.searchParams.delete('dtab'); else u.searchParams.set('dtab', key);
+          history.replaceState(null, '', u.pathname + (u.search || ''));
+        } catch (e) {}
+      }
+      // 内容顶到吸顶栏下方时补一次滚动，保证第一行不被页签栏遮住。
+      // 注意：--e-header-h 是 "4.327em"，parseFloat 会得到 4.327 而不是像素，
+      // 直接拿它计算会把内容顶到页签栏底下（短评页「标题被盖住」的另一个原因）。
+      if (!opts.noScroll) {
+        const positionPane = function () {
+          try {
+            const topbar = document.getElementById('emby-topbar');
+            const headerH = topbar ? topbar.getBoundingClientRect().height : 64;
+            const barH = bar.getBoundingClientRect().height || 52;
+            const desiredTop = headerH + barH + 10;
+            const rect = panes[key].getBoundingClientRect();
+            if (rect.top < desiredTop - 2 || rect.top > desiredTop + window.innerHeight * 0.5) {
+              const top = window.scrollY + rect.top - desiredTop;
+              window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+            }
+          } catch (e) {}
+        };
+        // 只做一次、且用即时滚动：平滑滚动 + 二次修正会和浏览器自身的滚动锚定打架，
+        // 实测会出现「越修正越远」的 300+px 过冲。
+        const runPosition = function () {
+          try {
+            const topbar = document.getElementById('emby-topbar');
+            const headerH = topbar ? topbar.getBoundingClientRect().height : 64;
+            // 隐藏 hero 后页面高度骤减，浏览器会把滚动位置钳到很靠后的位置，
+            // 此时吸顶栏已经滚出视口（rect.top < header）。只需把详情根节点拉回顶栏下方，
+            // 不要按页签矩形算 —— hero 收起有过渡，矩形在 100ms 内还会再变一次。
+            if (window.scrollY < 80) return; // 本来就在顶部：不动，避免无意义的小幅跳动
+            // 直接回页面顶部：非概览页签的内容就在页签栏正下方，
+            // 比按 hero/根节点矩形计算更稳（hero 收起有过渡，矩形值会在两帧内变化）。
+            window.scrollTo(0, 0);
+          } catch (e) {}
+        };
+        setTimeout(runPosition, 120);
+        setTimeout(runPosition, 420);
+      }
     }
 
     bar.addEventListener('click', function (e) {
@@ -25009,19 +25308,33 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       e.preventDefault();
       switchTab(t.dataset.dtab);
     });
+    // 键盘左右键切换页签（可访问性）
+    bar.addEventListener('keydown', function (e) {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const keys = DETAIL_TAB_DEFS.map(function (d) { return d.key; });
+      const cur = keys.indexOf((bar.querySelector('.emby-dtab.active') || {}).dataset ? bar.querySelector('.emby-dtab.active').dataset.dtab : 'overview');
+      const next = keys[(cur + (e.key === 'ArrowRight' ? 1 : keys.length - 1)) % keys.length];
+      e.preventDefault();
+      switchTab(next);
+      const nt = bar.querySelector('[data-dtab="' + next + '"]');
+      if (nt) nt.focus();
+    });
 
     // 锚点导航
     let anchor = document.querySelector('.emby-anchor');
     if (!anchor) {
       anchor = document.createElement('div');
       anchor.className = 'emby-anchor';
+      anchor.setAttribute('role', 'navigation');
+      anchor.setAttribute('aria-label', '详情页导航');
       anchor.innerHTML = '<div class="emby-anchor-title">导航</div>';
       DETAIL_TAB_DEFS.forEach(function (def) {
         const a = document.createElement('a');
-        a.href = '#emby-dtab-' + def.key;
+        a.href = '?dtab=' + def.key;
         a.dataset.dtab = def.key;
         a.title = def.label;
-        a.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;">' + def.icon + '</span><span class="emby-anchor-t">' + def.label + '</span>';
+        a.setAttribute('role', 'button');
+        a.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;">' + def.icon + '</span><span class="emby-anchor-t">' + def.label + '</span>';
         anchor.appendChild(a);
       });
       document.body.appendChild(anchor);
@@ -25034,9 +25347,22 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       });
       document.documentElement.classList.add('emby-has-anchor');
     }
+    // 把已内联的页签从页签栏和右侧锚点里隐藏（只保留一套导航）
+    const hideTabAndAnchor = function (k) {
+      const t = bar.querySelector('[data-dtab="' + k + '"]');
+      if (t) t.hidden = true;
+      const a = anchor.querySelector('[data-dtab="' + k + '"]');
+      if (a) a.hidden = true;
+    };
+    if (inlineReview) hideTabAndAnchor('review');
+    if (inlineMagnet) { hideTabAndAnchor('magnet'); hideTabAndAnchor('agg'); }
 
-    const initial = (location.hash || '').replace('#emby-dtab-', '');
-    switchTab(DETAIL_TAB_DEFS.some(function (d) { return d.key === initial; }) ? initial : 'overview');
+    const qsTab = (function () { try { return new URLSearchParams(location.search).get('dtab') || ''; } catch (e) { return ''; } })();
+    const hashTab = (location.hash || '').replace('#emby-dtab-', '') || (typeof JF_BOOT_HASH !== 'undefined' ? JF_BOOT_HASH : '');
+    let initial = DETAIL_TAB_DEFS.some(function (d) { return d.key === qsTab; }) ? qsTab
+      : (DETAIL_TAB_DEFS.some(function (d) { return d.key === hashTab; }) ? hashTab : 'overview');
+    if ((initial === 'review' && inlineReview) || ((initial === 'magnet' || initial === 'agg') && inlineMagnet)) initial = 'overview';
+    switchTab(initial, { noScroll: true });
   }
 
   /* ---------- 字幕搜索（合并进「概览」） ---------- */
@@ -25060,16 +25386,18 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       list.innerHTML = '<div class="emby-sub-empty">搜索中…</div>';
       const hits = [];
       try {
-        const r = await gmReq({ url: 'https://subtitlecat.com/index.php?search=' + encodeURIComponent(kw), timeout: 9000, headers: { 'Accept': 'text/html' } });
-        const doc = new DOMParser().parseFromString(r.responseText || '', 'text/html');
+        // gmReq 是 FUSION 模块内的私有函数，这里在模块外，必须用全局 gmHttp（旧代码调 gmReq
+        // 直接 ReferenceError，被下面的空 catch 吞掉 → 字幕搜索按钮点了永远无结果）。
+        const r = await gmHttp.request({ url: 'https://subtitlecat.com/index.php?search=' + encodeURIComponent(kw), timeout: 9000, headers: { 'Accept': 'text/html' } });
+        const doc = new DOMParser().parseFromString(r || '', 'text/html');
         doc.querySelectorAll('a[href*="/subtitles/"]').forEach(function (a) {
           const t = (a.textContent || '').replace(/\s+/g, ' ').trim();
           if (t && hits.length < 30) hits.push({ title: t, url: a.href });
         });
       } catch (e) {}
       try {
-        const r2 = await gmReq({ url: 'https://api-shoulei-ssl.xunlei.com/oracle/subtitle?name=' + encodeURIComponent(kw), timeout: 9000, headers: { 'Accept': 'application/json' } });
-        const j = JSON.parse(r2.responseText || '{}');
+        const r2 = await gmHttp.request({ url: 'https://api-shoulei-ssl.xunlei.com/oracle/subtitle?name=' + encodeURIComponent(kw), timeout: 9000, headers: { 'Accept': 'application/json' } });
+        const j = JSON.parse(r2 || '{}');
         (j.data || []).forEach(function (it) {
           if (it && hits.length < 40) hits.push({ title: (it.title || it.filename || it.subtitle_name || '字幕') + (it.lang ? ' · ' + it.lang : ''), url: it.url || it.subtitle_url || '' });
         });
@@ -25081,6 +25409,217 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       }).join('');
     });
     return block;
+  }
+
+  /* ---------- 短评增强：最新 / 最热排序 + ed2k 一键推送 115 ---------- */
+  // 页签内和「概览下方」共用同一套渲染：数据来自 JAVDB 短评 API
+  // （/v1/movies/:id/reviews?sort_by=hotly|recently，需客户端签名，无需登录）。
+  function jfReviewSlug() {
+    const m = location.pathname.match(/\/v\/([^/]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+  function jfReviewNativeCount() {
+    try {
+      const a = document.querySelector('.columns[data-controller="movie-tab"] a.review-tab');
+      const m = a && (a.textContent || '').match(/[\(（]\s*(\d+)\s*[\)）]/);
+      return m ? Number(m[1]) : 0;
+    } catch (e) { return 0; }
+  }
+  function jfReviewLinkify(text) {
+    const raw = String(text || '');
+    let out = '', last = 0, m;
+    const re = /(ed2k:\/\/[^\s"'<>]+|magnet:\?[^\s"'<>]+|https?:\/\/[^\s"'<>]+)/gi;
+    while ((m = re.exec(raw))) {
+      out += escapeHtml(raw.slice(last, m.index));
+      const url = m[0];
+      out += '<a class="jf-review-link" href="' + escapeAttr(url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(url) + '</a>';
+      if (/^ed2k:\/\//i.test(url)) {
+        out += '<button type="button" class="jf-review-115" data-ed2k="' + escapeAttr(url) + '" title="把这条 ed2k 推送到 115 离线下载">推送 115</button>';
+      }
+      last = m.index + url.length;
+    }
+    out += escapeHtml(raw.slice(last));
+    return out.replace(/\n/g, '<br>');
+  }
+  function jfReviewItemHtml(r) {
+    const score = Math.max(0, Math.min(5, Math.round(parseFloat(r.score) || 0)));
+    const stars = '★★★★★'.slice(0, score) + '☆☆☆☆☆'.slice(0, 5 - score);
+    const date = String(r.created_at || '').slice(0, 10);
+    return '<article class="jf-review-item" data-review-id="' + escapeAttr(String(r.id || '')) + '">' +
+      '<header class="jf-review-meta">' +
+        '<span class="jf-review-user">' + escapeHtml(r.username || r.user_name || '用户') + '</span>' +
+        '<span class="jf-review-stars" title="' + score + ' 星">' + stars + '</span>' +
+        '<span class="jf-review-date">' + escapeHtml(date) + '</span>' +
+        '<span class="jf-review-likes">👍 ' + (Number(r.likes_count) || 0) + '</span>' +
+      '</header>' +
+      '<div class="jf-review-content">' + jfReviewLinkify(r.content) + '</div>' +
+    '</article>';
+  }
+  // 原生短评里的 ed2k（不切到 API 列表时也能一键推 115）
+  function enhanceNativeReviewEd2k(scope) {
+    try {
+      const root = scope || document;
+      root.querySelectorAll('#reviews .review-item .content, [data-movie-tab-target="reviews"] .review-item .content').forEach(function (c) {
+        if (c.dataset.jfEd2kScanned === '1') return;
+        const text = c.textContent || '';
+        const links = text.match(/ed2k:\/\/[^\s"'<>]+/gi) || [];
+        c.dataset.jfEd2kScanned = '1';
+        if (!links.length) return;
+        const row = document.createElement('div');
+        row.className = 'jf-review-ed2k-row';
+        links.slice(0, 4).forEach(function (link) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'jf-review-115';
+          b.setAttribute('data-ed2k', link);
+          let name = '';
+          try { name = decodeURIComponent((link.match(/^ed2k:\/\/\|file\|([^|]+)\|/i) || [])[1] || ''); } catch (e) { name = ''; }
+          b.textContent = '推送 115' + (name ? ' · ' + name.slice(0, 26) : '');
+          row.appendChild(b);
+        });
+        c.appendChild(row);
+      });
+    } catch (e) {}
+  }
+
+  /**
+   * 构建短评区块。
+   * opts.inline=true  → 挂在「概览」下方（自带展开/收起）
+   * opts.inline=false → 挂在「短评」页签内（默认显示原站短评，点最新/最热切 API 列表）
+   */
+  function buildReviewSection(opts) {
+    opts = opts || {};
+    const inline = !!opts.inline;
+    const sec = document.createElement('section');
+    sec.className = 'jf-review-sec' + (inline ? ' jf-review-inline' : ' jf-review-pane-sec');
+    const expanded = inline ? GM_getValue('jf_review_expanded', true) !== false : true;
+    let sort = GM_getValue('jf_review_sort', 'recently') === 'hotly' ? 'hotly' : 'recently';
+    let page = 1, loading = false, ended = false, loaded = false, apiMode = false;
+    sec.innerHTML =
+      '<div class="jf-review-head">' +
+        '<span class="jf-review-title"><span class="material-symbols-outlined">rate_review</span> 短评 <span class="jf-review-count"></span></span>' +
+        '<span class="jf-review-tools">' +
+          '<span class="jf-review-sorts" role="group" aria-label="短评排序">' +
+            '<button type="button" data-sort="recently">最新</button>' +
+            '<button type="button" data-sort="hotly">最热</button>' +
+          '</span>' +
+          (inline ? '' : '<button type="button" class="jf-review-native-btn" title="显示 JAVDB 原站短评（可点赞 / 举报）">原站</button>') +
+          (inline ? '<button type="button" class="jf-review-expand" aria-expanded="' + (expanded ? 'true' : 'false') + '">' + (expanded ? '收起' : '展开') + '</button>' : '') +
+        '</span>' +
+      '</div>' +
+      '<div class="jf-review-body"' + (expanded ? '' : ' hidden') + '>' +
+        '<div class="jf-review-list"></div>' +
+        '<button type="button" class="jf-review-more" hidden>加载更多短评</button>' +
+      '</div>';
+    const body = sec.querySelector('.jf-review-body');
+    const listEl = sec.querySelector('.jf-review-list');
+    const moreBtn = sec.querySelector('.jf-review-more');
+    const countEl = sec.querySelector('.jf-review-count');
+    const sortBtns = Array.prototype.slice.call(sec.querySelectorAll('[data-sort]'));
+    const nativeBtn = sec.querySelector('.jf-review-native-btn');
+    const expandBtn = sec.querySelector('.jf-review-expand');
+
+    function syncSort() {
+      sortBtns.forEach(function (b) { b.classList.toggle('active', b.dataset.sort === sort); });
+    }
+    function setCount() {
+      const n = jfReviewNativeCount();
+      if (n) countEl.textContent = '(' + n + ')';
+    }
+    function nativePanel() {
+      const pane = sec.closest('.emby-dpane');
+      return (pane || document).querySelector('[data-movie-tab-target="reviews"]');
+    }
+    function enterApi() {
+      apiMode = true;
+      sec.classList.add('jf-review-api');
+      const np = nativePanel();
+      if (np) np.style.display = 'none';
+      body.hidden = false;
+    }
+    function leaveApi() {
+      apiMode = false;
+      sec.classList.remove('jf-review-api');
+      const np = nativePanel();
+      if (np) np.style.display = '';
+      if (!inline) body.hidden = true;
+    }
+    async function load(reset) {
+      if (loading) return;
+      if (!GM_getValue('jf_review_api_enabled', true)) return;
+      if (reset) { page = 1; ended = false; loaded = false; listEl.innerHTML = ''; }
+      if (ended) return;
+      const slug = jfReviewSlug();
+      if (!slug || !ReviewListInfiniteManager || typeof ReviewListInfiniteManager.fetchReviews !== 'function') {
+        listEl.innerHTML = '<div class="jf-review-error">短评接口不可用（脚本版本过旧或未识别到番号）。</div>';
+        return;
+      }
+      loading = true;
+      moreBtn.disabled = true;
+      moreBtn.textContent = '加载中…';
+      try {
+        const rows = await ReviewListInfiniteManager.fetchReviews(slug, { page: page, limit: 20, sortBy: sort });
+        if (reset && !rows.length) listEl.innerHTML = '<div class="jf-review-empty">这个番号还没有短评。</div>';
+        if (rows.length) {
+          listEl.insertAdjacentHTML('beforeend', rows.map(jfReviewItemHtml).join(''));
+          page++;
+        }
+        loaded = true;
+        ended = rows.length < 20;
+        moreBtn.hidden = ended;
+        if (!ended) moreBtn.textContent = '加载更多短评';
+      } catch (e) {
+        listEl.innerHTML = '<div class="jf-review-error">短评加载失败：' + escapeHtml(e && e.message || '网络错误') +
+          ' <button type="button" class="jf-review-retry">重试</button></div>';
+        moreBtn.hidden = true;
+      } finally {
+        loading = false;
+        moreBtn.disabled = false;
+      }
+    }
+    function switchSort(next) {
+      sort = next === 'hotly' ? 'hotly' : 'recently';
+      try { GM_setValue('jf_review_sort', sort); } catch (e) {}
+      syncSort();
+      if (!inline) enterApi();
+      load(true);
+    }
+    sortBtns.forEach(function (b) {
+      b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); switchSort(b.dataset.sort); });
+    });
+    if (nativeBtn) nativeBtn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); leaveApi(); });
+    if (expandBtn) expandBtn.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      const show = body.hidden;
+      body.hidden = !show;
+      expandBtn.textContent = show ? '收起' : '展开';
+      expandBtn.setAttribute('aria-expanded', show ? 'true' : 'false');
+      if (show && !loaded) load(true);
+    });
+    moreBtn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); load(false); });
+    sec.addEventListener('click', function (e) {
+      const retry = e.target.closest && e.target.closest('.jf-review-retry');
+      if (retry) { e.preventDefault(); load(true); }
+    });
+    syncSort();
+    setCount();
+    // 页签内：默认不请求，保留原站短评；只有点排序或展开才切 API
+    if (inline) {
+      if (expanded) setTimeout(function () { if (sec.isConnected && !loaded) load(true); }, 600);
+    } else {
+      body.hidden = true;
+    }
+    sec._jfRefreshCount = setCount;
+    sec._jfLoad = function () { if (inline) { if (expanded || !body.hidden) load(!loaded); } else if (apiMode) load(!loaded); };
+    // 原生 movie-tab 每次切页签都会把 reviews 面板 display 改回 block，
+    // API 模式下要重新压掉，否则会和增强列表重复显示。
+    sec._jfReapply = function () {
+      if (!inline && apiMode) {
+        const np = nativePanel();
+        if (np) np.style.display = 'none';
+      }
+    };
+    return sec;
   }
 
   /* ---------- 状态优先级统一 ---------- */
@@ -25134,13 +25673,19 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   function updateRelatedSections(root) {
     const dr = document.getElementById('emby-detail-root');
     if (!dr) return;
+    // 旧实现把推荐行直接挂到 #emby-detail-root 上，它们不属于任何页签面板，
+    // 于是切到「短评 / 磁力 / 磁力聚合」时推荐行仍然常驻，页签内容反而被挤到角落。
+    // 现在统一收进「概览」面板。
+    const host = dr.querySelector('#emby-dtab-overview') || dr;
     const alsoStarred = extractSection('還出演過');
     const youMightLike = extractSection('你可能也喜歡');
+    // 概览顺序：字幕 → 概览下方区块（短评/磁力）→ TA还出演过 / 你可能喜欢
+    const addRow = function (row) { host.appendChild(row); };
     if (alsoStarred.length && !dr.querySelector('[data-related="還出演過"]')) {
-      dr.appendChild(buildRow('TA(們)還出演過', alsoStarred, '還出演過'));
+      addRow(buildRow('TA(們)還出演過', alsoStarred, '還出演過'));
     }
     if (youMightLike.length && !dr.querySelector('[data-related="你可能也喜歡"]')) {
-      dr.appendChild(buildRow('你可能也喜歡', youMightLike, '你可能也喜歡'));
+      addRow(buildRow('你可能也喜歡', youMightLike, '你可能也喜歡'));
     }
   }
 
@@ -25865,6 +26410,22 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   // 清理详情页注入结构（供路由切换重建时调用）
   function removeDetailDom() {
     try { stopDetailFilterBtnWatcher(); } catch (e) {}
+    // 先把「概览下方磁力」搬走的原生 #magnets 放回 movie-tab 里，再归还整个组件
+    try {
+      const mag = document.getElementById('magnets');
+      if (mag && magnetsHome && magnetsHome.parent && magnetsHome.parent.isConnected && !magnetsHome.parent.contains(mag)) {
+        const anchor = (magnetsHome.next && magnetsHome.next.parentNode === magnetsHome.parent) ? magnetsHome.next : null;
+        magnetsHome.parent.insertBefore(mag, anchor);
+      }
+    } catch (e) {}
+    // 把被搬进页签面板的原生 movie-tab 组件先搬回原位，避免随 #emby-detail-root 一起被删掉
+    try {
+      const nc = document.querySelector('.columns[data-controller="movie-tab"]');
+      if (nc && nc.closest('#emby-detail-root') && nativeColHome && nativeColHome.parent && nativeColHome.parent.isConnected) {
+        const anchor = (nativeColHome.next && nativeColHome.next.parentNode === nativeColHome.parent) ? nativeColHome.next : null;
+        nativeColHome.parent.insertBefore(nc, anchor);
+      }
+    } catch (e) {}
     // 先还原「原版预览节点」并清空引用：SPA 换页/强制重建后旧引用是游离节点，
     // 不清理会导致新页面的预览图不被搬入 Emby 布局（预览区丢失）
     if (typeof restorePreviewNode === 'function') {
@@ -26479,7 +27040,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       }
     }
     normalizeRankingHash();
-    function pageKey() { return location.pathname + location.search; }
+    // 详情页页签用 ?dtab= 记录状态，但它不是路由变化：
+    // 若把它算进 pageKey，每次点页签都会触发 detailBuilt=false + 整页重建（短评列表被清空、页面闪）。
+    function pageKey() {
+      try {
+        const u = new URL(location.href);
+        u.searchParams.delete('dtab');
+        return u.pathname + (u.search || '');
+      } catch (e) { return location.pathname + location.search; }
+    }
     let lastKey = pageKey();
     function checkRouteChange() {
       normalizeRankingHash();
@@ -26705,6 +27274,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       get useDirect() { return GM_getValue('jf_tr_direct', true); },
       get useJavspyl() { return GM_getValue('jf_tr_javspyl', true); },
       get replaceNative() { return GM_getValue('jf_tr_replace_native', false); },
+      // 用户诉求：默认停止播放（打开播放器只取片源、不自动出声），需要时再点播放
+      get autoplay() { return GM_getValue('jf_tr_autoplay', false); },
+      // 后台预热：详情页空闲时先解析好片源，打开播放器即可秒切线路
+      get prefetch() { return GM_getValue('jf_tr_prefetch', true); },
+      // 后台探测：对候选线路发 1 字节 Range 请求，提前标出可用/失效
+      get probe() { return GM_getValue('jf_tr_probe', true); },
       get volume() { return Number(GM_getValue('jf_tr_volume', 0.5)) || 0.5; },
       set volume(v) { GM_setValue('jf_tr_volume', v); }
     };
@@ -27192,8 +27767,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
 
     const dmmQualityOptions = [
       { quality: 'sm_s', rank: 10, text: '240p' }, { quality: 'dm_s', rank: 20, text: '360p' },
-      { quality: 'dmb_s', rank: 30, text: '480p' }, { quality: 'dmb_w', rank: 40, text: '404p 宽' },
-      { quality: 'mhb_w', rank: 50, text: '404p 高' }, { quality: 'mmb', rank: 60, text: '432p' },
+      { quality: 'dmb_s', rank: 30, text: '480p' }, { quality: 'dmb_w', rank: 40, text: '480p 宽' },
+      { quality: 'mhb_w', rank: 50, text: '720p 宽' }, { quality: 'mmb', rank: 60, text: '432p' },
       { quality: 'mhb', rank: 70, text: '576p' }, { quality: 'hmb', rank: 80, text: '720p' },
       { quality: 'hhb', rank: 90, text: '1080p' }, { quality: 'hhbs', rank: 100, text: '1080p60' },
       { quality: '4k', rank: 110, text: '4K' }, { quality: '4ks', rank: 120, text: '4K60' }
@@ -27644,73 +28219,151 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         resolveTrailer(code, null, null).catch(function () {});
       }, { passive: true });
     }
+    // 详情页空闲预热：用户还在看封面/信息时就把片源解析好（不播放、不出声），
+    // 点开播放器直接「线路已就绪」。关闭播放器也不会取消解析。
+    function prefetchTrailerInBackground(code) {
+      if (!code || !TrConf.prefetch) return;
+      try { if (typeof isPluginEnabled === 'function' && !isPluginEnabled('fusionTrailer')) return; } catch (e) {}
+      setTimeout(function () {
+        try { resolveTrailer(code, null, null).catch(function () {}); } catch (e) {}
+      }, 1500);
+    }
 
-    /* ---------- 预告片播放器弹窗（毛玻璃） ---------- */
+    /* ---------- 预告片播放器弹窗（多线路 / 默认暂停 / 后台解析） ---------- */
+    /**
+     * 对候选线路做 1 字节 Range 探测：不真正播放，就能知道哪条线路可用。
+     * 「多路」不是把 7 个 URL 丢给用户盲试，而是后台先验一遍，界面上直接标可用/失效。
+     */
+    function probeTrailerUrl(url) {
+      return new Promise(function (resolve) {
+        let done = false, req = null, timer = 0;
+        const finish = function (ok) {
+          if (done) return; done = true;
+          clearTimeout(timer);
+          resolve(ok);
+        };
+        timer = setTimeout(function () { finish(null); try { if (req && req.abort) req.abort(); } catch (e) {} }, 6000);
+        try {
+          const isHls = /\.m3u8(\?|#|$)/i.test(url);
+          const headers = { 'Range': 'bytes=0-0', 'Accept': '*/*' };
+          // 与 <video> 的 referrerPolicy 保持一致：HLS 走 origin，mp4 走 no-referrer
+          if (isHls) headers['Referer'] = location.origin + '/';
+          req = GM_xmlhttpRequest({
+            method: 'GET', url: url, headers: headers, timeout: 6000, anonymous: true,
+            onload: function (r) { finish(r.status === 200 || r.status === 206); },
+            onerror: function () { finish(false); },
+            ontimeout: function () { finish(false); },
+            onabort: function () { finish(null); }
+          });
+        } catch (e) { finish(false); }
+      });
+    }
+    function trailerPosterUrl() {
+      try {
+        const img = document.querySelector('#emby-detail-hero .poster-wrap img, .video-detail .column-video-cover img, #emby-detail-hero img');
+        if (!img) return '';
+        const u = img.currentSrc || img.src || '';
+        return /^https?:/i.test(u) ? u : '';
+      } catch (e) { return ''; }
+    }
     let activeTrailerSession = null;
     function openTrailerPlayer(code) {
       code = code || (typeof currentPageCode === 'function' ? currentPageCode() : '') || '';
       if (!code) { ftoast('未识别到番号，无法解析预告片'); return; }
       if (activeTrailerSession) activeTrailerSession.close();
       document.querySelectorAll('.jf-trailer-overlay').forEach(function (old) { old.remove(); });
-      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+
+      // 关键行为（按用户诉求）：
+      // ① 打开播放器只解析/预热片源，默认暂停，绝不自动出声；
+      // ② 解析不绑定弹窗生命周期 —— 关闭弹窗不 abort，后台继续解析并写缓存，下次打开秒开；
+      // ③ 所有线路平铺成可点的「线路」条，后台探测结果直接标在每条线路上。
       const overlay = document.createElement('div');
       overlay.className = 'jf-trailer-overlay';
       overlay.innerHTML =
-        '<div class="jf-trailer-card">' +
+        '<div class="jf-trailer-card" role="dialog" aria-modal="true" aria-label="预告片">' +
           '<div class="jf-trailer-head">' +
             '<div class="jf-trailer-title"><span class="material-symbols-outlined" style="font-size:18px;vertical-align:-3px;">movie</span> ' +
               escapeHtml(code) + ' · 预告片</div>' +
             '<div class="jf-trailer-tools">' +
               '<span class="jf-trailer-src" id="jfTrailerSrc">解析中…</span>' +
-              '<select class="jf-trailer-quality" id="jfTrailerQuality" style="display:none;"></select>' +
               '<button class="jf-trailer-pip" id="jfTrailerPip" type="button" title="画中画" aria-label="画中画"><span class="material-symbols-outlined">picture_in_picture_alt</span></button>' +
-              '<button class="jf-trailer-close" id="jfTrailerClose" title="关闭">×</button>' +
+              '<button class="jf-trailer-close" id="jfTrailerClose" title="关闭" aria-label="关闭">×</button>' +
             '</div>' +
           '</div>' +
+          '<div class="jf-trailer-routes" id="jfTrailerRoutes" aria-label="线路"></div>' +
           '<div class="jf-trailer-body">' +
-            '<div class="jf-trailer-loading" id="jfTrailerLoading"><div class="jf-spinner"></div><div>正在解析预告片源…</div></div>' +
-            '<video class="jf-trailer-video" id="jfTrailerVideo" controls playsinline preload="none" referrerpolicy="no-referrer" style="display:none;"></video>' +
+            '<video class="jf-trailer-video" id="jfTrailerVideo" controls playsinline preload="auto" referrerpolicy="no-referrer" style="display:none;"></video>' +
+            '<button type="button" class="jf-trailer-playbtn" id="jfTrailerPlayBtn" aria-label="播放">' +
+              '<span class="material-symbols-outlined">play_arrow</span><span>播放</span>' +
+            '</button>' +
+            '<div class="jf-trailer-loading" id="jfTrailerLoading"><div class="jf-spinner"></div><div>正在后台解析片源…</div></div>' +
+          '</div>' +
+          '<div class="jf-trailer-foot">' +
+            '<span class="jf-trailer-foot-hint" id="jfTrailerHint">默认不自动播放；解析在后台进行，关闭弹窗不会中断。</span>' +
+            '<label class="jf-trailer-auto"><input type="checkbox" id="jfTrailerAuto"' + (TrConf.autoplay ? ' checked' : '') + '> 自动播放</label>' +
           '</div>' +
         '</div>';
       document.body.appendChild(overlay);
-      let deadlineTimer = 0;
+
       let closed = false;
-      const onKey = function (e) { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
-      const onVisibility = function () { if (document.hidden) { try { video.pause(); } catch (e) {} } };
+      let started = false;
+      let sourceLoaded = false;
+      let sources = [];
+      let idx = 0;
+      let failCount = 0;
+      let resolutionComplete = false;
+      let resolveTimedOut = false;
+      let deadlineTimer = 0;
+      let probeToken = 0;
+
+      const video = overlay.querySelector('#jfTrailerVideo');
+      const loading = overlay.querySelector('#jfTrailerLoading');
+      const srcTag = overlay.querySelector('#jfTrailerSrc');
+      const routesEl = overlay.querySelector('#jfTrailerRoutes');
+      const hintEl = overlay.querySelector('#jfTrailerHint');
+      const playBtn = overlay.querySelector('#jfTrailerPlayBtn');
+      const pipBtn = overlay.querySelector('#jfTrailerPip');
+      const autoBox = overlay.querySelector('#jfTrailerAuto');
+      video.poster = trailerPosterUrl();
+      video.volume = TrConf.volume;
+      video.muted = false;
+
       const close = function () {
         if (closed) return;
         closed = true;
         clearTimeout(deadlineTimer);
-        clearAutoStartTimer();
-        try { if (controller) controller.abort(); } catch (e) {}
-        const v = overlay.querySelector('#jfTrailerVideo');
-        if (v) {
-          try {
-            v.pause();
-            if (document.pictureInPictureElement === v && document.exitPictureInPicture) document.exitPictureInPicture().catch(function () {});
-            v.removeAttribute('src'); v.load();
-          } catch (e) {}
-        }
+        probeToken++;
+        try { video.pause(); } catch (e) {}
+        try {
+          if (document.pictureInPictureElement === video && document.exitPictureInPicture) document.exitPictureInPicture().catch(function () {});
+          video.removeAttribute('src'); video.load();
+        } catch (e) {}
         overlay.remove();
         document.removeEventListener('keydown', onKey, true);
         document.removeEventListener('visibilitychange', onVisibility, true);
         if (activeTrailerSession && activeTrailerSession.overlay === overlay) activeTrailerSession = null;
       };
-      const abortController = controller;
-      const closeSession = close;
-      activeTrailerSession = { overlay: overlay, close: closeSession, controller: abortController };
-      let video;
+      const onKey = function (e) {
+        if (e.key === 'Escape') { e.stopPropagation(); close(); return; }
+        if (e.key === ' ' || e.key === 'Spacebar') {
+          const t = e.target;
+          if (t && /^(INPUT|TEXTAREA|BUTTON|SELECT)$/.test(t.tagName || '')) return;
+          e.preventDefault();
+          if (video.paused) playCurrent(); else { try { video.pause(); } catch (err) {} }
+        }
+      };
+      const onVisibility = function () {
+        // 默认停止播放：页面切到后台立即暂停；但解析继续在后台跑（resolveTrailer 不绑定弹窗）。
+        if (document.hidden && !video.paused) {
+          try { video.pause(); } catch (e) {}
+          hintEl.textContent = '已暂停（页面在后台）；片源解析仍在后台继续。';
+        }
+      };
       document.addEventListener('keydown', onKey, true);
       document.addEventListener('visibilitychange', onVisibility, true);
       overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
       overlay.querySelector('#jfTrailerClose').addEventListener('click', close);
 
-      video = overlay.querySelector('#jfTrailerVideo');
-      const loading = overlay.querySelector('#jfTrailerLoading');
-      const srcTag = overlay.querySelector('#jfTrailerSrc');
-      const qSelect = overlay.querySelector('#jfTrailerQuality');
-      const pipBtn = overlay.querySelector('#jfTrailerPip');
-      video.volume = TrConf.volume;
       video.addEventListener('volumechange', function () { TrConf.volume = video.volume; });
       if (!document.pictureInPictureEnabled || typeof video.requestPictureInPicture !== 'function') pipBtn.hidden = true;
       pipBtn.addEventListener('click', async function () {
@@ -27719,14 +28372,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           else await video.requestPictureInPicture();
         } catch (e) { ftoast('当前浏览器无法进入画中画'); }
       });
-      let sources = [];
-      let idx = 0;
-      let failCount = 0;
-      let started = false;
-      let resolutionComplete = false;
-      let awaitingMoreSources = false;
-      let resolveTimedOut = false;
-      // 画质优先级：已验证的 DMM 档位（画质越高分越高）> 官方/厂商直链等无编号已知源 > 未验证的猜测直链（垫底）。
+
+      // 画质优先级：已验证的 DMM 档位（画质越高分越高）> 官方/厂商直链等已知源 > 未验证的猜测直链（垫底）
       const qualityRankMap = new Map(dmmQualityOptions.map(function (q) { return [q.quality, q.rank]; }));
       const sourceScore = function (s) {
         if (s.unverified) return -1;
@@ -27736,154 +28383,214 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       const sortSourcesByQuality = function (list) {
         return list.slice().sort(function (a, b) { return sourceScore(b) - sourceScore(a); });
       };
-      let autoStartTimer = 0;
-      const clearAutoStartTimer = function () { if (autoStartTimer) { clearTimeout(autoStartTimer); autoStartTimer = 0; } };
-      // 起播只认「已验证」源，保证默认播的就是清晰度最高的真实地址；
-      // 猜测直链只在短暂等待后仍无已验证源时才兜底使用，避免用户等太久。
-      const tryAutoStart = function (force) {
-        if (started || closed || !sources.length) return;
-        const hasVerified = sources.some(function (s) { return !s.unverified; });
-        if (hasVerified || force) { clearAutoStartTimer(); playAt(0); return; }
-        if (!autoStartTimer) {
-          autoStartTimer = setTimeout(function () { tryAutoStart(true); }, 3500);
-        }
+      const isHlsUrl = function (u) { return /\.m3u8(\?|#|$)/i.test(u || ''); };
+      const rememberQuality = function (label) { try { GM_setValue('jf_tr_quality', label || ''); } catch (e) {} };
+      const preferredIndex = function () {
+        let last = '';
+        try { last = GM_getValue('jf_tr_quality', ''); } catch (e) { last = ''; }
+        if (!last) return sources.findIndex(function (s) { return !s.unverified; });
+        for (let i = 0; i < sources.length; i++) if (sources[i].label === last) return i;
+        return sources.findIndex(function (s) { return !s.unverified; });
       };
-      const updateSourceMenu = function () {
-        if (sources.length > 1) {
-          qSelect.style.display = '';
-          const selected = Math.min(idx, sources.length - 1);
-          qSelect.innerHTML = sources.map(function (s, i) {
-            return '<option value="' + i + '">' + escapeHtml(s.label) + '</option>';
-          }).join('');
-          // 记住上次选择的画质，下次打开自动选中（源列表顺序可能变化，按 label 匹配更稳）
-          const lastQ = GM_getValue('jf_tr_quality', '');
-          let restored = -1;
-          if (lastQ) {
-            for (let i = 0; i < sources.length; i++) {
-              if (sources[i].label === lastQ) { restored = i; break; }
-            }
-          }
-          qSelect.value = String(restored >= 0 ? restored : selected);
-        } else {
-          qSelect.style.display = 'none';
-          qSelect.innerHTML = '';
-        }
-      };
-      const playAt = function (i) {
-        if (closed || !document.body.contains(overlay)) return;
-        const s = sources[i];
-        if (!s) return;
-        idx = i;
-        srcTag.textContent = s.source === 'official' ? '官方' : (s.source === 'dmm' ? 'DMM' : (s.source === 'direct' ? '直链' : 'javspyl'));
-        if (/\.m3u8(\?|#|$)/i.test(s.url)) srcTag.textContent = 'DMM HLS';
-        qSelect.value = String(i);
-        video.style.display = '';
-        loading.style.display = 'none';
-        // HLS 端点强制要求 Referer 头（实测无 Referer 直接超时/abort，
-        // 带 referer=https://www.dmm.co.jp/ 才返回 200 + m3u8），
-        // 而元素默认是 no-referrer，会导致 HLS 候选必然失败。
-        // 故 HLS 源放开为 origin（只发站点 origin，不泄露完整 URL 路径），
-        // 其余源继续保持 no-referrer 的防盗链保护。
-        video.referrerPolicy = /\.m3u8(\?|#|$)/i.test(s.url) ? 'origin' : 'no-referrer';
-        video.src = s.url;
-        video.load();
-        started = true;
-        const playPromise = video.play();
-        if (playPromise && playPromise.catch) playPromise.catch(function () {});
-      };
-      const receiveSources = function (next) {
-        if (closed || !document.body.contains(overlay) || !Array.isArray(next)) return;
-        const previousLength = sources.length;
-        const currentUrl = sources[idx] && sources[idx].url;
-        // 每次更新都按画质重新排序（已验证源按清晰度降序、未验证猜测直链垫底），
-        // 而不是依赖到达顺序——下拉菜单显示的顺序也因此始终是"最清晰的排最前"。
-        sources = sortSourcesByQuality(next);
-        updateSourceMenu();
-        // 已经开始播放时只更新菜单，不打断用户正在看的片源。
-        if (!started && sources.length) tryAutoStart(false);
-        else if (awaitingMoreSources && sources.length > previousLength) {
-          awaitingMoreSources = false;
-          loading.style.display = 'none';
-          const bi = sources.findIndex(function (s) { return !s.unverified; });
-          playAt(bi >= 0 ? bi : 0);
-        }
-        else if (currentUrl) {
-          const currentIndex = sources.findIndex(function (s) { return s.url === currentUrl; });
-          if (currentIndex >= 0) { idx = currentIndex; qSelect.value = String(idx); }
-        }
-        if (sources.length > previousLength && started) {
-          srcTag.title = sources.length + ' 个片源可选';
-        }
-      };
-      video.addEventListener('error', function () {
-        if (closed || !sources.length) return;
-        // 同画质的备用域名先试一次（.com 挂了就换 .co.jp），
-        // 再考虑切下一条片源 —— 避免两条内容其实相同却要来回闪。
-        const cur = sources[idx];
-        if (cur && cur.alt && !cur.__altTried && !/\.m3u8(\?|#|$)/i.test(cur.url)) {
-          cur.__altTried = true;
-          video.referrerPolicy = 'no-referrer';
-          video.src = cur.alt;
-          video.load();
-          const pp = video.play();
-          if (pp && pp.catch) pp.catch(function () {});
+
+      const renderRoutes = function () {
+        if (!sources.length) {
+          routesEl.innerHTML = '<span class="jf-route-empty">正在聚合线路…</span>';
+          srcTag.textContent = resolutionComplete ? '无源' : '解析中…';
           return;
         }
+        routesEl.innerHTML = '';
+        sources.forEach(function (s, i) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'jf-route' + (i === idx ? ' is-active' : '') + (s._dead ? ' is-dead' : '');
+          b.dataset.idx = String(i);
+          b.title = s.url;
+          const tag = s.source === 'dmm' ? 'DMM' : s.source === 'official' ? '官方' : s.source === 'direct' ? '直链' : s.source === 'javspyl' ? 'javspyl' : '源';
+          let dot = '';
+          if (s._probe === true) dot = '<span class="jf-route-dot ok" title="后台探测可用"></span>';
+          else if (s._probe === false) dot = '<span class="jf-route-dot bad" title="后台探测不可用"></span>';
+          else if (s._probe === null) dot = '<span class="jf-route-dot wait" title="探测中"></span>';
+          b.innerHTML = dot + '<span class="jf-route-label">' + escapeHtml(s.label || ('线路 ' + (i + 1))) + '</span>' +
+            '<span class="jf-route-tag">' + tag + '</span>';
+          b.addEventListener('click', function () { selectSource(i, { play: true, manual: true }); });
+          routesEl.appendChild(b);
+        });
+        const verified = sources.filter(function (s) { return !s.unverified; }).length;
+        srcTag.textContent = sources.length + ' 条线路' + (verified ? ' · ' + verified + ' 条已验证' : '') +
+          (resolutionComplete ? '' : ' · 解析中');
+      };
+
+      const playCurrent = function () {
+        if (closed || !sourceLoaded) return;
+        try {
+          const p = video.play();
+          if (p && p.catch) p.catch(function () {
+            hintEl.textContent = '浏览器拦截了播放，请再点一次「播放」。';
+          });
+        } catch (e) {}
+      };
+      const selectSource = function (i, opts) {
+        opts = opts || {};
+        const s = sources[i];
+        if (!s || closed) return;
+        idx = i;
+        if (video.dataset.jfSrc !== s.url) {
+          video.dataset.jfSrc = s.url;
+          video.referrerPolicy = isHlsUrl(s.url) ? 'origin' : 'no-referrer';
+          video.src = s.url;
+          video.load();
+        }
+        sourceLoaded = true;
+        video.style.display = '';
+        loading.style.display = 'none';
+        playBtn.hidden = false;
+        renderRoutes();
+        if (opts.manual) rememberQuality(s.label);
+        if (opts.play) playCurrent();
+        else hintEl.textContent = '线路已就绪（默认暂停），点「播放」开始。';
+      };
+      const showDiag = function (kind) {
+        video.style.display = 'none';
+        loading.style.display = '';
+        loading.innerHTML = renderTrailerDiagHtml(kind, sources);
+        playBtn.hidden = true;
+      };
+      const onSourceError = function () {
+        if (closed) return;
+        const cur = sources[idx];
+        if (cur) { cur._dead = true; renderRoutes(); }
         failCount++;
-        if (idx + 1 < sources.length && failCount <= sources.length) playAt(idx + 1);
-        else if (!resolutionComplete) {
-          awaitingMoreSources = true;
+        if (failCount > sources.length + 1) {
+          if (resolutionComplete) showDiag('play-failed');
+          return;
+        }
+        let next = -1;
+        for (let i = idx + 1; i < sources.length; i++) { if (!sources[i]._dead) { next = i; break; } }
+        if (next < 0) {
+          for (let i = 0; i < idx; i++) { if (!sources[i]._dead) { next = i; break; } }
+        }
+        if (next >= 0) {
+          // 已经在播时失败 → 自动切下一条继续播；只是预载元数据失败 → 只标死，不自动播放
+          selectSource(next, { play: started || TrConf.autoplay });
+        } else if (!resolutionComplete) {
           video.style.display = 'none';
           loading.style.display = '';
-          loading.innerHTML = '<div style="opacity:.85;">当前片源播放失败，正在继续查找其他源…</div>';
+          loading.innerHTML = '<div style="opacity:.85;">当前线路不可用，后台继续寻找其他线路…</div>';
+        } else {
+          showDiag('play-failed');
         }
-        else {
-          awaitingMoreSources = false;
-          loading.style.display = '';
-          loading.innerHTML = renderTrailerDiagHtml('play-failed', sources);
-          video.style.display = 'none';
+      };
+
+      video.addEventListener('loadedmetadata', function () {
+        if (closed) return;
+        loading.style.display = 'none';
+        video.style.display = '';
+        playBtn.hidden = false;
+        sourceLoaded = true;
+        const dur = isFinite(video.duration) ? Math.round(video.duration) + 's' : '';
+        const res = video.videoWidth ? (video.videoWidth + '×' + video.videoHeight) : '';
+        hintEl.textContent = [res, dur].filter(Boolean).join(' · ') || '片源已就绪（默认暂停）';
+      });
+      video.addEventListener('play', function () {
+        started = true;
+        playBtn.hidden = true;
+        loading.style.display = 'none';
+        hintEl.textContent = '正在播放 · 关闭弹窗不会中断后台解析';
+      });
+      video.addEventListener('pause', function () {
+        if (!closed) playBtn.hidden = !sourceLoaded;
+      });
+      video.addEventListener('error', onSourceError);
+      playBtn.addEventListener('click', playCurrent);
+      autoBox.addEventListener('change', function () {
+        const on = !!autoBox.checked;
+        try { GM_setValue('jf_tr_autoplay', on); } catch (e) {}
+        hintEl.textContent = on ? '已开启自动播放（下次打开直接播放）' : '已关闭自动播放（默认暂停）';
+        if (on && sourceLoaded && video.paused) playCurrent();
+      });
+
+      const runProbe = function () {
+        if (!TrConf.probe || closed) return;
+        const token = ++probeToken;
+        const queue = sources.slice(0, 8).filter(function (s) { return s._probe === undefined; });
+        if (!queue.length) return;
+        queue.forEach(function (s) { s._probe = null; });
+        renderRoutes();
+        let running = 0;
+        const next = function () {
+          if (running >= 2 || !queue.length || closed || token !== probeToken) return;
+          const s = queue.shift();
+          const i = sources.indexOf(s);
+          running++;
+          probeTrailerUrl(s.url).then(function (ok) {
+            running--;
+            if (closed || token !== probeToken) return;
+            s._probe = ok === null ? undefined : ok;
+            // 只有「不是正在播的那条」才因探测失败标死，避免误杀能播的线路
+            if (ok === false && i !== idx) s._dead = true;
+            renderRoutes();
+            next();
+          });
+          next();
+        };
+        next();
+      };
+
+      const receiveSources = function (next) {
+        if (closed || !Array.isArray(next)) return;
+        const currentUrl = sources[idx] && sources[idx].url;
+        sources = sortSourcesByQuality(next);
+        if (currentUrl) {
+          const ni = sources.findIndex(function (s) { return s.url === currentUrl; });
+          if (ni >= 0) idx = ni;
         }
-      });
-      qSelect.addEventListener('change', function () {
-        failCount = 0;
-        const i = Number(qSelect.value) || 0;
-        if (sources[i]) { try { GM_setValue('jf_tr_quality', sources[i].label); } catch (e) {} }
-        playAt(i);
-      });
+        renderRoutes();
+        if (!sourceLoaded && sources.length) {
+          const prefer = preferredIndex();
+          selectSource(prefer >= 0 ? prefer : 0, { play: TrConf.autoplay });
+        }
+        if (sources.length && !resolutionComplete) {
+          hintEl.textContent = '已找到 ' + sources.length + ' 条线路，后台继续解析更高画质…';
+        }
+        runProbe();
+      };
+
       deadlineTimer = setTimeout(function () {
         if (closed) return;
         resolveTimedOut = true;
-        if (controller) controller.abort();
         if (!sources.length) {
           loading.innerHTML = renderTrailerDiagHtml('timeout');
           srcTag.textContent = '超时';
         } else {
-          srcTag.title = '后台查找超时，已保留当前可播放片源';
+          hintEl.textContent = '仍在后台解析（不会中断），已有 ' + sources.length + ' 条线路可用。';
         }
       }, 12000);
-      resolveTrailer(code, receiveSources, controller ? controller.signal : null).then(function (resolved) {
+
+      activeTrailerSession = { overlay: overlay, close: close, selectSource: selectSource };
+
+      resolveTrailer(code, receiveSources, null).then(function (resolved) {
         if (closed) return;
         clearTimeout(deadlineTimer);
         resolutionComplete = true;
         receiveSources(resolved);
-        // 解析已彻底结束：不必再等"也许还有更高清的源在路上"，用现有最好的（已验证优先）立即起播。
-        if (!started) tryAutoStart(true);
         if (!sources.length) {
           if (resolveTimedOut) return;
-          loading.innerHTML = renderTrailerDiagHtml('no-source');
+          showDiag('no-source');
           srcTag.textContent = '无源';
-        } else if (awaitingMoreSources) {
-          awaitingMoreSources = false;
-          loading.style.display = '';
-          loading.innerHTML = '<div style="opacity:.85;">😔 所有找到的预告片源均播放失败（可能受地区/防盗链限制）</div>';
-          video.style.display = 'none';
+          return;
         }
-      }).catch(function () {
+        renderRoutes();
+        hintEl.textContent = sources.length + ' 条线路 · 已就绪（默认暂停，点▶播放）';
+        if (TrConf.autoplay && !started) playCurrent();
+      }).catch(function (e) {
         if (closed) return;
         clearTimeout(deadlineTimer);
-        if (controller && controller.signal.aborted) return;
-        loading.innerHTML = '<div style="opacity:.85;">😔 预告片解析失败，请关闭后重试</div>';
-        srcTag.textContent = '失败';
+        resolutionComplete = true;
+        if (!sources.length) {
+          loading.innerHTML = '<div style="opacity:.85;">😔 预告片解析失败，请关闭后重试</div>';
+          srcTag.textContent = '失败';
+        }
       });
     }
 
@@ -28423,7 +29130,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       { id: 'btsow', name: 'BTSOW', search: 'https://btsow.com/search?q={code}', icon: '🐦' }
     ];
     // 「全部聚合」：并发拉所有源后合并去重（原先一次只能选一个源，谈不上"聚合"）
-    const MAG_ALL_SITE = { id: 'all', name: '全部聚合', icon: '🌐' };
+    const MAG_ALL_SITE = { id: 'all', name: '全部聚合', icon: '🌐', search: 'https://sukebei.nyaa.si/?f=0&c=0_0&q={code}' };
     const MAG_PANEL_TTL = 30 * 60 * 1000; // 面板结果缓存 30 分钟
 
     function parseSizeBytes(text) {
@@ -28526,28 +29233,45 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         GM_setValue(MAG_CACHE_INDEX, JSON.stringify(idx));
       } catch (e) {}
     }
-    async function fetchMagnetResults(code, siteId, signal) {
+    /**
+     * 取磁力结果。
+     * @param onPart 仅「全部聚合」使用：每完成一个源就回调 (site, rows, error)，
+     *               面板据此先渲染已到的源，而不是等最慢的 Sukebei/BTDigg 超时后才一次性出结果。
+     */
+    async function fetchMagnetResults(code, siteId, signal, onPart) {
+      const aborted = function () { return !!(signal && signal.aborted); };
       // 全部聚合：并发拉所有源，各自独立失败不影响其它源
       if (siteId === 'all') {
         const cacheKey = 'all:' + code.toUpperCase();
-        const cachedAll = magPanelCacheGet(cacheKey);
-        if (cachedAll) return { rows: cachedAll, fromCache: true };
+        if (!onPart) {
+          const cachedAll = magPanelCacheGet(cacheKey);
+          if (cachedAll && cachedAll.length) return { rows: cachedAll, fromCache: true };
+        }
+        let okCount = 0;
         const parts = await Promise.all(MAG_SEARCH_SITES.map(function (site) {
           return fetchMagnetResults(code, site.id, signal).then(function (r) {
-            return (r.rows || []).map(function (row) {
+            okCount++;
+            const rows = (r.rows || []).map(function (row) {
               return Object.assign({}, row, { src: site.name });
             });
-          }).catch(function () { return []; });
+            if (onPart && !aborted()) { try { onPart(site, rows, null); } catch (e) {} }
+            return rows;
+          }).catch(function (e) {
+            if (onPart && !aborted()) { try { onPart(site, [], e); } catch (err) {} }
+            return [];
+          });
         }));
         const merged = [];
         parts.forEach(function (p) { p.forEach(function (row) { merged.push(row); }); });
-        magPanelCacheSet(cacheKey, merged);
-        return { rows: merged, fromCache: false };
+        // 只有「没有中断且至少一个源成功」才写缓存：
+        // 旧实现切源/切番号时也把空结果写进去，用户随后 30 分钟都看到「未找到」。
+        if (!aborted() && okCount > 0 && merged.length) magPanelCacheSet(cacheKey, merged);
+        return { rows: merged, fromCache: false, partial: aborted() };
       }
       const site = MAG_SEARCH_SITES.find(function (s) { return s.id === siteId; }) || MAG_SEARCH_SITES[0];
       const cacheKey = site.id + ':' + code.toUpperCase();
       const cached = magPanelCacheGet(cacheKey);
-      if (cached) return { rows: cached, fromCache: true };
+      if (cached && cached.length) return { rows: cached, fromCache: true };
       const url = site.search.replace('{code}', encodeURIComponent(code));
       const r = await gmReq({ url: url, timeout: 20000, headers: { 'Accept': 'text/html' }, signal: signal });
       const html = r.responseText || '';
@@ -28557,7 +29281,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       else if (site.id === 'btdig') rows = parseBtdig(html);
       else if (site.id === 'u9a9') rows = parseU9a9(html);
       else if (site.id === 'btsow') rows = parseBtsow(html);
-      magPanelCacheSet(cacheKey, rows);
+      // 空结果不写缓存：被 Cloudflare/403 挡住时下一次还能重试，而不是 30 分钟内一直显示空
+      if (!aborted() && rows.length) magPanelCacheSet(cacheKey, rows);
       return { rows: rows, fromCache: false };
     }
     // BTDigg：表格结构与 nyaa 系接近
@@ -28621,12 +29346,13 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (collapsed) panel.classList.add('collapsed');
       panel.innerHTML =
         '<div class="jf-magpanel-head">' +
-          '<span class="jf-magpanel-title">🔥 磁力搜索 <span class="jf-magpanel-code">' + escapeHtml(code) + '</span></span>' +
+          '<span class="jf-magpanel-title">🧲 磁力聚合 <span class="jf-magpanel-code">' + escapeHtml(code) + '</span></span>' +
           '<span class="jf-magpanel-head-btns">' +
             '<button class="jf-magpanel-hbtn" id="jfMagRefresh" title="搜索/刷新磁力资源">⟳</button>' +
             '<button class="jf-magpanel-hbtn" id="jfMagToggle" title="折叠/展开">' + (collapsed ? '«' : '»') + '</button>' +
           '</span>' +
         '</div>' +
+        '<div class="jf-magpanel-srcbar" id="jfMagSrcBar" aria-live="polite"></div>' +
         '<div class="jf-magpanel-tools">' +
           '<select class="jf-magpanel-sel" id="jfMagSite">' +
 
@@ -28645,7 +29371,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           '<button type="button" class="jf-magtool-btn" id="jfMagOpenSite" title="在源站打开搜索页">源站搜↗</button>' +
         '</div>' +
         '<div class="jf-magpanel-list" id="jfMagList"><div class="jf-magpanel-status">搜索中…</div></div>';
-      var magMount = document.querySelector('#magnets-content') || bodyEl;
+      // 注入时机可能晚于页签切换：若当前已在「磁力聚合」页签，必须直接挂到该面板，
+      // 否则面板会落在隐藏的 #magnets-content 里（用户看到空页签，误以为面板「卡住」）。
+      var activeTabEl = document.querySelector('.emby-dtab.active');
+      var activeKey = activeTabEl && activeTabEl.dataset ? activeTabEl.dataset.dtab : '';
+      var aggPaneEl = document.getElementById('emby-dtab-agg');
+      var magMount = (activeKey === 'agg' && aggPaneEl) ? aggPaneEl : (document.querySelector('#magnets-content') || bodyEl);
       magMount.insertBefore(panel, magMount.firstChild);
 
       let lastRows = [];
@@ -28675,18 +29406,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       // btih 去重（保留做种最多）+ 排序（智能=做种优先、同分 1~10GB 优先）
       function preparedRows() {
         var seen = {}, uniq = [];
-        lastRows.forEach(function (r) {
-          if (!r || !r.magnet) return;
-          // 聚合模式下给标题加来源前缀，让用户知道每条来自哪个站
-          if (r.src && r.__tagged !== 1) {
-            r.title = '[' + r.src + '] ' + r.title;
-            r.__tagged = 1;
-          }
-          // 聚合模式下给标题加来源前缀，让用户知道每条来自哪个站
-          if (r.src && r.__tagged !== 1) {
-            r.title = '[' + r.src + '] ' + r.title;
-            r.__tagged = 1;
-          }
+        lastRows.forEach(function (raw) {
+          if (!raw || !raw.magnet) return;
+          // 只在渲染层加来源前缀，不修改缓存/远端行本身：
+          // 旧实现直接改写 r.title 并打 __tagged 标记，切排序/刷新后会叠加成「[Sukebei] [Sukebei] …」，
+          // 并且把带前缀的标题写回缓存。
+          var r = raw.src ? Object.assign({}, raw, { title: '[' + raw.src + '] ' + (raw.title || '') }) : raw;
           var k = magRowKey(r.magnet);
           if (seen[k]) {
             if ((r.seedNum || 0) > (seen[k].seedNum || 0)) {
@@ -28707,8 +29432,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         return rows;
       }
       function aggSrcUrl() {
-        var site = MAG_SEARCH_SITES.find(function (s) { return s.id === siteSel.value; }) || (siteSel.value === 'all' ? MAG_ALL_SITE : MAG_SEARCH_SITES[0]);
-        return { site: site, url: site.search.replace('{code}', encodeURIComponent(code)) };
+        var site = MAG_SEARCH_SITES.find(function (s) { return s.id === siteSel.value; }) || MAG_SEARCH_SITES[0];
+        // 「全部聚合」本身没有搜索页：回退到第一个具体源，避免 site.search 为 undefined 抛错
+        var tpl = (site && site.search) || MAG_SEARCH_SITES[0].search;
+        return { site: site, url: tpl.replace('{code}', encodeURIComponent(code)) };
       }
       // 聚合行操作：文字按钮（复制/验车）+ qB/115 收进 ⋯ 二级菜单
       function createAggActions(row) {
@@ -28847,28 +29574,102 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         }
       }
       let loadGen = 0; // 代际计数：切源/切番号时旧请求回包直接丢弃
+      let srcCounts = {};
+      let srcErrors = {};
+      var renderQueued = false;
+      function scheduleRender() {
+        if (renderQueued) return;
+        renderQueued = true;
+        requestAnimationFrame(function () { renderQueued = false; renderRows(); renderSourceBar(); });
+      }
+      // 每个源的进度/失败都可视化：全部聚合不再「等最慢的源超时后一次性出结果」
+      function renderSourceBar() {
+        var sb = panel.querySelector('#jfMagSrcBar');
+        if (!sb) return;
+        if (siteSel.value !== 'all') {
+          var only = MAG_SEARCH_SITES.find(function (s) { return s.id === siteSel.value; });
+          var n = srcCounts[siteSel.value];
+          var err = srcErrors[siteSel.value];
+          sb.innerHTML = only
+            ? ('<span class="jf-magsrc-chip ' + (err ? 'err' : (n == null ? 'pending' : 'ok')) + '">' +
+               only.icon + ' ' + escapeHtml(only.name) + (err ? ' 失败' : (n == null ? ' 查询中…' : ' · ' + n)) + '</span>')
+            : '';
+          return;
+        }
+        sb.innerHTML = MAG_SEARCH_SITES.map(function (site) {
+          var err = srcErrors[site.id];
+          var n = srcCounts[site.id];
+          if (err) {
+            var reason = err && err.message ? String(err.message) : '网络错误';
+            return '<span class="jf-magsrc-chip err" title="' + escapeAttr(reason) + '">' + site.icon + ' ' + site.name + ' 失败</span>';
+          }
+          if (n == null) return '<span class="jf-magsrc-chip pending"><span class="jf-mini-spin"></span>' + site.icon + ' ' + site.name + '</span>';
+          return '<span class="jf-magsrc-chip ok">' + site.icon + ' ' + site.name + ' · ' + n + '</span>';
+        }).join('');
+      }
       async function load(force) {
         loaded = true;
         var gen = ++loadGen;
+        srcCounts = {}; srcErrors = {};
         try { if (typeof panel._abortLoad === 'function') panel._abortLoad(); } catch (e) {}
         var ctrl = null;
         try { ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null; } catch (e) { ctrl = null; }
         panel._abortLoad = function () { try { if (ctrl) ctrl.abort(); } catch (e) {} };
-        listEl.innerHTML = '<div class="jf-magpanel-status"><span class="jf-spinner" style="width:18px;height:18px;border-width:2px;"></span> 搜索中…</div>';
+        var refreshBtn = panel.querySelector('#jfMagRefresh');
+        if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.classList.add('is-loading'); }
+        listEl.setAttribute('aria-busy', 'true');
+        listEl.innerHTML = '<div class="jf-magpanel-status"><span class="jf-spinner" style="width:18px;height:18px;border-width:2px;"></span> 正在聚合各源…</div>';
+        renderSourceBar();
         if (force) {
-          const c = magPanelCacheRead();
-          // 新缓存是 per-key（jf_magpanel_<site>_<code>），这里要清对应的单键
-        try { GM_setValue(MAG_CACHE_PREFIX + siteSel.value + ':' + code.toUpperCase(), ''); } catch (e) {}
-          GM_setValue('jf_magpanel_cache', JSON.stringify(c));
+          // 清掉当前源 + 聚合缓存（per-key）。旧实现调用已不存在的 magPanelCacheRead()，
+          // 点 ⟳ 直接抛 ReferenceError，刷新按钮完全没反应。
+          var codeKey = code.toUpperCase();
+          try { GM_setValue(MAG_CACHE_PREFIX + siteSel.value + ':' + codeKey, ''); } catch (e) {}
+          try { GM_setValue(MAG_CACHE_PREFIX + 'all:' + codeKey, ''); } catch (e) {}
+          // 「全部聚合」刷新必须把所有源的单键一起清掉，否则各源仍命中旧缓存，刷新等于没刷
+          if (siteSel.value === 'all') {
+            MAG_SEARCH_SITES.forEach(function (site) {
+              try { GM_setValue(MAG_CACHE_PREFIX + site.id + ':' + codeKey, ''); } catch (e) {}
+            });
+          }
         }
+        var partRows = {};
+        var paintParts = function () {
+          var acc = [];
+          MAG_SEARCH_SITES.forEach(function (site) {
+            (partRows[site.id] || []).forEach(function (row) { acc.push(row); });
+          });
+          lastRows = acc;
+          scheduleRender();
+        };
         try {
-          const r = await fetchMagnetResults(code, siteSel.value, ctrl ? ctrl.signal : null);
+          var r = await fetchMagnetResults(code, siteSel.value, ctrl ? ctrl.signal : null, function (site, rows, err) {
+            if (gen !== loadGen || !panel.isConnected) return;
+            partRows[site.id] = rows || [];
+            srcCounts[site.id] = (rows || []).length;
+            if (err) srcErrors[site.id] = err;
+            paintParts();
+          });
           if (gen !== loadGen || !panel.isConnected) return;
-          lastRows = r.rows;
+          lastRows = r.rows || [];
           renderRows();
+          renderSourceBar();
+          if (!lastRows.length && !r.fromCache) {
+            // 空结果时不再显示成「搜索失败」：把真实原因留给状态条
+            listEl.innerHTML = '';
+            var empty = document.createElement('div');
+            empty.className = 'jf-magpanel-status';
+            empty.textContent = '没有搜到磁力资源。';
+            listEl.appendChild(empty);
+          }
         } catch (e) {
           if (gen !== loadGen || !panel.isConnected) return;
-          listEl.innerHTML = '<div class="jf-magpanel-status err">搜索失败：' + escapeHtml(e.message === 'timeout' ? '连接超时' : '网络错误') + '，点 ⟳ 重试</div>';
+          if (ctrl && ctrl.signal.aborted) return;
+          listEl.innerHTML = '<div class="jf-magpanel-status err">搜索失败：' + escapeHtml(e && e.message === 'timeout' ? '连接超时' : (e && e.message) || '网络错误') + '，点 ⟳ 重试</div>';
+          renderSourceBar();
+        } finally {
+          if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.classList.remove('is-loading'); }
+          listEl.setAttribute('aria-busy', 'false');
         }
       }
       siteSel.addEventListener('change', function () {
@@ -28907,7 +29708,16 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (openSiteBtn) openSiteBtn.addEventListener('click', function () {
         try { window.open(aggSrcUrl().url, '_blank', 'noopener'); } catch (e) {}
       });
-      load(false); // 详情页打开即自动搜索，不再要点 ⟳
+      // 懒加载：详情页默认停在「概览」，不再一打开就并发 5 个站外搜索（这是面板「不流畅」的主因）。
+      // 进入「磁力 / 磁力聚合」页签时由 switchTab 调 _ensureLoaded 触发。
+      panel._ensureLoaded = function () { if (!loaded) load(false); };
+      (function () {
+        var active = document.querySelector('.emby-dtab.active');
+        var k = active && active.dataset ? active.dataset.dtab : 'overview';
+        // 磁力被放到「概览下方」时没有对应页签，展开状态下也要自动加载
+        var inlineOpen = document.querySelector('#jf-inline-magnet .jf-inline-magnet-body:not([hidden])');
+        if (k === 'magnet' || k === 'agg' || inlineOpen) load(false);
+      })();
     }
 
 
@@ -29520,8 +30330,11 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<label class="jf-set-row"><input type="checkbox" id="jfTrDirect" ' + (TrConf.useDirect ? 'checked' : '') + '> 厂商直链规则</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfTrSpyl" ' + (TrConf.useJavspyl ? 'checked' : '') + '> javspyl 兜底源</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfTrReplaceNative" ' + (TrConf.replaceNative ? 'checked' : '') + '> 将 JAVDB 原生预告片改为脚本播放器</label>' +
+            '<label class="jf-set-row"><input type="checkbox" id="jfTrAutoplay" ' + (TrConf.autoplay ? 'checked' : '') + '> 打开播放器后自动播放（默认关闭）</label>' +
+            '<label class="jf-set-row"><input type="checkbox" id="jfTrPrefetch" ' + (TrConf.prefetch ? 'checked' : '') + '> 详情页后台预热片源</label>' +
+            '<label class="jf-set-row"><input type="checkbox" id="jfTrProbe" ' + (TrConf.probe ? 'checked' : '') + '> 后台探测线路可用性</label>' +
           '</div>' +
-          '<div class="jf-set-sec" style="margin-top:12px;opacity:.6;">DMM/FANZA 片源按最高画质优先；关闭播放器会取消未完成请求。原生替换开关只接管预览影片，不影响 JAVDB 图片灯箱。</div>' +
+          '<div class="jf-set-sec" style="margin-top:12px;opacity:.6;">DMM/FANZA 片源按最高画质优先；打开播放器默认暂停，解析在后台继续，关闭播放器不会取消请求。后台探测只对每条线路发 1 字节请求，用来标记可用/失效。</div>' +
           '<div class="jf-set-sec" style="margin-top:14px;">会员状态</div>' +
           '<div class="jf-set-sec" style="margin-top:6px;display:flex;flex-direction:column;gap:8px;">' +
             '<label class="jf-set-row"><input type="checkbox" id="jfForceWebTop" ' + (localStorage.getItem('jf_force_web_top') === '1' ? 'checked' : '') + '> 我已开通 VIP（手动锁定）</label>' +
@@ -29531,6 +30344,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         bind('jfTrOfficial', 'jf_tr_official'); bind('jfTrDmm', 'jf_tr_dmm');
         bind('jfTrDirect', 'jf_tr_direct'); bind('jfTrSpyl', 'jf_tr_javspyl');
         bind('jfTrReplaceNative', 'jf_tr_replace_native');
+        bind('jfTrAutoplay', 'jf_tr_autoplay'); bind('jfTrPrefetch', 'jf_tr_prefetch');
+        bind('jfTrProbe', 'jf_tr_probe');
         body.querySelector('#jfForceWebTop').addEventListener('change', function (e) {
           if (e.target.checked) localStorage.setItem('jf_force_web_top', '1');
           else localStorage.removeItem('jf_force_web_top');
@@ -29553,6 +30368,13 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<label class="jf-set-row"><input type="checkbox" id="jfUiListBadge" ' + (GM_getValue('jf_ui_listbadge', true) ? 'checked' : '') + '> 列表页入库角标（需先同步索引）</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfUiLibPlay" ' + (GM_getValue('jf_ui_libplay', true) ? 'checked' : '') + '> 已入库醒目播放按钮</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfUiMagPanel" ' + (GM_getValue('jf_mag_panel', true) ? 'checked' : '') + '> 详情页磁力聚合（站外搜索条）</label>' +
+          '</div>' +
+          '<div class="jf-set-sub">概览下方区块（不想要独立页签时勾选）</div>' +
+          '<div class="jf-set-grid">' +
+            '<label class="jf-set-row"><input type="checkbox" id="jfUiInlineReview" ' + (GM_getValue('jf_inline_review', false) ? 'checked' : '') + '> 短评放在概览下方</label>' +
+            '<label class="jf-set-row"><input type="checkbox" id="jfUiInlineMagnet" ' + (GM_getValue('jf_inline_magnet', false) ? 'checked' : '') + '> 磁力放在概览下方</label>' +
+            '<label class="jf-set-row"><input type="checkbox" id="jfUiReviewExpanded" ' + (GM_getValue('jf_review_expanded', true) ? 'checked' : '') + '> 短评默认展开</label>' +
+            '<label class="jf-set-row"><input type="checkbox" id="jfUiMagnetExpanded" ' + (GM_getValue('jf_inline_magnet_expanded', true) ? 'checked' : '') + '> 磁力区块默认展开</label>' +
           '</div>' +
           '<label class="jf-set-row" style="justify-content:space-between;gap:14px;margin-top:10px;">' +
             '<span>列表封面按钮位置（预览片 + 媒体库）</span>' +
@@ -29583,6 +30405,19 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             p.remove();
           }
           if (e.target.checked) fullScan();
+        });
+        // 概览下方区块 / 短评默认展开：保存后立刻重建详情页，无需刷新
+        const rebuildDetailNow = function () {
+          try { if (typeof restructureDetail === 'function') restructureDetail(true); } catch (err) { flog('重建详情页失败: ' + err.message); }
+        };
+        [['jfUiInlineReview', 'jf_inline_review'], ['jfUiInlineMagnet', 'jf_inline_magnet'],
+         ['jfUiReviewExpanded', 'jf_review_expanded'], ['jfUiMagnetExpanded', 'jf_inline_magnet_expanded']].forEach(function (pair) {
+          const el = body.querySelector('#' + pair[0]);
+          if (!el) return;
+          el.addEventListener('change', function () {
+            GM_setValue(pair[1], el.checked);
+            rebuildDetailNow();
+          });
         });
       }
 
@@ -29666,6 +30501,31 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         '.jf-trailer-body{position:relative;background:#000;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;}',
         '.jf-trailer-video{width:100%;height:100%;display:block;background:#000;}',
         '.jf-trailer-loading{display:flex;flex-direction:column;align-items:center;gap:14px;color:rgba(255,255,255,.85);font-size:13px;padding:40px 16px;text-align:center;}',
+        /* 多线路条 + 默认暂停的大播放按钮 */
+        '.jf-trailer-routes{display:flex;gap:6px;overflow-x:auto;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.07);scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent;}',
+        '.jf-trailer-routes::-webkit-scrollbar{height:6px;}',
+        '.jf-trailer-routes::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:6px;}',
+        '.jf-route{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:#cfd6e4;font-size:12px;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s,border-color .15s;}',
+        '.jf-route:hover{background:rgba(255,255,255,.14);color:#fff;}',
+        '.jf-route.is-active{background:var(--e-accent,#00a4dc);border-color:transparent;color:#04121a;font-weight:700;}',
+        '.jf-route.is-dead{opacity:.5;}',
+        '.jf-route.is-dead .jf-route-label{text-decoration:line-through;}',
+        '.jf-route-tag{font-size:10px;line-height:1.5;padding:0 5px;border-radius:4px;background:rgba(0,0,0,.22);opacity:.85;}',
+        '.jf-route-dot{width:7px;height:7px;border-radius:50%;background:#8b93a5;flex:0 0 auto;}',
+        '.jf-route-dot.ok{background:#34ce57;box-shadow:0 0 6px rgba(52,206,87,.7);}',
+        '.jf-route-dot.bad{background:#f87171;}',
+        '.jf-route-dot.wait{background:#fbbf24;animation:jfPulse 1s ease-in-out infinite;}',
+        '@keyframes jfPulse{0%,100%{opacity:.35;}50%{opacity:1;}}',
+        '.jf-route-empty{font-size:12px;color:rgba(255,255,255,.6);padding:6px 2px;}',
+        '.jf-trailer-playbtn{position:absolute;inset:0;margin:auto;width:132px;height:52px;display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(255,255,255,.5);border-radius:999px;background:rgba(0,0,0,.5);color:#fff;font-size:15px;font-weight:700;letter-spacing:.08em;cursor:pointer;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 8px 28px rgba(0,0,0,.5);transition:transform .16s ease,background .16s ease;}',
+        '.jf-trailer-playbtn:hover{transform:scale(1.05);background:rgba(0,164,220,.85);border-color:transparent;}',
+        '.jf-trailer-playbtn .material-symbols-outlined{font-size:26px;}',
+        '.jf-trailer-playbtn[hidden]{display:none!important;}',
+        '.jf-trailer-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 14px;border-top:1px solid rgba(255,255,255,.07);font-size:12px;color:rgba(255,255,255,.66);}',
+        '.jf-trailer-foot-hint{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+        '.jf-trailer-auto{display:inline-flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;color:rgba(255,255,255,.8);}',
+        '.jf-trailer-auto input{accent-color:var(--e-accent,#00a4dc);}',
+        '@media (max-width:640px){.jf-trailer-card{width:100%;}.jf-trailer-foot{flex-wrap:wrap;}}',
         '.jf-spinner{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.15);border-top-color:var(--e-accent,#00a4dc);animation:jfSpin .8s linear infinite;}',
         '@keyframes jfSpin{to{transform:rotate(360deg);}}',
         /* 磁力按钮组（暗色毛玻璃） */
@@ -29754,6 +30614,21 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         '.jf-magpanel-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:6px;}',
         '.jf-magpanel-status{padding:18px 10px;text-align:center;font-size:12.5px;color:rgba(230,234,242,.6);display:flex;align-items:center;justify-content:center;gap:8px;}',
         '.jf-magpanel-status.err{color:#f87171;}',
+        /* 磁力聚合：每源状态条 + 进度/失败可视化（v7.370） */
+        '.jf-magpanel-srcbar{display:flex;flex-wrap:wrap;gap:4px;padding:7px 10px 0;}',
+        '.jf-magsrc-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;line-height:1.7;padding:0 8px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:rgba(230,234,242,.74);white-space:nowrap;}',
+        '.jf-magsrc-chip.ok{border-color:rgba(52,206,87,.35);background:rgba(52,206,87,.1);color:#9ae6b4;}',
+        '.jf-magsrc-chip.err{border-color:rgba(248,113,113,.35);background:rgba(248,113,113,.1);color:#fca5a5;}',
+        '.jf-magsrc-chip.pending{opacity:.72;}',
+        '.jf-mini-spin{width:9px;height:9px;border-radius:50%;border:2px solid rgba(255,255,255,.2);border-top-color:#9ecbff;animation:jfSpin .8s linear infinite;display:inline-block;flex:0 0 auto;}',
+        '.jf-magpanel-hbtn.is-loading{animation:jfSpin .9s linear infinite;color:#9ecbff;}',
+        '.jf-magpanel-hbtn:disabled{cursor:progress;}',
+        '.jf-magpanel-title{font-size:14px;}',
+        '.jf-magrow{transition:background .12s ease;}',
+        '.jf-magrow-title{font-size:13px;line-height:1.5;}',
+        '.jf-magrow-meta{font-size:11.5px;color:rgba(230,234,242,.66);}',
+        '.jf-magchip{font-size:11px;}',
+        '.jf-magtool-btn{padding:6px 11px;}',
         '.jf-magrow{padding:8px 8px 7px;border-radius:9px;margin-bottom:5px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.07);transition:background .15s;}',
         '.jf-magrow:hover{background:rgba(255,255,255,.09);}',
         '.jf-magrow-title{display:block;font-size:12.5px;line-height:1.45;color:#9ecbff;text-decoration:none;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-all;cursor:pointer;}',
@@ -29894,7 +30769,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       startObserver();
       flog('融合模块已加载（媒体库跳转 / 预告片 / 磁力工具箱）');
     }
-    return { init: init, openSettings: openFusionSettings, openTrailer: openTrailerPlayer };
+    return { init: init, openSettings: openFusionSettings, openTrailer: openTrailerPlayer, prefetch: prefetchTrailerInBackground, push115: pushTo115, toast: magToast };
   })();
 
 
