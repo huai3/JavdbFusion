@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.380-appletv
+// @version      7.381-light
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -167,7 +167,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.380-appletv';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.381-light';
   // 记录启动时的 hash 深链接：JAVDB 自己的脚本/跳转可能在 DOMContentLoaded 前就把 # 清掉
   var JF_BOOT_HASH = (location.hash || '').replace('#emby-dtab-', '');
   var tabHome = null, tabFav = null, favPanel = null;
@@ -7368,6 +7368,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       '<button class="hb jf-ltx-btn" id="jf-ltx-btn" title="LTX 影片（点击筛选）" aria-label="LTX 影片筛选" style="display:none;">LTX</button>' +
       '<button class="hb" id="emby-search-trigger" title="搜索（按 / 快速打开）" aria-label="搜索（按 / 快速打开）" aria-keyshortcuts="/" role="search">' +
         '<span class="material-symbols-outlined">search</span></button>' +
+      '<button class="hb" id="emby-theme-toggle" title="切换浅色/深色" aria-label="切换浅色/深色">' +
+        '<span class="material-symbols-outlined">light_mode</span></button>' +
       '<button id="emby-settings-btn" title="设置" aria-label="设置">' +
         '<span class="material-symbols-outlined">settings</span></button>';
     document.body.appendChild(bar);
@@ -7640,6 +7642,11 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     }
     ltxUpdateButton();
     // 设置齿轮（鼠标悬停浮出快捷面板，点击弹出完整大设置弹窗）
+    const themeBtn = document.getElementById('emby-theme-toggle');
+    if (themeBtn && !themeBtn.dataset.bound) {
+      themeBtn.dataset.bound = '1';
+      themeBtn.addEventListener('click', function (e) { e.stopPropagation(); toggleColorScheme(); });
+    }
     const gear = document.getElementById('emby-settings-btn');
     if (gear && !gear.dataset.bound) {
       gear.dataset.bound = '1';
@@ -8355,6 +8362,43 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     applyStyleTheme._t = setTimeout(function () { mask.classList.add('hide'); }, 1000);
   }
 
+  // ===== 颜色模式：auto / light / dark（默认跟随系统） =====
+  const COLOR_MODE_KEY = 'jf_color_scheme';
+  let colorSchemeMqBound = false;
+  function currentColorMode() {
+    try { return GM_getValue(COLOR_MODE_KEY, 'auto') || 'auto'; } catch (e) { return 'auto'; }
+  }
+  function applyColorScheme(mode) {
+    const m = ['auto', 'light', 'dark'].indexOf(mode) >= 0 ? mode : 'auto';
+    const light = m === 'light' || (m === 'auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+    document.documentElement.classList.toggle('emby-light', !!light);
+    document.documentElement.classList.toggle('emby-dark', !light);
+    document.documentElement.style.colorScheme = light ? 'light' : 'dark';
+    const btn = document.getElementById('emby-theme-toggle');
+    if (btn) {
+      const icon = btn.querySelector('.material-symbols-outlined');
+      if (icon) icon.textContent = light ? 'dark_mode' : 'light_mode';
+      btn.title = light ? '切换到深色模式' : '切换到浅色模式';
+    }
+    if (!colorSchemeMqBound && window.matchMedia) {
+      colorSchemeMqBound = true;
+      try {
+        const mq = window.matchMedia('(prefers-color-scheme: light)');
+        const onChange = function () { if (currentColorMode() === 'auto') applyColorScheme('auto'); };
+        if (mq.addEventListener) mq.addEventListener('change', onChange);
+        else if (mq.addListener) mq.addListener(onChange);
+      } catch (e) {}
+    }
+  }
+  function toggleColorScheme() {
+    const mode = currentColorMode();
+    const light = document.documentElement.classList.contains('emby-light');
+    const next = light ? 'dark' : 'light';
+    try { GM_setValue(COLOR_MODE_KEY, next); } catch (e) {}
+    applyColorScheme(next);
+    if (mode === 'auto') { try { showToast(next === 'light' ? '已切换浅色模式' : '已切换深色模式'); } catch (e) {} }
+  }
+
   //   hybrid 模式 → 把操作按钮组(.emby-btn-group)从 .info 移出，放入独立右栏 .emby-action-panel（三栏布局）
   //   其他模式(crop/full/fusion) → 保持原始两栏结构，按钮组留在 .info 内（不破坏原设计）
   function arrangeHero(coverMode) {
@@ -8454,6 +8498,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     } catch (e) {}
     const st = localStorage.getItem(SET_KEYS.style) || 'appletv';
     applyStyleTheme(st);
+    try { applyColorScheme(currentColorMode()); } catch (e) {}
     const expandCoact = localStorage.getItem(SET_KEYS.expandCoact) === '1';
     root.classList.toggle('emby-expand-coact', expandCoact);
     // 低特效模式：手动开启 OR 系统已声明 prefers-reduced-motion（尊重系统无障碍设置）。
@@ -14224,6 +14269,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               '<div style="width:160px;"><select id="full-style" class="jhs-input-text"><option value="appletv">Apple TV 简约</option><option value="emby">EMBY 经典</option><option value="glass">毛玻璃</option><option value="liquid">液态玻璃</option></select></div>' +
             '</div>' +
             '<div class="jhs-item-row">' +
+              '<div class="jhs-item-info"><div class="jhs-item-name">颜色模式</div><div class="jhs-item-desc">跟随系统 / 浅色 / 深色</div></div>' +
+              '<div style="width:160px;"><select id="full-color-scheme" class="jhs-input-text"><option value="auto">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>' +
+            '</div>' +
+            '<div class="jhs-item-row">' +
               '<div class="jhs-item-info"><div class="jhs-item-name">展示布局</div><div class="jhs-item-desc">标准网格、瀑布流或动态聚焦</div></div>' +
               '<div style="width:160px;"><select id="full-layout" class="jhs-input-text"><option value="grid">标准网格</option><option value="masonry">瀑布流</option><option value="dynamic-focus">动态聚焦</option></select></div>' +
             '</div>' +
@@ -14502,6 +14551,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       applyStyleTheme(fStyle.value);
       syncSettingsControls();
     });
+    const fColorMode = mask.querySelector('#full-color-scheme');
+    if (fColorMode) {
+      fColorMode.value = currentColorMode();
+      fColorMode.addEventListener('change', function () {
+        GM_setValue(COLOR_MODE_KEY, fColorMode.value);
+        applyColorScheme(fColorMode.value);
+      });
+    }
     const fLayout = mask.querySelector('#full-layout');
     fLayout.addEventListener('change', function () {
       localStorage.setItem(SET_KEYS.layout, fLayout.value);
@@ -31187,6 +31244,59 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         'html.emby-skin.emby-style-appletv .tabs li a{background:transparent!important;color:#c7c7cc!important;border:none!important;}',
         'html.emby-skin.emby-style-appletv .tabs li.is-active a{background:#f5f5f7!important;color:#0b0b0f!important;border-radius:8px!important;}',
         'html.emby-skin.emby-style-appletv .tabs.no-bottom{border-bottom-color:rgba(255,255,255,.08)!important;}',
+        /* ===== Apple TV 浅色模式 ===== */
+        'html.emby-skin.emby-style-appletv.emby-light{--e-bg:#f5f5f7;--e-card:#ffffff;--e-hover:#ececf0;--e-text:#1d1d1f;--e-text2:#515154;--e-text3:#86868b;--e-accent:#0071e3;--e-accent-l:rgba(0,113,227,.12);--e-r:12px;}',
+        'html.emby-skin.emby-style-appletv.emby-light body{background:#f5f5f7!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-topbar{background:#f5f5f7!important;background-image:none!important;border-bottom:1px solid #d2d2d7!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-topbar .hb{color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-topbar .logo-javdb svg path[fill="white"],html.emby-skin.emby-style-appletv.emby-light #emby-drawer .brand path[fill="white"]{fill:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-topbar .hb:hover{background:#e5e5ea!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-home-tab{color:#6e6e73!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-home-tab:hover{background:#e5e5ea!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-home-tab.active{background:#1d1d1f!important;border-color:#1d1d1f!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-dtabbar{background:#f5f5f7!important;border-bottom-color:#d2d2d7!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-dtab{color:#6e6e73!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-dtab:hover{background:#e5e5ea!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-dtab.active{background:#1d1d1f!important;border-color:#1d1d1f!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-anchor{background:#fff!important;border-color:#d2d2d7!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-anchor a{color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-anchor a:hover{background:#f5f5f7!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-anchor a.current{background:#1d1d1f!important;color:#fff!important;border-left-color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .item .box{background:#fff!important;border-color:#e5e5ea!important;box-shadow:0 1px 2px rgba(0,0,0,.04)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .item:hover .box{background:#fff!important;border-color:#c7c7cc!important;box-shadow:0 8px 24px rgba(0,0,0,.08)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .item .box .cover{background:#f0f0f2!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .item .box .video-title{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .item .box .video-title strong{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .item .box .score{color:#6e6e73!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .item .box .meta{color:#86868b!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .item .box .tags .tag{background:#f0f0f2!important;color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .item a.box:visited .video-title,html.emby-skin.emby-style-appletv.emby-light .item a.box:visited .video-title strong{color:rgba(29,29,31,.45)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-detail-bg{opacity:.10!important;filter:none!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-detail-scrim{background:linear-gradient(180deg,#f5f5f7 0%,rgba(245,245,247,.94) 55%,#f5f5f7 100%)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info h1,html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info .meta,html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info .sub{color:#6e6e73!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-sec,html.emby-skin.emby-style-appletv.emby-light .emby-dpane-native,html.emby-skin.emby-style-appletv.emby-light .jf-magnet-panel,html.emby-skin.emby-style-appletv.emby-light .jf-review-sec,html.emby-skin.emby-style-appletv.emby-light .jf-inline-magnet{background:#fff!important;border-color:#e5e5ea!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .poster-wrap img{border-color:#e5e5ea!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-btn,html.emby-skin.emby-style-appletv.emby-light .jf-lib-play-main{background:#fff!important;color:#1d1d1f!important;border:1px solid #d2d2d7!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-play-btn{background:#0071e3!important;color:#fff!important;border:none!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-btn:hover{background:#f5f5f7!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-play-btn:hover{background:#0077ed!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-tag-chip,html.emby-skin.emby-style-appletv.emby-light .em-cat{background:#f0f0f2!important;color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-drawer,html.emby-skin.emby-style-appletv.emby-light #emby-search-modal,html.emby-skin.emby-style-appletv.emby-light .jhs-settings-dialog,html.emby-skin.emby-style-appletv.emby-light .emby-compact-bar{background:#fff!important;border-color:#d2d2d7!important;box-shadow:0 24px 64px rgba(0,0,0,.18)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-search-modal .search-bar-wrap,html.emby-skin.emby-style-appletv.emby-light .jhs-input-text,html.emby-skin.emby-style-appletv.emby-light .jhs-settings-dialog input,html.emby-skin.emby-style-appletv.emby-light .jhs-settings-dialog select{background:#f5f5f7!important;color:#1d1d1f!important;border-color:#d2d2d7!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-drawer .nav a,html.emby-skin.emby-style-appletv.emby-light #emby-drawer .drawer-group-header,html.emby-skin.emby-style-appletv.emby-light #emby-drawer .drawer-sub-link,html.emby-skin.emby-style-appletv.emby-light #emby-drawer .acct-item,html.emby-skin.emby-style-appletv.emby-light #emby-drawer .acct-user{color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-drawer .nav a:hover,html.emby-skin.emby-style-appletv.emby-light #emby-drawer .drawer-group-header:hover{background:#f0f0f2!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-sorts button{color:#6e6e73!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-sorts button.active{background:#1d1d1f!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-native-btn,html.emby-skin.emby-style-appletv.emby-light .jf-review-expand,html.emby-skin.emby-style-appletv.emby-light .jf-review-more,html.emby-skin.emby-style-appletv.emby-light .jf-review-retry,html.emby-skin.emby-style-appletv.emby-light .jf-review-batch{background:#f5f5f7!important;border-color:#d2d2d7!important;color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-115{background:#0071e3!important;border-color:#0071e3!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .toolbar .button{background:#fff!important;border-color:#d2d2d7!important;color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .toolbar .button.is-info.is-selected,html.emby-skin.emby-style-appletv.emby-light .toolbar .button.is-selected{background:#1d1d1f!important;border-color:#1d1d1f!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .tabs li a{color:#6e6e73!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .tabs li.is-active a{background:#1d1d1f!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .tabs.no-bottom{border-bottom-color:#d2d2d7!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-mag-toast{background:#1d1d1f!important;color:#fff!important;}',
+
         '.jf-magtool-btn{padding:6px 11px;}',
         /* ===== 2026-11 视觉统一：更现代的卡片/顶栏 ===== */
         'html.emby-skin{--e-r:10px;}',
