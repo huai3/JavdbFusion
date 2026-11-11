@@ -76,7 +76,7 @@ node tools/pw/live-check.js --auth=tools/pw/auth/storage.json
 # node tools/pw/live-check.js https://javdb580.com/v/xJqp6 --auth=tools/pw/auth/storage-580.json
 
 # 4. 可选：真的往 115 创建一个离线任务（会实际下载，确认后再加 --push115）
-node tools/pw/live-check.js --auth=tools/pw/auth/storage.json
+node tools/pw/live-check.js --auth=tools/pw/auth/storage.json --push115
 # 镜像站示例：
 # node tools/pw/live-check.js https://javdb580.com/v/xJqp6 --auth=tools/pw/auth/storage-580.json --push115
 ```

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.379-mirror-ltx
+// @version      7.380-appletv
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -167,7 +167,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.379-mirror-ltx';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.380-appletv';
   // 记录启动时的 hash 深链接：JAVDB 自己的脚本/跳转可能在 DOMContentLoaded 前就把 # 清掉
   var JF_BOOT_HASH = (location.hash || '').replace('#emby-dtab-', '');
   var tabHome = null, tabFav = null, favPanel = null;
@@ -8329,9 +8329,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   // - 三套玻璃栈的 backdrop-filter / 背景层差异大，直接过渡易闪，用短暂遮罩盖住重绘
   function applyStyleTheme(theme) {
     if (!theme) theme = 'emby';
-    document.documentElement.classList.remove('emby-style-glass', 'emby-style-liquid');
+    document.documentElement.classList.remove('emby-style-glass', 'emby-style-liquid', 'emby-style-appletv');
     if (theme === 'glass') document.documentElement.classList.add('emby-style-glass');
     else if (theme === 'liquid') document.documentElement.classList.add('emby-style-liquid');
+    else if (theme === 'appletv') document.documentElement.classList.add('emby-style-appletv');
     // 液态玻璃：启用真折射层；其它模式清理
     if (typeof LiquidGlass !== 'undefined') {
       if (theme === 'liquid') {
@@ -8444,7 +8445,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     arrangeHero(coverMode); // 混合模式才把操作按钮移到独立右栏；其他模式保持两栏
     const layout = localStorage.getItem(SET_KEYS.layout) || 'grid';
     applyLayout(layout);
-    const st = localStorage.getItem(SET_KEYS.style) || 'emby';
+    // 首次升级到 Apple TV 主题：把旧的 emby/glass/liquid 统一迁到 appletv（用户仍可在设置切回）
+    try {
+      if (!localStorage.getItem('jf_appletv_migrated_v1')) {
+        localStorage.setItem(SET_KEYS.style, 'appletv');
+        localStorage.setItem('jf_appletv_migrated_v1', '1');
+      }
+    } catch (e) {}
+    const st = localStorage.getItem(SET_KEYS.style) || 'appletv';
     applyStyleTheme(st);
     const expandCoact = localStorage.getItem(SET_KEYS.expandCoact) === '1';
     root.classList.toggle('emby-expand-coact', expandCoact);
@@ -14213,7 +14221,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<div class="jhs-panel-title"><span class="material-symbols-outlined">palette</span> 外观与显示设置</div>' +
             '<div class="jhs-item-row">' +
               '<div class="jhs-item-info"><div class="jhs-item-name">视觉风格</div><div class="jhs-item-desc">选择整体界面质感主题</div></div>' +
-              '<div style="width:160px;"><select id="full-style" class="jhs-input-text"><option value="emby">EMBY 经典</option><option value="glass">毛玻璃</option><option value="liquid">液态玻璃</option></select></div>' +
+              '<div style="width:160px;"><select id="full-style" class="jhs-input-text"><option value="appletv">Apple TV 简约</option><option value="emby">EMBY 经典</option><option value="glass">毛玻璃</option><option value="liquid">液态玻璃</option></select></div>' +
             '</div>' +
             '<div class="jhs-item-row">' +
               '<div class="jhs-item-info"><div class="jhs-item-name">展示布局</div><div class="jhs-item-desc">标准网格、瀑布流或动态聚焦</div></div>' +
@@ -15685,7 +15693,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     });
     try { syncRatingHeatmap(document, true); } catch (e) {}
     applySettings();
-    applyStyleTheme('emby');
+    applyStyleTheme('appletv');
     try { syncDetailTranslation(); } catch (e) {}
     try { rebuildDetailPlayButton(); } catch (e) {}
     syncSettingsControls();
@@ -26859,7 +26867,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (!enabled) {
         setEnabled(true);
       }
-      const styles = ['emby', 'glass', 'liquid'];
+      const styles = ['appletv', 'emby', 'glass', 'liquid'];
       const curStyle = localStorage.getItem(SET_KEYS.style) || 'emby';
       let idx = styles.indexOf(curStyle);
       if (idx === -1) idx = 0;
@@ -31130,6 +31138,55 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         '.jf-magrow-title{font-size:13px;line-height:1.5;}',
         '.jf-magrow-meta{font-size:11.5px;color:rgba(230,234,242,.66);}',
         '.jf-magchip{font-size:11px;}',
+        /* ===== Apple TV 简约主题（默认） ===== */
+        'html.emby-skin.emby-style-appletv{--e-bg:#0b0b0f;--e-card:#1c1c1e;--e-hover:#2c2c2e;--e-text:#f5f5f7;--e-text2:#c7c7cc;--e-text3:#8e8e93;--e-accent:#0a84ff;--e-accent-d:#0a84ffdd;--e-accent-l:#0a84ff26;--e-r:12px;--e-blur:0px;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,"PingFang SC","Noto Sans SC",sans-serif!important;}',
+        'html.emby-skin.emby-style-appletv body{background:#0b0b0f!important;color:#f5f5f7!important;}',
+        'html.emby-skin.emby-style-appletv #emby-topbar{background:#0b0b0f!important;background-image:none!important;border-bottom:1px solid rgba(255,255,255,.08)!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}',
+        'html.emby-skin.emby-style-appletv #emby-topbar .hb{color:#c7c7cc;}',
+        'html.emby-skin.emby-style-appletv #emby-topbar .hb:hover{background:#2c2c2e!important;color:#fff;}',
+        'html.emby-skin.emby-style-appletv .emby-home-tab{background:transparent!important;border:1px solid transparent!important;color:#c7c7cc!important;box-shadow:none!important;backdrop-filter:none!important;}',
+        'html.emby-skin.emby-style-appletv .emby-home-tab:hover{background:#1c1c1e!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv .emby-home-tab.active{background:#f5f5f7!important;border-color:#f5f5f7!important;color:#0b0b0f!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv .emby-dtabbar{background:#0b0b0f!important;border-bottom:1px solid rgba(255,255,255,.08)!important;box-shadow:none!important;backdrop-filter:none!important;}',
+        'html.emby-skin.emby-style-appletv .emby-dtab{background:transparent!important;border:1px solid transparent!important;color:#c7c7cc!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv .emby-dtab:hover{background:#1c1c1e!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv .emby-dtab.active{background:#f5f5f7!important;border-color:#f5f5f7!important;color:#0b0b0f!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv .emby-anchor{background:#1c1c1e!important;border:1px solid rgba(255,255,255,.08)!important;box-shadow:none!important;backdrop-filter:none!important;}',
+        'html.emby-skin.emby-style-appletv .emby-anchor a{color:#c7c7cc!important;}',
+        'html.emby-skin.emby-style-appletv .emby-anchor a.current{background:#f5f5f7!important;color:#0b0b0f!important;border-left-color:#f5f5f7!important;}',
+        'html.emby-skin.emby-style-appletv .item .box{background:#1c1c1e!important;background-image:none!important;border:1px solid rgba(255,255,255,.06)!important;border-radius:12px!important;box-shadow:none!important;transform:none!important;transition:background-color .18s ease!important;}',
+        'html.emby-skin.emby-style-appletv .item:hover .box{background:#2c2c2e!important;border-color:rgba(255,255,255,.16)!important;box-shadow:none!important;transform:none!important;}',
+        'html.emby-skin.emby-style-appletv .item .box .cover{border-radius:11px 11px 0 0!important;background:#111!important;}',
+        'html.emby-skin.emby-style-appletv .item .box .cover img{transition:none!important;transform:none!important;}',
+        'html.emby-skin.emby-style-appletv .item:hover .box .cover img{transform:none!important;}',
+        'html.emby-skin.emby-style-appletv .emby-card-shine{display:none!important;}',
+        'html.emby-skin.emby-style-appletv .item .box .video-title{color:#f5f5f7!important;font-size:.92em!important;padding:.72em .78em .24em!important;}',
+        'html.emby-skin.emby-style-appletv .item .box .video-title strong{color:#fff!important;font-weight:700!important;}',
+        'html.emby-skin.emby-style-appletv .item .box .score{color:#c7c7cc!important;}',
+        'html.emby-skin.emby-style-appletv .item .box .meta{color:#8e8e93!important;}',
+        'html.emby-skin.emby-style-appletv .item .box .tags .tag{background:#2c2c2e!important;border-color:transparent!important;color:#c7c7cc!important;}',
+        'html.emby-skin.emby-style-appletv .item a.box:visited .video-title,html.emby-skin.emby-style-appletv .item a.box:visited .video-title strong{color:rgba(245,245,247,.48)!important;}',
+        'html.emby-skin.emby-style-appletv #emby-detail-bg{filter:brightness(.36) saturate(1.05)!important;}',
+        'html.emby-skin.emby-style-appletv .emby-detail-scrim{background:linear-gradient(180deg,#0b0b0f 0%,rgba(11,11,15,.86) 55%,#0b0b0f 100%)!important;}',
+        'html.emby-skin.emby-style-appletv .emby-sec,html.emby-skin.emby-style-appletv .emby-dpane-native,html.emby-skin.emby-style-appletv .jf-magnet-panel,html.emby-skin.emby-style-appletv .jf-review-sec,html.emby-skin.emby-style-appletv .jf-inline-magnet{background:#1c1c1e!important;background-image:none!important;border:1px solid rgba(255,255,255,.06)!important;border-radius:12px!important;box-shadow:none!important;backdrop-filter:none!important;}',
+        'html.emby-skin.emby-style-appletv .emby-detail-hero .poster-wrap img{border:1px solid rgba(255,255,255,.08)!important;border-radius:12px!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv .emby-btn,html.emby-skin.emby-style-appletv .emby-play-btn,html.emby-skin.emby-style-appletv .jf-lib-play-main{background:#f5f5f7!important;color:#0b0b0f!important;border:none!important;box-shadow:none!important;border-radius:999px!important;}',
+        'html.emby-skin.emby-style-appletv .emby-btn:hover,html.emby-skin.emby-style-appletv .emby-play-btn:hover{filter:none!important;background:#fff!important;}',
+        'html.emby-skin.emby-style-appletv .emby-tag-chip,html.emby-skin.emby-style-appletv .em-cat{background:#2c2c2e!important;border-color:transparent!important;color:#c7c7cc!important;}',
+        'html.emby-skin.emby-style-appletv #emby-drawer,html.emby-skin.emby-style-appletv #emby-search-modal,html.emby-skin.emby-style-appletv .jhs-settings-dialog,html.emby-skin.emby-style-appletv .emby-compact-bar{background:#1c1c1e!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;border-color:rgba(255,255,255,.08)!important;box-shadow:0 24px 64px rgba(0,0,0,.6)!important;}',
+        'html.emby-skin.emby-style-appletv .jf-trailer-card,html.emby-skin.emby-style-appletv .jf-whatslink-modal{background:#1c1c1e!important;backdrop-filter:none!important;box-shadow:0 24px 64px rgba(0,0,0,.7)!important;}',
+        'html.emby-skin.emby-style-appletv .jf-trailer-overlay,html.emby-skin.emby-style-appletv .jf-whatslink-overlay{backdrop-filter:none!important;background:rgba(0,0,0,.82)!important;}',
+        'html.emby-skin.emby-style-appletv .jf-review-sorts button.active{background:#f5f5f7!important;color:#0b0b0f!important;}',
+        'html.emby-skin.emby-style-appletv .jf-review-sorts button{color:#c7c7cc!important;}',
+        'html.emby-skin.emby-style-appletv .jf-review-115{background:#0a84ff!important;border-color:#0a84ff!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv .jf-ltx-badge{background:#0a84ff!important;}',
+        'html.emby-skin.emby-style-appletv .item.jf-ltx-hit .box{outline:2px solid #0a84ff!important;outline-offset:2px;}',
+        'html.emby-skin.emby-style-appletv .toolbar .button{background:#1c1c1e!important;border-color:rgba(255,255,255,.08)!important;color:#c7c7cc!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv .toolbar .button:hover{background:#2c2c2e!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv .toolbar .button.is-info.is-selected,html.emby-skin.emby-style-appletv .toolbar .button.is-selected{background:#f5f5f7!important;border-color:#f5f5f7!important;color:#0b0b0f!important;}',
+        'html.emby-skin.emby-style-appletv .tabs li a{background:transparent!important;color:#c7c7cc!important;border:none!important;}',
+        'html.emby-skin.emby-style-appletv .tabs li.is-active a{background:#f5f5f7!important;color:#0b0b0f!important;border-radius:8px!important;}',
+        'html.emby-skin.emby-style-appletv .tabs.no-bottom{border-bottom-color:rgba(255,255,255,.08)!important;}',
         '.jf-magtool-btn{padding:6px 11px;}',
         /* ===== 2026-11 视觉统一：更现代的卡片/顶栏 ===== */
         'html.emby-skin{--e-r:10px;}',
