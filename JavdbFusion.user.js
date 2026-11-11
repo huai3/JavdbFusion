@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.377-ltx-sync
+// @version      7.378-polish
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -165,7 +165,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.377-ltx-sync';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.378-polish';
   // 记录启动时的 hash 深链接：JAVDB 自己的脚本/跳转可能在 DOMContentLoaded 前就把 # 清掉
   var JF_BOOT_HASH = (location.hash || '').replace('#emby-dtab-', '');
   var tabHome = null, tabFav = null, favPanel = null;
@@ -3862,24 +3862,31 @@ html.emby-skin .efav-award-badge .aw-more {
   background:rgba(0,0,0,.18); color:#181200; border-radius:999px;
   padding:1px 3.5px; font-size:8.5px; font-weight:900; line-height:1; margin-left:2px;
 }
-/* 未访问：柔紫标记「还没看过」 */html.emby-skin .movie-list .item a.box .video-title,
-html.emby-skin .movie-list .item a.box .video-title strong {
-  color:#b39ddb !important;
+/* 未访问：正常高对比标题；不再用紫色（紫色在浏览器语义里通常代表已访问，容易误导）。
+ * 已访问只做“降权变淡”，用户一眼能分清是否看过。 */
+html.emby-skin .movie-list .item a.box .video-title {
+  color:rgba(255,255,255,.86) !important;
 }
-/* 【对比度修正 2026-10】评分/日期原为 #8d7cb3，在卡片底色 #1c1f26 上只有 4.45:1，
- * 刚好卡在 WCAG AA（4.5:1）门槛下方；提到 #9d8bd0 后为 5.52:1，肉眼几乎看不出差别。 */
+html.emby-skin .movie-list .item a.box .video-title strong {
+  color:#f1f3f7 !important;
+  font-weight:700 !important;
+}
 html.emby-skin .movie-list .item a.box .score,
 html.emby-skin .movie-list .item a.box .meta {
-  color:#9d8bd0 !important;
+  color:rgba(255,255,255,.64) !important;
 }
-/* 已访问：回归皮肤原色（看过的即"正常态"） */
 html.emby-skin .movie-list .item a.box:visited .video-title,
 html.emby-skin .movie-list .item a.box:visited .video-title strong {
-  color:var(--e-text) !important;
+  color:rgba(255,255,255,.48) !important;
 }
 html.emby-skin .movie-list .item a.box:visited .score,
 html.emby-skin .movie-list .item a.box:visited .meta {
-  color:var(--e-text3) !important;
+  color:rgba(255,255,255,.38) !important;
+}
+/* 悬停时恢复亮色，避免“已访问=看不清” */
+html.emby-skin .movie-list .item a.box:hover .video-title,
+html.emby-skin .movie-list .item a.box:hover .video-title strong {
+  color:#fff !important;
 }
 /* 仅在 .show 时展开为块布局（勿用无 .show 的 !important，否则切回首页时面板残留） */
 html.emby-skin #emby-favorites-panel.show.has-ui {
@@ -7612,8 +7619,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     updateBackTop(window.scrollY || window.pageYOffset || 0);
 
     // 构建搜索弹窗 + 设置面板（幂等）
-    buildSearchModal();
-    buildFullSettingsDialog();
+    // 启动性能：设置弹窗/搜索弹窗改为首次打开时构建（原先在首屏构建数千节点）
     // 搜索触发：点击顶部搜索框 → 居中弹窗
     const trig = document.getElementById('emby-search-trigger');
     if (trig && !trig.dataset.bound) {
@@ -15882,6 +15888,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   }
 
   function openSearchModal() {
+    buildSearchModal();
     const m = document.getElementById('emby-search-modal');
     if (!m) return;
     // 若原版搜索框尚未加载（SPA），重新克隆并接线
@@ -23360,14 +23367,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (!raw) return null;
       const o = JSON.parse(raw);
       if (!o || !Array.isArray(o.ids)) return null;
-      ltxIndexCache = { ts: Number(o.ts) || 0, ids: new Set(o.ids), codes: new Set(o.codes || []) };
+      ltxIndexCache = { ts: Number(o.ts) || 0, ids: new Set(o.ids), codes: new Set(o.codes || []), head: Array.isArray(o.head) ? o.head : [] };
       return ltxIndexCache;
     } catch (e) { return null; }
   }
-  function ltxWriteIndex(ids, codes) {
-    const payload = { ts: Date.now(), ids: Array.from(ids), codes: Array.from(codes) };
+  function ltxWriteIndex(ids, codes, head) {
+    const payload = { ts: Date.now(), ids: Array.from(ids), codes: Array.from(codes), head: Array.isArray(head) ? head.slice(0, 30) : [] };
     try { GM_setValue(LTX_INDEX_KEY, JSON.stringify(payload)); } catch (e) {}
-    ltxIndexCache = { ts: payload.ts, ids: new Set(payload.ids), codes: new Set(payload.codes) };
+    ltxIndexCache = { ts: payload.ts, ids: new Set(payload.ids), codes: new Set(payload.codes), head: payload.head };
     return ltxIndexCache;
   }
   function ltxCardHit(item, idx) {
@@ -23459,20 +23466,36 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     });
     return out;
   }
-  function ltxSync() {
+  function ltxSync(force) {
     if (ltxSyncPromise) return ltxSyncPromise;
+    const cached = ltxReadIndex();
     ltxSyncing = true;
     ltxUpdateButton();
-    showToast('正在同步 LTX 标签索引…');
+    showToast(force ? '正在强制同步 LTX 索引…' : '正在同步 LTX 标签索引…');
     const ids = new Set();
     const codes = new Set();
+    let head = [];
     ltxSyncPromise = (async function () {
       let page = 1;
       let maxPage = 1;
       let lastSig = '';
       let emptyPages = 0;
+      let firstPart = null;
+
+      // 增量：索引已有 head 且不是强制更新时，先只拉第 1 页。
+      // 第 1 页前 30 个 id 与缓存完全一致 → 视为无变化，直接续期，不再拉 37 页。
+      if (!force && cached && cached.head && cached.head.length) {
+        firstPart = await ltxFetchTagPage(1);
+        const sameHead = firstPart.ids.slice(0, cached.head.length).join(',') === cached.head.join(',');
+        if (sameHead && firstPart.ids.length) {
+          const renewed = ltxWriteIndex(cached.ids, cached.codes, cached.head);
+          return renewed;
+        }
+      }
+
       while (page <= maxPage && page <= 60) {
-        const part = await ltxFetchTagPage(page);
+        const part = (page === 1 && firstPart) ? firstPart : await ltxFetchTagPage(page);
+        if (page === 1) head = part.ids.slice(0, 30);
         if (!part.ids.length && !part.codes.length) {
           emptyPages++;
           if (emptyPages >= 2 || page === 1) break;
@@ -23487,7 +23510,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         if (page % 5 === 0) showToast('LTX 索引同步中… ' + ids.size + ' 部 / 第 ' + page + ' 页');
       }
       if (!ids.size && !codes.size) throw new Error('没有解析到 LTX 影片（标签页为空或需要登录）');
-      return ltxWriteIndex(ids, codes);
+      return ltxWriteIndex(ids, codes, head);
     })().then(function (idx) {
       ltxSyncing = false;
       ltxSyncPromise = null;
@@ -23509,7 +23532,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     let idx = ltxReadIndex();
     const stale = !idx || force || (Date.now() - idx.ts > LTX_INDEX_TTL);
     if (stale) {
-      try { idx = await ltxSync(); }
+      try { idx = await ltxSync(force); }
       catch (e) {
         if (!idx) return;
         showToast('LTX 索引更新失败，继续使用旧索引');
@@ -23551,7 +23574,13 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
      const items = movieLists[0].querySelectorAll('.item:not([data-grid-done])');
     items.forEach(function (item) {
       item.dataset.gridDone = '1';
-      const box = item.querySelector('.box');
+      // JAVDB 的「每周推荐 / VIP 登录态」卡片结构是 .item > a[href] 没有 .box，
+      // 而皮肤所有卡片样式/角标/倾斜都依赖 .box；这里补上类名，避免标题落回原生蓝色链接。
+      let box = item.querySelector('.box');
+      if (!box) {
+        const direct = item.querySelector(':scope > a[href*="/v/"]');
+        if (direct) { direct.classList.add('box'); box = direct; }
+      }
       if (!box) return;
       try { applyStatusPriority(item); } catch (e) {}
       try { ltxApplyItem(item); } catch (e) {}
@@ -24044,7 +24073,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           if (p && typeof p.then === 'function') {
             p.then(function (res) {
               reset(res && res.ok ? '已推送' : '重试推送', res && res.ok);
-              setTimeout(function () { if (r115.isConnected) reset('推送 115', false); }, res && res.ok ? 4000 : 2500);
+              if (res && res.ok && typeof FUSION.query115Status === 'function') {
+                setTimeout(function () {
+                  FUSION.query115Status(ed2k).then(function (st) {
+                    if (st && r115.isConnected) { r115.textContent = '已推送 · ' + st; r115.classList.add('is-ok'); }
+                  }).catch(function () {});
+                }, 1800);
+              }
+              setTimeout(function () { if (r115.isConnected) reset('推送 115', false); }, res && res.ok ? 8000 : 2500);
             }).catch(function () { reset('重试推送', false); });
           } else {
             setTimeout(function () { reset('推送 115', false); }, 2500);
@@ -25193,13 +25229,13 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       /* 页签栏改为实色并加分隔线：内容滚动时不再从渐变里透出来糊成一片 */
       '.emby-dtabbar{background:rgba(19,22,28,.98);border-bottom:1px solid rgba(255,255,255,.09);',
       'box-shadow:0 6px 18px rgba(0,0,0,.28);padding:.45em .1em;}',
-      '.emby-dtab{font-size:.93em;min-height:38px;color:#cbbdf2;}',
+      '.emby-dtab{font-size:.93em;min-height:38px;color:rgba(255,255,255,.78);}',
       '.emby-dtab:hover{color:#fff;}',
       '.emby-dtab .material-symbols-outlined{font-size:18px;}',
       '.emby-dtab .emby-dtab-count{background:rgba(0,0,0,.22);border-radius:999px;padding:0 6px;line-height:1.55;}',
       '.emby-dtab.active .emby-dtab-count{background:rgba(0,0,0,.18);}',
       '.emby-anchor{width:36px;padding:8px 6px;gap:2px;}',
-      '.emby-anchor a{font-size:12px;padding:7px 4px;color:#cbbdf2;}',
+      '.emby-anchor a{font-size:12px;padding:7px 4px;color:rgba(255,255,255,.7);}',
       '.emby-anchor a .material-symbols-outlined{font-size:17px!important;}',
       '.emby-anchor-title{font-size:10px;color:#a99bc9;}',
       'html.emby-has-anchor .emby-detail-body{padding-right:3.8em;}',
@@ -25248,8 +25284,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       '.jf-review-sorts button{border:none;background:none;color:#b9a7e8;font-size:12.5px;padding:5px 14px;border-radius:999px;cursor:pointer;transition:background .15s,color .15s;}',
       '.jf-review-sorts button:hover{color:#fff;}',
       '.jf-review-sorts button.active{background:var(--e-accent,#00a4dc);color:#04121a;font-weight:700;}',
-      '.jf-review-native-btn,.jf-review-expand,.jf-review-more,.jf-review-retry{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#dfe4ee;border-radius:999px;padding:5px 12px;font-size:12.5px;cursor:pointer;transition:background .15s,color .15s;}',
-      '.jf-review-native-btn:hover,.jf-review-expand:hover,.jf-review-more:hover,.jf-review-retry:hover{background:rgba(255,255,255,.16);color:#fff;}',
+      '.jf-review-native-btn,.jf-review-expand,.jf-review-more,.jf-review-retry,.jf-review-batch{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#dfe4ee;border-radius:999px;padding:5px 12px;font-size:12.5px;cursor:pointer;transition:background .15s,color .15s;}',
+      '.jf-review-native-btn:hover,.jf-review-expand:hover,.jf-review-more:hover,.jf-review-retry:hover,.jf-review-batch:hover{background:rgba(255,255,255,.16);color:#fff;}',
       '.jf-review-body{margin-top:10px;}',
       '.jf-review-body[hidden]{display:none!important;}',
       '.jf-review-item{padding:12px 2px;border-top:1px solid rgba(255,255,255,.06);}',
@@ -25741,6 +25777,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<button type="button" data-sort="hotly">最热</button>' +
           '</span>' +
           (inline ? '' : '<button type="button" class="jf-review-native-btn" title="显示 JAVDB 原站短评（可点赞 / 举报）">原站</button>') +
+          '<button type="button" class="jf-review-batch" hidden>推送全部 ed2k</button>' +
           (inline ? '<button type="button" class="jf-review-expand" aria-expanded="' + (expanded ? 'true' : 'false') + '">' + (expanded ? '收起' : '展开') + '</button>' : '') +
         '</span>' +
       '</div>' +
@@ -25755,6 +25792,21 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     const sortBtns = Array.prototype.slice.call(sec.querySelectorAll('[data-sort]'));
     const nativeBtn = sec.querySelector('.jf-review-native-btn');
     const expandBtn = sec.querySelector('.jf-review-expand');
+    const batchBtn = sec.querySelector('.jf-review-batch');
+    const batchLinks = function () {
+      const out = [];
+      listEl.querySelectorAll('.jf-review-115').forEach(function (b) {
+        const v = b.getAttribute('data-ed2k') || '';
+        if (v && out.indexOf(v) < 0) out.push(v);
+      });
+      return out;
+    };
+    const syncBatch = function () {
+      if (!batchBtn) return;
+      const n = batchLinks().length;
+      batchBtn.hidden = n < 2;
+      if (n >= 2 && !batchBtn.disabled) batchBtn.textContent = '推送全部 ed2k (' + n + ')';
+    };
 
     function syncSort() {
       sortBtns.forEach(function (b) { b.classList.toggle('active', b.dataset.sort === sort); });
@@ -25805,6 +25857,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         ended = rows.length < 20;
         moreBtn.hidden = ended;
         if (!ended) moreBtn.textContent = '加载更多短评';
+        syncBatch();
       } catch (e) {
         listEl.innerHTML = '<div class="jf-review-error">短评加载失败：' + escapeHtml(e && e.message || '网络错误') +
           ' <button type="button" class="jf-review-retry">重试</button></div>';
@@ -25832,6 +25885,30 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       expandBtn.textContent = show ? '收起' : '展开';
       expandBtn.setAttribute('aria-expanded', show ? 'true' : 'false');
       if (show && !loaded) load(true);
+    });
+    if (batchBtn) batchBtn.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      const links = batchLinks();
+      if (!links.length) return;
+      if (typeof FUSION === 'undefined' || !FUSION || typeof FUSION.push115Batch !== 'function') {
+        try { showToast('115 批量推送未就绪，请刷新页面'); } catch (err) {}
+        return;
+      }
+      batchBtn.disabled = true;
+      const total = links.length;
+      batchBtn.textContent = '推送中 0/' + total;
+      FUSION.push115Batch(links, function (done) { batchBtn.textContent = '推送中 ' + done + '/' + total; })
+        .then(function (res) {
+          batchBtn.disabled = false;
+          batchBtn.textContent = '已推送 ' + res.ok + '/' + res.total;
+          try { FUSION.toast('批量推送完成：成功 ' + res.ok + ' / 失败 ' + res.fail, res.fail === 0); } catch (err) {}
+          setTimeout(syncBatch, 5000);
+        })
+        .catch(function () {
+          batchBtn.disabled = false;
+          syncBatch();
+          try { FUSION.toast('批量推送失败', false); } catch (err) {}
+        });
     });
     moreBtn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); load(false); });
     sec.addEventListener('click', function (e) {
@@ -29195,14 +29272,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (!name) return null;
       return 'ed2k://|file|' + name + '|' + m[2] + '|' + m[3].toUpperCase() + '|/';
     }
-    function pushTo115(link) {
+    function pushTo115(link, opts) {
+      opts = opts || {};
       return new Promise(function (resolve) {
         let settled = false;
-        const finish = function (ok, message) {
+        const finish = function (ok, message, extra) {
           if (settled) return;
           settled = true;
-          try { magToast(message, ok); } catch (e) {}
-          resolve({ ok: !!ok, message: message });
+          if (!opts.silent) { try { magToast(message, ok); } catch (e) {} }
+          resolve(Object.assign({ ok: !!ok, message: message }, extra || {}));
         };
         const isEd2k = /^ed2k:\/\//i.test(String(link || '').trim());
         const target = isEd2k ? normalizeEd2kLink(link) : link;
@@ -29215,7 +29293,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             let signInfo = null;
             try { signInfo = JSON.parse(signResponse.responseText); } catch (e) {}
             if (!signInfo || !signInfo.state || !signInfo.sign || !signInfo.time) {
-              finish(false, '❌ 115登录失效或签名获取失败');
+              finish(false, '❌ 115登录失效或签名获取失败', { retryable: false });
               return;
             }
             const data = new URLSearchParams();
@@ -29247,19 +29325,85 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
                   } else {
                     const msg = String(res.error_msg || res.msg || '未知错误');
                     // 115 对重复链接返回的也是 state:false，单独给更明确的提示
-                    if (/任务已存在|重复的链接/.test(msg)) finish(false, '⚠️ 115 里已有这个任务');
-                    else finish(false, '❌ 115错误: ' + msg);
+                    if (/任务已存在|重复的链接/.test(msg)) finish(false, '⚠️ 115 里已有这个任务', { retryable: false, duplicate: true });
+                    else finish(false, '❌ 115错误: ' + msg, { retryable: false });
                   }
-                } catch (e) { finish(false, '❌ 115 响应解析失败'); }
+                } catch (e) { finish(false, '❌ 115 响应解析失败', { retryable: false }); }
               },
-              onerror: function () { finish(false, '❌ 115 推送请求失败'); },
-              ontimeout: function () { finish(false, '❌ 115 推送超时'); }
+              onerror: function () { finish(false, '❌ 115 推送请求失败', { retryable: true }); },
+              ontimeout: function () { finish(false, '❌ 115 推送超时', { retryable: true }); }
             });
           },
-          onerror: function () { finish(false, '❌ 115 签名请求失败'); },
-          ontimeout: function () { finish(false, '❌ 115 签名请求超时'); }
+          onerror: function () { finish(false, '❌ 115 签名请求失败', { retryable: true }); },
+          ontimeout: function () { finish(false, '❌ 115 签名请求超时', { retryable: true }); }
         });
       });
+    }
+    // 115 任务状态回查：按 ed2k 文件名 / magnet dn 匹配最新任务列表
+    function push115Name(link) {
+      const s = String(link || '');
+      if (/^ed2k:\/\//i.test(s)) {
+        try { return decodeURIComponent((s.match(/^ed2k:\/\/\|file\|([^|]+)\|/i) || [])[1] || ''); } catch (e) { return ''; }
+      }
+      const m = s.match(/[?&]dn=([^&]+)/i);
+      if (m) { try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; } }
+      return '';
+    }
+    async function query115Status(link) {
+      const name = push115Name(link);
+      if (!name) return '';
+      try {
+        const r = await gmReq({
+          url: 'https://115.com/web/lixian/?ct=lixian&ac=task_lists&page=1',
+          headers: { 'Accept': 'application/json, text/plain, */*' }, timeout: 8000
+        });
+        const j = JSON.parse(r.responseText || '{}');
+        const tasks = j.tasks || j.data || [];
+        const hit = tasks.find(function (t) { return t && String(t.name || '') === name; });
+        if (!hit) return '';
+        const st = Number(hit.status);
+        if (st === 2) return '已完成';
+        if (st === -1) return '失败';
+        if (st === 1 || st === 0) return '下载中';
+        return '';
+      } catch (e) { return ''; }
+    }
+    // 单条推送的重试版：网络/超时最多重试 2 次，重复/配额/登录错误不重试
+    async function push115Retry(link, opts) {
+      opts = opts || {};
+      let res = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        res = await pushTo115(link, { silent: true });
+        if (res.ok || !res.retryable) break;
+        await new Promise(function (r) { setTimeout(r, 700 * (attempt + 1)); });
+      }
+      if (!res) res = { ok: false, message: '❌ 115 推送失败' };
+      if (!opts.silent) { try { magToast(res.message, res.ok); } catch (e) {} }
+      return res;
+    }
+    // 批量推送：并发 2，网络/超时失败自动重试 2 次；重复/配额/登录错误不重试
+    async function push115Batch(links, onProgress) {
+      const list = [];
+      (links || []).forEach(function (x) {
+        const v = String(x || '').trim();
+        if (v && list.indexOf(v) < 0) list.push(v);
+      });
+      const total = list.length;
+      let done = 0, ok = 0, fail = 0;
+      const queue = list.slice();
+      const worker = async function () {
+        while (queue.length) {
+          const link = queue.shift();
+          const res = await push115Retry(link, { silent: true });
+          done++;
+          if (res && res.ok) ok++; else fail++;
+          if (typeof onProgress === 'function') { try { onProgress(done, total, res, link); } catch (e) {} }
+        }
+      };
+      const workers = [];
+      for (let i = 0; i < Math.min(2, total); i++) workers.push(worker());
+      await Promise.all(workers);
+      return { ok: ok, fail: fail, total: total };
     }
     // whatslink 验车
     async function getMagnetInfo(magnet) {
@@ -30721,7 +30865,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           ltxSyncBtn.disabled = true;
           const oldText = ltxSyncBtn.textContent;
           ltxSyncBtn.textContent = '同步中…';
-          Promise.resolve().then(function () { return ltxSync(); }).catch(function () {}).finally(function () {
+          Promise.resolve().then(function () { return ltxSync(true); }).catch(function () {}).finally(function () {
             ltxSyncBtn.disabled = false;
             ltxSyncBtn.textContent = oldText;
           });
@@ -31118,7 +31262,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       startObserver();
       flog('融合模块已加载（媒体库跳转 / 预告片 / 磁力工具箱）');
     }
-    return { init: init, openSettings: openFusionSettings, openTrailer: openTrailerPlayer, prefetch: prefetchTrailerInBackground, push115: pushTo115, toast: magToast };
+    return { init: init, openSettings: openFusionSettings, openTrailer: openTrailerPlayer, prefetch: prefetchTrailerInBackground, push115: push115Retry, push115Batch: push115Batch, query115Status: query115Status, toast: magToast };
   })();
 
 
