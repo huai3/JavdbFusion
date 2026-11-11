@@ -24,6 +24,7 @@ const arg = (name, def) => {
   return eq >= 0 ? hit.slice(eq + 1) : true;
 };
 const OUT = path.resolve(arg('out', path.join(__dirname, 'auth', 'storage.json')));
+const START_URL = String(arg('url', 'https://javdb.com/'));
 const TIMEOUT = Number(arg('timeout', 900)) * 1000;
 const PROFILE = path.join(__dirname, 'auth', 'profile');
 
@@ -33,7 +34,7 @@ const BANNER = `
   background:rgba(16,20,28,.97);color:#e8edf6;border:1px solid rgba(120,180,255,.5);
   box-shadow:0 14px 44px rgba(0,0,0,.55);font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;">
   <div style="font-size:16px;font-weight:800;margin-bottom:4px;">JavdbFusion 登录态采集</div>
-  <div style="opacity:.85;">1）登录 <b>JAVDB</b>；2）如果要测 115 推送，另开标签页登录 <b>115.com</b>；3）都登录好后点右侧按钮。</div>
+  <div style="opacity:.85;">1）登录 <b>${START_URL}</b> 对应站点；2）如果要测 115 推送，另开标签页登录 <b>115.com</b>；3）都登录好后点右侧按钮。</div>
   <div style="margin-top:8px;font-size:12px;opacity:.6;">登录态只保存在本机 <code style="color:#9ecbff;">${OUT.replace(/</g, '&lt;')}</code>，测试结束可删除。不要把该文件提交/发给别人。</div>
   <button id="jf-capture-save" style="position:absolute;right:14px;top:12px;border:none;border-radius:9px;padding:10px 16px;
     background:#00a4dc;color:#04121a;font-weight:800;font-size:14px;cursor:pointer;">已登录，保存</button>
@@ -68,7 +69,7 @@ const BANNER = `
   };
   ctx.pages().forEach(wire);
 
-  await page.goto('https://javdb.com/', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+  await page.goto(START_URL, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
   await injectBanner(page);
   // 115 用独立标签页，方便用户分别登录
   const p115 = await ctx.newPage();
@@ -81,7 +82,7 @@ const BANNER = `
 
   console.log('=== 已打开登录窗口 ===');
   console.log('请在那个 Chromium 窗口里：');
-  console.log('  1. 登录 https://javdb.com');
+  console.log('  1. 登录 ' + START_URL);
   console.log('  2. 如需测试 115 推送，切到 115 标签页登录 https://115.com');
   console.log('  3. 回到页面，点右上角「已登录，保存」按钮');
   console.log('等待中（最长 ' + Math.round(TIMEOUT / 1000) + ' 秒）…');

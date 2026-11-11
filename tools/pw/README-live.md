@@ -64,15 +64,21 @@ node tools/pw/trailer-repeat.js SSIS-457=xJqp6 IPZZ-123=eK117r
 ```bash
 # 1. 打开真实浏览器窗口（有界面），手动登录 JAVDB；要测 115 就切到 115 标签页登录
 node tools/pw/login-capture.js
+# 镜像站示例：
+# node tools/pw/login-capture.js --url=https://javdb580.com/?vft=6 --out=tools/pw/auth/storage-580.json
 
 # 2. 登录完成后，点页面右上角「已登录，保存」
 #    生成 tools/pw/auth/storage.json（内含 Cookie，等同账号凭据，不要提交/外发）
 
 # 3. 带登录态跑全链路
 node tools/pw/live-check.js --auth=tools/pw/auth/storage.json
+# 镜像站示例：
+# node tools/pw/live-check.js https://javdb580.com/v/xJqp6 --auth=tools/pw/auth/storage-580.json
 
 # 4. 可选：真的往 115 创建一个离线任务（会实际下载，确认后再加 --push115）
-node tools/pw/live-check.js --auth=tools/pw/auth/storage.json --push115
+node tools/pw/live-check.js --auth=tools/pw/auth/storage.json
+# 镜像站示例：
+# node tools/pw/live-check.js https://javdb580.com/v/xJqp6 --auth=tools/pw/auth/storage-580.json --push115
 ```
 
 说明：

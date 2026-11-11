@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.378-polish
+// @version      7.379-mirror-ltx
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -56,6 +56,8 @@
 // @connect      javfree.me
 // @connect      javstore.net
 // @connect      blogjav.net
+// @connect      javdb580.com
+// @connect      javdb.com
 // @connect      *
 // NOTE: 末尾 * 为用户自建 Emby/Jellyfin/qBittorrent 自定义服务器地址保留（任意内网域名/IP，无法预先白名单）。
 // 实测 TM5.5 下 * 不能覆盖播放站探测请求，故公网域名必须逐个显式列出（片源可用性探测/logo 取色经 GM_xhr 发起）。
@@ -165,7 +167,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.378-polish';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.379-mirror-ltx';
   // 记录启动时的 hash 深链接：JAVDB 自己的脚本/跳转可能在 DOMContentLoaded 前就把 # 清掉
   var JF_BOOT_HASH = (location.hash || '').replace('#emby-dtab-', '');
   var tabHome = null, tabFav = null, favPanel = null;
@@ -7632,7 +7634,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       ltxBtn.dataset.bound = '1';
       ltxBtn.addEventListener('click', function (e) {
         e.preventDefault(); e.stopPropagation();
-        if (isDetailPage()) { window.open(LTX_TAG_URL, '_blank', 'noopener'); return; }
+        if (isDetailPage()) { window.open(ltxTagUrl(), '_blank', 'noopener'); return; }
         ltxOnButton(!!e.shiftKey);
       });
     }
@@ -23350,7 +23352,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
    * （/tags?c7=390）。这里按需同步标签页里的 /v/ id + 番号做本地索引，
    * 再给列表卡片加红框/LTX 角标；顶部 LTX 按钮可切换「只看 LTX」。
    * ===================================================================== */
-  const LTX_TAG_URL = 'https://javdb.com/tags?c7=390';
+  // 不要写死 javdb.com：javdb580 等镜像站有独立登录态，写死会导致标签页永远是“登录提示”。
+  const LTX_TAG_PATH = '/tags?c7=390';
+  function ltxTagUrl() { return location.origin + LTX_TAG_PATH; }
   const LTX_INDEX_KEY = 'jf_ltx_index_v1';
   const LTX_INDEX_TTL = 7 * 24 * 60 * 60 * 1000;
   let ltxIndexCache = null;
@@ -23440,11 +23444,18 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     } else btn.title = '点击同步「LTX破解」标签索引（需要登录 JAVDB）';
   }
   async function ltxFetchTagPage(page) {
-    const url = LTX_TAG_URL + '&page=' + page;
-    const html = await gmHttp.get(url, { 'Accept': 'text/html' });
+    const url = ltxTagUrl() + '&page=' + page;
+    let html = '';
+    // 同源 fetch 会带上当前镜像站（javdb580 等）的登录 Cookie，比 GM 跨域更可靠；
+    // 部分环境 CSP 阻止 fetch 时再回退 gmHttp。
+    try {
+      const r = await fetch(url, { credentials: 'include', headers: { 'Accept': 'text/html' } });
+      if (r && r.ok) html = await r.text();
+    } catch (e) {}
+    if (!html) html = await gmHttp.get(url, { 'Accept': 'text/html' });
     const head = String(html || '').slice(0, 240);
     if (/openAuthModal|location\.href\s*=\s*["']\/login/i.test(head)) {
-      const err = new Error('需要登录 JAVDB 才能读取 LTX 标签页');
+      const err = new Error('需要登录 ' + location.hostname + ' 才能读取 LTX 标签页');
       err.code = 'NEED_LOGIN';
       throw err;
     }
@@ -23522,7 +23533,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       ltxSyncing = false;
       ltxSyncPromise = null;
       ltxUpdateButton();
-      showToast(e && e.code === 'NEED_LOGIN' ? '❌ 请先登录 JAVDB 再同步 LTX' : ('❌ LTX 同步失败：' + (e && e.message || '网络错误')));
+      showToast(e && e.code === 'NEED_LOGIN' ? ('❌ 未登录当前站点（' + location.hostname + '），请先登录 JAVDB 再同步 LTX') : ('❌ LTX 同步失败：' + (e && e.message || '网络错误')));
       throw e;
     });
     return ltxSyncPromise;
@@ -31120,6 +31131,17 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         '.jf-magrow-meta{font-size:11.5px;color:rgba(230,234,242,.66);}',
         '.jf-magchip{font-size:11px;}',
         '.jf-magtool-btn{padding:6px 11px;}',
+        /* ===== 2026-11 视觉统一：更现代的卡片/顶栏 ===== */
+        'html.emby-skin{--e-r:10px;}',
+        'html.emby-skin #emby-topbar{background-image:linear-gradient(to bottom,rgba(11,14,19,.98) 0%,rgba(11,14,19,.9) 72%,rgba(11,14,19,0) 100%) !important;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);}',
+        'html.emby-skin .movie-list{gap:1.35em 1.15em !important;}',
+        'html.emby-skin .item .box{background:linear-gradient(180deg,#20242c 0%,#191c23 100%) !important;border:1px solid rgba(255,255,255,.075) !important;box-shadow:0 10px 26px rgba(0,0,0,.32) !important;}',
+        'html.emby-skin .item .box .cover{border-radius:calc(var(--e-r) - 2px) calc(var(--e-r) - 2px) 0 0 !important;}',
+        'html.emby-skin .item .box .video-title{font-size:.9em !important;padding:.7em .72em .22em !important;letter-spacing:.01em;}',
+        'html.emby-skin .item .box .video-title strong{font-weight:750 !important;letter-spacing:.015em;}',
+        'html.emby-skin .item .box .score{padding:0 .72em .2em !important;}',
+        'html.emby-skin .item .box .meta{padding:0 .72em .55em !important;}',
+        'html.emby-skin .item:hover .box{border-color:rgba(0,164,220,.42) !important;box-shadow:0 18px 40px rgba(0,0,0,.5),0 0 0 1px rgba(0,164,220,.25) !important;}',
         '.jf-magrow{padding:8px 8px 7px;border-radius:9px;margin-bottom:5px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.07);transition:background .15s;}',
         '.jf-magrow:hover{background:rgba(255,255,255,.09);}',
         '.jf-magrow-title{display:block;font-size:12.5px;line-height:1.45;color:#9ecbff;text-decoration:none;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-all;cursor:pointer;}',
