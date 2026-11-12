@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.381-light
+// @version      7.382-readable
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -167,7 +167,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.381-light';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.382-readable';
   // 记录启动时的 hash 深链接：JAVDB 自己的脚本/跳转可能在 DOMContentLoaded 前就把 # 清掉
   var JF_BOOT_HASH = (location.hash || '').replace('#emby-dtab-', '');
   var tabHome = null, tabFav = null, favPanel = null;
@@ -31247,14 +31247,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         /* ===== Apple TV 浅色模式 ===== */
         'html.emby-skin.emby-style-appletv.emby-light{--e-bg:#f5f5f7;--e-card:#ffffff;--e-hover:#ececf0;--e-text:#1d1d1f;--e-text2:#515154;--e-text3:#86868b;--e-accent:#0071e3;--e-accent-l:rgba(0,113,227,.12);--e-r:12px;}',
         'html.emby-skin.emby-style-appletv.emby-light body{background:#f5f5f7!important;color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light #emby-topbar{background:#f5f5f7!important;background-image:none!important;border-bottom:1px solid #d2d2d7!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-topbar{background:#e5e5ea!important;background-image:none!important;border-bottom:1px solid #d2d2d7!important;box-shadow:none!important;}',
         'html.emby-skin.emby-style-appletv.emby-light #emby-topbar .hb{color:#515154!important;}',
         'html.emby-skin.emby-style-appletv.emby-light #emby-topbar .logo-javdb svg path[fill="white"],html.emby-skin.emby-style-appletv.emby-light #emby-drawer .brand path[fill="white"]{fill:#1d1d1f!important;}',
         'html.emby-skin.emby-style-appletv.emby-light #emby-topbar .hb:hover{background:#e5e5ea!important;color:#1d1d1f!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .emby-home-tab{color:#6e6e73!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .emby-home-tab:hover{background:#e5e5ea!important;color:#1d1d1f!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .emby-home-tab.active{background:#1d1d1f!important;border-color:#1d1d1f!important;color:#fff!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-dtabbar{background:#f5f5f7!important;border-bottom-color:#d2d2d7!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-dtabbar{background:#e5e5ea!important;border-bottom-color:#d2d2d7!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .emby-dtab{color:#6e6e73!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .emby-dtab:hover{background:#e5e5ea!important;color:#1d1d1f!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .emby-dtab.active{background:#1d1d1f!important;border-color:#1d1d1f!important;color:#fff!important;}',
@@ -31272,7 +31272,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         'html.emby-skin.emby-style-appletv.emby-light .item .box .tags .tag{background:#f0f0f2!important;color:#515154!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .item a.box:visited .video-title,html.emby-skin.emby-style-appletv.emby-light .item a.box:visited .video-title strong{color:rgba(29,29,31,.45)!important;}',
         'html.emby-skin.emby-style-appletv.emby-light #emby-detail-bg{opacity:.10!important;filter:none!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-detail-scrim{background:linear-gradient(180deg,#f5f5f7 0%,rgba(245,245,247,.94) 55%,#f5f5f7 100%)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-detail-bg{background-color:#e8e8ec!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-detail-scrim{background:linear-gradient(180deg,#f5f5f7 0%,rgba(245,245,247,.94) 55%,#f5f5f7 100%)!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info h1,html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info{color:#1d1d1f!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info .meta,html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info .sub{color:#6e6e73!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .emby-sec,html.emby-skin.emby-style-appletv.emby-light .emby-dpane-native,html.emby-skin.emby-style-appletv.emby-light .jf-magnet-panel,html.emby-skin.emby-style-appletv.emby-light .jf-review-sec,html.emby-skin.emby-style-appletv.emby-light .jf-inline-magnet{background:#fff!important;border-color:#e5e5ea!important;box-shadow:none!important;}',
@@ -31290,12 +31291,38 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         'html.emby-skin.emby-style-appletv.emby-light .jf-review-sorts button.active{background:#1d1d1f!important;color:#fff!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .jf-review-native-btn,html.emby-skin.emby-style-appletv.emby-light .jf-review-expand,html.emby-skin.emby-style-appletv.emby-light .jf-review-more,html.emby-skin.emby-style-appletv.emby-light .jf-review-retry,html.emby-skin.emby-style-appletv.emby-light .jf-review-batch{background:#f5f5f7!important;border-color:#d2d2d7!important;color:#515154!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .jf-review-115{background:#0071e3!important;border-color:#0071e3!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-sec,html.emby-skin.emby-style-appletv.emby-light .jf-review-sec *{--e-text:#1d1d1f;--e-text2:#515154;--e-text3:#86868b;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-title{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-count{color:#6e6e73!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-item{border-top-color:#e5e5ea!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-meta{color:#86868b!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-user{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-content{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-date,html.emby-skin.emby-style-appletv.emby-light .jf-review-likes{color:#86868b!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-link{color:#0071e3!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-stars{color:#f5a623!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #reviews .review-item,html.emby-skin.emby-style-appletv.emby-light [data-movie-tab-target="reviews"] .review-item{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #reviews .review-item .content,html.emby-skin.emby-style-appletv.emby-light #reviews .review-item .content p,html.emby-skin.emby-style-appletv.emby-light [data-movie-tab-target="reviews"] .review-item .content,html.emby-skin.emby-style-appletv.emby-light [data-movie-tab-target="reviews"] .review-item .content p{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #reviews .review-item .time,html.emby-skin.emby-style-appletv.emby-light [data-movie-tab-target="reviews"] .review-item .time{color:#86868b!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #reviews .review-item .review-title,html.emby-skin.emby-style-appletv.emby-light [data-movie-tab-target="reviews"] .review-item .review-title{color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #reviews .review-item .user,html.emby-skin.emby-style-appletv.emby-light #reviews .review-item .username,html.emby-skin.emby-style-appletv.emby-light [data-movie-tab-target="reviews"] .review-item .user,html.emby-skin.emby-style-appletv.emby-light [data-movie-tab-target="reviews"] .review-item .username{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-115{color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-sorts{background:#f5f5f7!important;border-color:#d2d2d7!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-sorts button{color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-sorts button.active{background:#1d1d1f!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-sorts button:hover{color:#1d1d1f!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .toolbar .button{background:#fff!important;border-color:#d2d2d7!important;color:#515154!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .toolbar .button.is-info.is-selected,html.emby-skin.emby-style-appletv.emby-light .toolbar .button.is-selected{background:#1d1d1f!important;border-color:#1d1d1f!important;color:#fff!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .tabs li a{color:#6e6e73!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .tabs li.is-active a{background:#1d1d1f!important;color:#fff!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .tabs.no-bottom{border-bottom-color:#d2d2d7!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .jf-mag-toast{background:#1d1d1f!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv .jf-rating-tools{background:#1c1c1e!important;border-color:rgba(255,255,255,.08)!important;color:#c7c7cc!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv .jf-rating-tools select,html.emby-skin.emby-style-appletv .jf-rating-tools button{background:#2c2c2e!important;border-color:#3a3a3c!important;color:#f5f5f7!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-rating-tools{background:#fff!important;border-color:#d2d2d7!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-rating-tools select,html.emby-skin.emby-style-appletv.emby-light .jf-rating-tools button{background:#f5f5f7!important;border-color:#d2d2d7!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-rating-tools option{background:#fff!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .top250-filter-box{background:#fff!important;border-color:#e5e5ea!important;color:#515154!important;}',
 
         '.jf-magtool-btn{padding:6px 11px;}',
         /* ===== 2026-11 视觉统一：更现代的卡片/顶栏 ===== */

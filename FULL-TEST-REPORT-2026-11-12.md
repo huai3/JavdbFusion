@@ -289,3 +289,15 @@ const LTX_TAG_URL = 'https://javdb.com/tags?c7=390';
 - Apple TV 浅色：`#f5f5f7` 背景、白色卡片、`#1d1d1f` 主文字、`#0071e3` 蓝色播放按钮、浅灰分隔线。
 - 实测自动模式：系统浅色 → `emby-light`；系统深色 → `emby-dark`；强制浅色/深色不受系统影响。
 - 浅色下修正 JAVDB 白色 SVG logo；按钮、tabs、筛选条、搜索/设置弹窗、短评/磁力面板同步换色；0 JS 报错。
+
+---
+
+## 十六、7.382：浅色可读性修正
+
+用户截图反馈：短评文字看不清、顶部导航太白、详情封面两侧黑边、排行榜筛选条字体不协调。
+
+- 短评：API 列表的 `.jf-review-user/.jf-review-content` 与原生短评 `.review-item .content/.time/.review-title` 均加浅色深字覆盖；磁力链接改 Apple 蓝。
+- 顶部：浅色顶栏/详情页签条从 `#f5f5f7` 降到 `#e5e5ea`，与正文 `#f5f5f7` 形成层次；不再大片纯白。
+- 详情：用 ID 选择器覆盖 `#emby-detail-scrim`，修复浅色下仍叠黑色渐变导致的封面两侧黑边。
+- 排行榜：`.jf-rating-tools` 浅色改白底、深字、浅灰控件；标签 #1d1d1f，不再灰底灰字。
+- 复查：浅色 API 短评 20 条可读、原生短评可读、详情无黑边、排行榜筛选条正常；0 JS 报错。
