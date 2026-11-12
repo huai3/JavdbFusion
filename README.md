@@ -2,7 +2,7 @@
 
 JavdbFusion 是面向 JAVDB 的 Tampermonkey 用户脚本，融合 Emby 风格界面、Emby/Jellyfin 媒体库联动、预告片播放和磁力工具。
 
-当前版本：**7.382-readable**
+当前版本：**7.383-ed2k-space**
 
 ## 功能
 

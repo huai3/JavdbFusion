@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.382-readable
+// @version      7.383-ed2k-space
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -167,7 +167,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.382-readable';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.383-ed2k-space';
   // 记录启动时的 hash 深链接：JAVDB 自己的脚本/跳转可能在 DOMContentLoaded 前就把 # 清掉
   var JF_BOOT_HASH = (location.hash || '').replace('#emby-dtab-', '');
   var tabHome = null, tabFav = null, favPanel = null;
@@ -25777,7 +25777,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   function jfReviewLinkify(text) {
     const raw = String(text || '');
     let out = '', last = 0, m;
-    const re = /(ed2k:\/\/[^\s"'<>]+|magnet:\?[^\s"'<>]+|https?:\/\/[^\s"'<>]+)/gi;
+    // ed2k 文件名允许空格，不能按空白截断；用 | 分隔符和 32 位 hash 定界。
+    const re = /(ed2k:\/\/\|file\|[^|\r\n]+\|\d+\|[a-f0-9]{32}\|(?:\/)?|magnet:\?[^\s"'<>]+|https?:\/\/[^\s"'<>]+)/gi;
     while ((m = re.exec(raw))) {
       out += escapeHtml(raw.slice(last, m.index));
       const url = m[0];
@@ -25811,7 +25812,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       root.querySelectorAll('#reviews .review-item .content, [data-movie-tab-target="reviews"] .review-item .content').forEach(function (c) {
         if (c.dataset.jfEd2kScanned === '1') return;
         const text = c.textContent || '';
-        const links = text.match(/ed2k:\/\/[^\s"'<>]+/gi) || [];
+        const links = text.match(/ed2k:\/\/\|file\|[^|\r\n]+\|\d+\|[a-f0-9]{32}\|(?:\/)?/gi) || [];
         c.dataset.jfEd2kScanned = '1';
         if (!links.length) return;
         const row = document.createElement('div');
