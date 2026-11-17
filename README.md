@@ -1,8 +1,9 @@
-# JavdbFusion
+# JavdbFusion & 115Fusion
 
-JavdbFusion 是面向 JAVDB 的 Tampermonkey 用户脚本，融合 Emby 风格界面、Emby/Jellyfin 媒体库联动、预告片播放和磁力工具。
+面向 **JAVDB** 与 **115 网盘** 的 Apple TV+ / tvOS 18 影院级双端联动 Tampermonkey 用户脚本套件：
 
-当前版本：**7.383-ed2k-space**
+- **`JavdbFusion.user.js`（当前版本：`7.400-appletv-pro`）**：运行于 JAVDB 及镜像站，融合 Apple TV+ 影院级 UI、Emby/Jellyfin 媒体库联动、115 云盘命中检测与 **IINA / PotPlayer / mpv / Infuse** 免 Cookie 签名原画直调、离线秒传自动归档、列表海报悬停内嵌直播预告片、多维净化黑名单与五源磁力聚合。
+- **`115Fusion.user.js`（当前版本：`1.0.0-appletv-pro`）**：独立运行于 `115.com`，提供 **Apple TV+ 海报墙**、光标横向滑动实时预览 10+ 张高清剧照与灯箱、本地播放器原画直连，以及存量番号视频与外挂字幕批量自动整理归档（采用无限容量 `IndexedDB` + DMM 确定性直链零搜索预测 + 视口懒加载防风控队列，千部大目录永不失效）。
 
 ## 功能
 
@@ -49,8 +50,10 @@ JavdbFusion 是面向 JAVDB 的 Tampermonkey 用户脚本，融合 Emby 风格�
 ## 安装
 
 1. 在 Chrome、Edge 或 Firefox 安装 Tampermonkey。
-2. 打开 [GitHub Raw 脚本文件](https://raw.githubusercontent.com/huai3/JavdbFusion/main/JavdbFusion.user.js) 安装 —— 脚本的 `@updateURL` 指向同一地址，装好后可直接收到更新。
-3. 安装后访问 JAVDB，打开脚本设置并按需启用功能。
+2. 点击直链安装双端脚本（`@updateURL` 已指向同一地址，后续自动接收更新）：
+   - **JAVDB 主站端**：[安装 JavdbFusion.user.js](https://raw.githubusercontent.com/huai3/JavdbFusion/main/JavdbFusion.user.js)
+   - **115 网盘伴侣端**：[安装 115Fusion.user.js](https://raw.githubusercontent.com/huai3/JavdbFusion/main/115Fusion.user.js)
+3. 安装后访问 JAVDB 或 `115.com`，按需开启功能（两端默认均优先调用 **IINA** 免 Cookie 原画串流，Windows 用户可在设置中切换为 **PotPlayer** 或 **115 网页云播**）。
 
 > 如果同时启用了另一款会重做 JAVDB 页面样式的用户脚本，可能出现界面冲突；遇到问题时请先停用重复的皮肤脚本。
 

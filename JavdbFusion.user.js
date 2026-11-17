@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.390-appletv-pro
+// @version      7.400-appletv-pro
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -24,6 +24,8 @@
 // @connect      115.com
 // @connect      webapi.115.com
 // @connect      proapi.115.com
+// @connect      115vod.com
+// @connect      cpats01.115.com
 // @connect      subtitlecat.com
 // @connect      api-shoulei-ssl.xunlei.com
 // @connect      smovie.1pondo.tv
@@ -14217,6 +14219,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<div class="jhs-qs-label"><span class="jhs-tooltip-wrap">状态快捷标记<span class="material-symbols-outlined jhs-help-icon">help</span><span class="jhs-tip-bubble">在作品封面提供「想看/已看评分」快捷标记按钮与多源超清预览大图弹窗</span></span></div>' +
             '<div class="jhs-qs-control"><input type="checkbox" id="qs-plugin-quickStatusPreview" class="mini-switch"></div>' +
           '</div>' +
+          '<div class="jhs-qs-row">' +
+            '<div class="jhs-qs-label"><span class="jhs-tooltip-wrap">悬停内嵌预告<span class="material-symbols-outlined jhs-help-icon">help</span><span class="jhs-tip-bubble">Apple TV+ 风格：光标悬停卡片海报约 1 秒后，直接在圆角海报内静音淡入播放预告片（开启时自动替代悬停放大气泡）</span></span></div>' +
+            '<div class="jhs-qs-control"><input type="checkbox" id="qs-inline-trailer" class="mini-switch"></div>' +
+          '</div>' +
         '</div>' +
         '<div class="jhs-qs-section">' +
           '<div class="jhs-qs-section-title">常用布局</div>' +
@@ -14308,6 +14314,16 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         });
       }
     });
+
+    const qInlineTr = pop.querySelector('#qs-inline-trailer');
+    if (qInlineTr) {
+      qInlineTr.addEventListener('change', function () {
+        GM_setValue('jf_inline_hover_trailer', qInlineTr.checked);
+        if (qInlineTr.checked) dfPopupHide();
+        else if (typeof window.__jfInlineHoverStop === 'function') window.__jfInlineHoverStop();
+        syncSettingsControls();
+      });
+    }
 
     const qLayout = pop.querySelector('#qs-layout');
     if (qLayout) {
@@ -14451,6 +14467,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           '<div class="jhs-side-item active" data-tab="appearance"><span class="material-symbols-outlined" style="font-size:16px;">palette</span> 外观与显示</div>' +
           '<div class="jhs-side-item" data-tab="plugins"><span class="material-symbols-outlined" style="font-size:16px;">extension</span> 插件管理</div>' +
           '<div class="jhs-side-item" data-tab="sites"><span class="material-symbols-outlined" style="font-size:16px;">smart_display</span> 外部网站</div>' +
+          '<div class="jhs-side-item" data-tab="purity"><span class="material-symbols-outlined" style="font-size:16px;">shield</span> 净化与屏蔽</div>' +
           '<div class="jhs-side-item" data-tab="webdav"><span class="material-symbols-outlined" style="font-size:16px;">cloud_sync</span> 云端备份 (WebDAV/Git)</div>' +
           '<div class="jhs-side-item" data-tab="data"><span class="material-symbols-outlined" style="font-size:16px;">database</span> 数据管理</div>' +
           '<div class="jhs-side-item" data-tab="diagnostics"><span class="material-symbols-outlined" style="font-size:16px;">query_stats</span> 统计中心</div>' +
@@ -14492,6 +14509,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<div class="jhs-item-row">' +
               '<div class="jhs-item-info"><div class="jhs-item-name">液态折射强度 (<span id="full-liquid-val">50%</span>)</div><div class="jhs-item-desc">仅液态玻璃生效：边缘晶体透镜微折射力度（内置物理安全限幅防撕裂）</div></div>' +
               '<div style="width:160px;"><input type="range" id="full-liquid" min="0" max="100" step="1" style="width:100%;"></div>' +
+            '</div>' +
+            '<div class="jhs-item-row">' +
+              '<div class="jhs-item-info"><div class="jhs-item-name">Apple TV 海报悬停内嵌直播预告片</div><div class="jhs-item-desc">光标悬停卡片海报约 1 秒自动在圆角海报内静音淡入播放预告片（开启时自动替代悬停放大气泡）</div></div>' +
+              '<div><input type="checkbox" id="full-inline-trailer" class="mini-switch"></div>' +
             '</div>' +
             '<div class="jhs-item-row">' +
               '<div class="jhs-item-info"><div class="jhs-item-name">悬停大图延迟 (<span id="full-dfdelay-val">0.8s</span>)</div><div class="jhs-item-desc">鼠标悬停封面等待弹出时长</div></div>' +
@@ -14583,6 +14604,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
                 '<button type="button" id="btn-add-preview-site" class="jhs-btn jhs-btn-primary"><span class="material-symbols-outlined" style="font-size:14px;">add</span> 添加预览站点</button>' +
               '</div>' +
             '</div>' +
+          '</div>' +
+          // 3.5 净化与屏蔽
+          '<div class="jhs-panel" id="panel-purity">' +
+            '<div class="jhs-panel-title"><span class="material-symbols-outlined">shield</span> 多维净化与黑名单屏蔽</div>' +
+            '<div style="font-size:12px;color:var(--e-text2,#888);margin-bottom:14px;line-height:1.6;">精准过滤不想看到的演员、番号前缀、题材关键词或低分作品。在番号详情页按住 <code>Alt</code> 点击演员或类别标签即可一键加入黑名单。</div>' +
+            '<div id="jf-purity-settings-mount"></div>' +
           '</div>' +
           '<div class="jhs-panel" id="panel-webdav">' +
             '<div class="jhs-panel-title"><span class="material-symbols-outlined">cloud_sync</span> 云端备份与恢复 (WebDAV & Git)</div>' +
@@ -14733,6 +14760,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           target.classList.add('active');
           if (tab === 'meta-correct') renderFullMetaCorrectList(mask);
           if (tab === 'sites') renderFullPreviewSiteList(mask);
+          if (tab === 'purity' && typeof window.__jfRenderPuritySettings === 'function') window.__jfRenderPuritySettings(mask);
         }
       });
     });
@@ -14855,6 +14883,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       fReduce.addEventListener('change', function () {
         localStorage.setItem(SET_KEYS.reduceMotion, fReduce.checked ? '1' : '0');
         applySettings();               // 重建皮肤 CSS（剥掉 transition/animation/backdrop-filter）
+        syncSettingsControls();
+      });
+    }
+    const fInlineTr = mask.querySelector('#full-inline-trailer');
+    if (fInlineTr) {
+      fInlineTr.addEventListener('change', function () {
+        GM_setValue('jf_inline_hover_trailer', fInlineTr.checked);
+        if (fInlineTr.checked) dfPopupHide();
+        else if (typeof window.__jfInlineHoverStop === 'function') window.__jfInlineHoverStop();
         syncSettingsControls();
       });
     }
@@ -15999,6 +16036,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (qN) qN.checked = localStorage.getItem(SET_KEYS.showNotes) !== '0';
       const qRM = pop.querySelector('#qs-reduce-motion');
       if (qRM) qRM.checked = localStorage.getItem(SET_KEYS.reduceMotion) === '1';
+      const qIT = pop.querySelector('#qs-inline-trailer');
+      if (qIT) qIT.checked = GM_getValue('jf_inline_hover_trailer', true) !== false;
     }
 
     const blur = parseInt(localStorage.getItem(SET_KEYS.blur), 10);
@@ -16067,6 +16106,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (fco) fco.checked = localStorage.getItem(SET_KEYS.expandCoact) === '1';
       const frd = mask.querySelector('#full-reducemotion');
       if (frd) frd.checked = localStorage.getItem(SET_KEYS.reduceMotion) === '1';
+      const fit = mask.querySelector('#full-inline-trailer');
+      if (fit) fit.checked = GM_getValue('jf_inline_hover_trailer', true) !== false;
 
       const wu = mask.querySelector('#wd-url');
       if (wu) wu.value = localStorage.getItem('javdb_webdav_url') || '';
@@ -16579,6 +16620,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     dfPopupHide();
     dfPopup.item = item;
     dfPopup.x = mx; dfPopup.y = my;
+    // 若开启 Apple TV 海报悬停内嵌直播预告片，优先启动内嵌直播并静默抑制放大气泡，互不打架
+    if (typeof window.__jfInlineHoverStart === 'function' && window.__jfInlineHoverStart(item)) return;
     if (!dfPreviewOn()) return; // 全局开关关闭：不弹大图（动态聚焦的宫格缩放不受影响）
     const delay = dfPreviewDelayMs();
     dfPopup.timer = setTimeout(function () {
@@ -16609,6 +16652,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     grid.addEventListener('mouseleave', function () {
       updateDynamicFocusGrid(grid, null);
       dfPopupHide();
+      if (typeof window.__jfInlineHoverStop === 'function') window.__jfInlineHoverStop();
     });
   }
 
@@ -16713,6 +16757,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       const coverEl = box.querySelector('.cover');
       if (coverEl) coverEl.style.transform = '';
       dfPopupHide(); // 移出卡片立即收气泡/遮罩（全局 mousemove 兜底之外再加一道即时回收）
+      if (typeof window.__jfInlineHoverStop === 'function') window.__jfInlineHoverStop();
     });
   }
 
@@ -29461,7 +29506,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     }
 
     /* =======================================================================
-     * 115 网盘整理模块（参考 JAV老司机 的「离线后整理 / 自动清理并改名」）
+     * 115 网盘深度联动与自动归档引擎（v7.400：云播探测 / IINA·PotPlayer原画直调 / 真实元数据归档）
      * ===================================================================== */
     const Pan115 = (function () {
       const CONF = {
@@ -29469,11 +29514,57 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         fileTpl: 'jf_115_file_tpl',
         folderTpl: 'jf_115_folder_tpl',
         autoOrganize: 'jf_115_offline_organize',
-        autoClean: 'jf_115_auto_clean'
+        autoSilentArchive: 'jf_115_silent_archive',
+        autoClean: 'jf_115_auto_clean',
+        playBtn: 'jf_115_play_btn',
+        defaultPlayer: 'jf_115_default_player'
       };
+      const HIT_CODES_KEY = 'jf_115_hit_codes_v1';
       const DEF_DIR_TPL = '云下载/${actor}';
-      const DEF_FILE_TPL = '${code} ${title}';
+      const DEF_FILE_TPL = '${code}${cnsub}${suffix} ${title}';
       const DEF_FOLDER_TPL = '${code}';
+      const videoHitMem = new Map();
+      const streamUrlMem = new Map();
+      let hitCodeSetCache = null;
+
+      function getHitCodeSet() {
+        if (hitCodeSetCache) return hitCodeSetCache;
+        hitCodeSetCache = new Set();
+        [function () { return GM_getValue(HIT_CODES_KEY, '[]'); }, function () { return localStorage.getItem(HIT_CODES_KEY) || '[]'; }].forEach(function (reader) {
+          try {
+            const raw = reader();
+            const arr = Array.isArray(raw) ? raw : JSON.parse(raw || '[]');
+            (arr || []).forEach(function (c) {
+              const n = normalizeCode(c);
+              if (n) hitCodeSetCache.add(n);
+            });
+          } catch (e) {}
+        });
+        return hitCodeSetCache;
+      }
+      function markCodeHit115(code, hit) {
+        const norm = normalizeCode(code);
+        if (!norm) return;
+        const s = getHitCodeSet();
+        const had = s.has(norm);
+        if (hit && !had) {
+          s.add(norm);
+          const arr = Array.from(s);
+          if (arr.length > 5000) arr.splice(0, arr.length - 5000);
+          const ser = JSON.stringify(arr);
+          try { GM_setValue(HIT_CODES_KEY, ser); } catch (e) {}
+          try { localStorage.setItem(HIT_CODES_KEY, ser); } catch (e) {}
+        } else if (!hit && had) {
+          s.delete(norm);
+          const ser = JSON.stringify(Array.from(s));
+          try { GM_setValue(HIT_CODES_KEY, ser); } catch (e) {}
+          try { localStorage.setItem(HIT_CODES_KEY, ser); } catch (e) {}
+        }
+      }
+      function hasCachedHit(code) {
+        const norm = normalizeCode(code);
+        return norm ? getHitCodeSet().has(norm) : false;
+      }
 
       function conf() {
         return {
@@ -29481,10 +29572,49 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           fileTpl: GM_getValue(CONF.fileTpl, DEF_FILE_TPL) || DEF_FILE_TPL,
           folderTpl: GM_getValue(CONF.folderTpl, DEF_FOLDER_TPL) || DEF_FOLDER_TPL,
           autoOrganize: GM_getValue(CONF.autoOrganize, false) === true,
-          autoClean: GM_getValue(CONF.autoClean, false) === true
+          autoSilentArchive: GM_getValue(CONF.autoSilentArchive, false) === true,
+          autoClean: GM_getValue(CONF.autoClean, true) !== false,
+          playBtn: GM_getValue(CONF.playBtn, true) !== false,
+          defaultPlayer: GM_getValue(CONF.defaultPlayer, 'iina') || 'iina'
         };
       }
       function setConf(k, v) { GM_setValue(k, v); }
+
+      function formatBytes(bytes) {
+        const b = Number(bytes || 0);
+        if (!b || b <= 0) return '0 B';
+        if (b >= 1073741824) return (b / 1073741824).toFixed(2).replace(/\.00$/, '') + ' GB';
+        if (b >= 1048576) return Math.round(b / 1048576) + ' MB';
+        if (b >= 1024) return Math.round(b / 1024) + ' KB';
+        return b + ' B';
+      }
+
+      // 精确映射 2026 版 115 webapi.115.com/files 与 files/search 字段：
+      // 文件拥有 fid（此时 cid 为父目录 ID），文件夹无 fid（此时 cid 为文件夹自身 ID，pid 为父目录 ID）
+      function map115Item(it) {
+        const isFile = Boolean(it && it.fid);
+        const name = String((it && (it.n || it.file_name)) || '');
+        const size = Number((it && it.s != null) ? it.s : ((it && it.size) || 0));
+        const pickcode = String((it && (it.pc || it.pick_code || it.video_id)) || '');
+        const ext = (name.match(/\.([a-z0-9]{2,5})$/i) || ['', String((it && it.ico) || '')])[1].toLowerCase();
+        const isVideo = isFile && Boolean((it && it.iv === 1) || /^(mp4|mkv|avi|wmv|mov|ts|m2ts|iso|flv|webm|rmvb|m4v)$/i.test(ext));
+        const isSub = isFile && /^(srt|ass|ssa|vtt|sub|idx)$/i.test(ext);
+        return {
+          id: String(isFile ? it.fid : ((it && (it.cid || it.file_id)) || '')),
+          fid: isFile ? String(it.fid) : '',
+          cid: String(isFile ? (it.cid || '0') : ((it && it.cid) || '')),
+          parentCid: String(isFile ? (it.cid || '0') : ((it && (it.pid || '0')) || '0')),
+          name: name,
+          size: isNaN(size) ? 0 : size,
+          pickcode: pickcode,
+          ext: ext,
+          dir: !isFile && Boolean(it && it.cid),
+          isFile: isFile,
+          isVideo: isVideo,
+          isSub: isSub,
+          duration: Number((it && it.play_long) || 0)
+        };
+      }
 
       // 115 签名（离线接口与部分 webapi 都需要）
       async function sign() {
@@ -29502,53 +29632,283 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       function postForm(url, params, label) {
         return gmReq({
           url: url, method: 'POST', timeout: 15000,
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Origin': 'https://115.com', 'Referer': 'https://115.com/' },
           data: Object.keys(params).map(function (k) {
             return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
           }).join('&')
         }).then(function (r) {
           const j = JSON.parse(r.responseText || '{}');
-          if (j.state === false) throw new Error((label || '115') + '失败: ' + (j.error_msg || j.msg || '未知'));
+          if (j.state === false) throw new Error((label || '115') + '失败: ' + (j.error_msg || j.error || j.msg || '未知'));
           return j.data !== undefined ? j.data : j;
         });
       }
 
-      // 列目录
+      // 列目录（修复字段映射：保留真实 fid、parentCid、size、pickcode、isVideo）
       async function listDir(cid) {
         const url = 'https://webapi.115.com/files?aid=1&cid=' + encodeURIComponent(cid || '0') +
-          '&offset=0&limit=500&show_file_size=1&o=file_name&asc=1&fc=0';
-        const r = await gmReq({ url: url, timeout: 15000, headers: { 'Accept': 'application/json' } });
-        const j = JSON.parse(r.responseText || '{}');
-        if (j.state === false) throw new Error(j.error_msg || '列目录失败');
-        return (j.data || []).map(function (it) {
-          return { id: String(it.cid || it.file_id || ''), name: it.file_name || '', dir: it.file_category === 1, size: it.sha1 ? (it.size || 0) : (it.size || 0), isFile: it.file_category !== 1 };
-        });
+          '&offset=0&limit=500&show_dir=1&o=file_name&asc=1&natsort=1&format=json';
+        const r = await gmReq({ url: url, timeout: 15000, headers: { 'Accept': 'application/json', 'Referer': 'https://115.com/' } });
+        const txt = r.responseText || '{}';
+        if (txt.trim().indexOf('<') === 0) throw new Error('115 未登录或会话已过期');
+        const j = JSON.parse(txt);
+        if (j.state === false && j.errNo !== 0) throw new Error(j.error || j.error_msg || '列目录失败');
+        return (j.data || []).map(map115Item);
       }
 
-      // 新建目录
+      // 新建单层目录
       async function mkdir(parentCid, name) {
         return postForm('https://webapi.115.com/files/add', { pid: parentCid || '0', cname: name }, '新建目录');
+      }
+      // 幂等创建/查找多级目录路径（如「云下载/博多彩葉」），存在同名目录时直接复用，绝不报错或重复创建
+      async function ensureDirPath(baseCid, rawPath) {
+        const segs = String(rawPath || '').split(/[\/\\]+/).map(function (s) {
+          return s.replace(/[:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+        }).filter(Boolean);
+        let curCid = String(baseCid || '0').trim() || '0';
+        for (const seg of segs) {
+          const children = await listDir(curCid);
+          const existing = children.find(function (c) { return c.dir && c.name === seg; });
+          if (existing && existing.cid) {
+            curCid = existing.cid;
+          } else {
+            const mk = await mkdir(curCid, seg);
+            const nextCid = String((mk && (mk.cid || mk.file_id || mk.category_id || mk.id)) || '');
+            if (!nextCid) throw new Error('无法创建目录：' + seg);
+            curCid = nextCid;
+          }
+        }
+        return curCid;
       }
       // 改名
       async function rename(fid, name) {
         return postForm('https://webapi.115.com/files/edit', { fid: fid, file_name: name }, '改名');
       }
-      // 移动
+      // 移动（兼容多文件 fid 数组）
       async function move(fids, cid) {
-        return postForm('https://webapi.115.com/files/move', { 'fids[]': fids.join(','), cid: cid }, '移动');
-      }
-      // 删除
-      async function remove(fids) {
-        return postForm('https://webapi.115.com/rb/delete', { 'ids[]': fids.join(',') }, '删除');
-      }
-      // 搜索（按番号找已下载的文件）
-      async function search(kw) {
-        const r = await gmReq({ url: 'https://webapi.115.com/files/search?search_value=' + encodeURIComponent(kw) + '&offset=0&limit=50', timeout: 15000, headers: { 'Accept': 'application/json' } });
-        const j = JSON.parse(r.responseText || '{}');
-        if (j.state === false) throw new Error(j.error_msg || '搜索失败');
-        return (j.data || []).map(function (it) {
-          return { id: String(it.cid || it.file_id || ''), name: it.file_name || '', pickcode: it.video_id || '', size: it.size || 0, isFile: true };
+        const list = (fids || []).filter(Boolean);
+        if (!list.length) return null;
+        const body = list.map(function (id, idx) {
+          return encodeURIComponent('fid[' + idx + ']') + '=' + encodeURIComponent(id);
+        }).concat(['to_cid=' + encodeURIComponent(cid)]).join('&');
+        const r = await gmReq({
+          url: 'https://webapi.115.com/files/move', method: 'POST', timeout: 15000,
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Origin': 'https://115.com', 'Referer': 'https://115.com/' },
+          data: body
         });
+        const j = JSON.parse(r.responseText || '{}');
+        if (j.state === false) throw new Error('移动失败: ' + (j.error_msg || j.error || j.msg || '未知'));
+        return j;
+      }
+      // 删除进回收站
+      async function remove(fids, parentCid) {
+        const list = (fids || []).filter(Boolean);
+        if (!list.length) return null;
+        const body = list.map(function (id, idx) {
+          return encodeURIComponent('fid[' + idx + ']') + '=' + encodeURIComponent(id);
+        }).concat(parentCid ? ['pid=' + encodeURIComponent(parentCid)] : []).concat(['ignore_warn=1']).join('&');
+        const r = await gmReq({
+          url: 'https://webapi.115.com/rb/delete', method: 'POST', timeout: 15000,
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Origin': 'https://115.com', 'Referer': 'https://115.com/' },
+          data: body
+        });
+        const j = JSON.parse(r.responseText || '{}');
+        if (j.state === false) throw new Error('删除失败: ' + (j.error_msg || j.error || j.msg || '未知'));
+        return j;
+      }
+      // 搜索（按番号找已存在的文件与文件夹）
+      async function search(kw) {
+        const r = await gmReq({
+          url: 'https://webapi.115.com/files/search?search_value=' + encodeURIComponent(kw) + '&offset=0&limit=50&format=json',
+          timeout: 15000, headers: { 'Accept': 'application/json', 'Referer': 'https://115.com/' }
+        });
+        const txt = r.responseText || '{}';
+        if (txt.trim().indexOf('<') === 0) throw new Error('115 未登录');
+        const j = JSON.parse(txt);
+        if (j.state === false) throw new Error(j.error || j.error_msg || '搜索失败');
+        return (j.data || []).map(map115Item);
+      }
+
+      // 从文件名/文件夹名抽番号（兼容前缀域名如 489155.com@SSIS-858-LTX.mp4、FC2-PPV-1234567 等）
+      function codeOf(name) {
+        let s = String(name || '').replace(/^[a-z0-9.-]+\.(?:com|net|org|me|cc|tv|xyz|info|vip|la|pw|top)@/i, '');
+        s = s.replace(/\.[a-z0-9]{2,5}$/i, '');
+        const fc2 = s.match(/FC2[-_ ]?(?:PPV[-_ ]?)?(\d{5,8})/i);
+        if (fc2) return 'FC2-' + fc2[1];
+        const m = s.match(/(?:^|[^A-Za-z0-9])([A-Za-z]{2,10}|[0-9]{2,4}[A-Za-z]{2,6})[-_]?(\d{2,6})(?=[^0-9]|$)/);
+        return m ? (m[1].toUpperCase() + '-' + m[2]) : '';
+      }
+      function matchesMovieCode(text, targetCode) {
+        const normTarget = normalizeCode(targetCode);
+        if (!normTarget) return false;
+        const extracted = normalizeCode(codeOf(text));
+        if (extracted && extracted === normTarget) return true;
+        const parts = normTarget.split('-');
+        if (parts.length === 2) {
+          const re = new RegExp('(?:^|[^A-Za-z0-9])' + parts[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[-_0]*' + parts[1].replace(/^0+(?=\d)/, '') + '(?=[^0-9]|$)', 'i');
+          return re.test(String(text || ''));
+        }
+        return false;
+      }
+
+      // 按番号在 115 云盘精准查找视频文件（直接命中文件 + 自动下钻匹配番号文件夹）
+      async function findVideosByCode(code, force) {
+        const norm = normalizeCode(code);
+        if (!norm) return [];
+        if (!force && videoHitMem.has(norm)) {
+          const cached = videoHitMem.get(norm);
+          if (Date.now() - cached.ts < 5 * 60 * 1000) return cached.items;
+        }
+        const items = await search(norm);
+        const videos = [];
+        const seenFid = new Set();
+        const addVideo = function (v) {
+          if (!v || !v.isVideo || !v.pickcode || seenFid.has(v.fid)) return;
+          // 排除 < 40MB 的样片预告，保留正片
+          if (v.size > 0 && v.size < 40 * 1048576 && /sample|preview|trailer/i.test(v.name)) return;
+          seenFid.add(v.fid);
+          videos.push(v);
+        };
+        items.forEach(function (it) {
+          if (it.isVideo && matchesMovieCode(it.name, norm)) addVideo(it);
+        });
+        const matchedDirs = items.filter(function (it) {
+          return it.dir && it.cid && matchesMovieCode(it.name, norm);
+        }).slice(0, 3);
+        for (const dir of matchedDirs) {
+          try {
+            const sub = await listDir(dir.cid);
+            sub.forEach(function (f) {
+              if (f.isVideo && (matchesMovieCode(f.name, norm) || f.size >= 150 * 1048576)) addVideo(f);
+            });
+          } catch (e) {}
+        }
+        videos.sort(function (a, b) { return (b.size || 0) - (a.size || 0); });
+        videoHitMem.set(norm, { ts: Date.now(), items: videos });
+        markCodeHit115(norm, videos.length > 0);
+        return videos;
+      }
+
+      // 解析 115 签名原画 M3U8 直链（免 Cookie / 免自定义 UA 直喂 IINA / PotPlayer / mpv / Infuse）
+      async function resolveStreamUrl(pickcode) {
+        const pc = String(pickcode || '').trim();
+        if (!pc) throw new Error('缺少 pickcode');
+        if (streamUrlMem.has(pc)) {
+          const hit = streamUrlMem.get(pc);
+          if (Date.now() - hit.ts < 8 * 60 * 1000) return hit.url;
+        }
+        const r = await gmReq({
+          url: 'https://115.com/api/video/m3u8/' + encodeURIComponent(pc) + '.m3u8',
+          timeout: 12000,
+          headers: { 'Accept': '*/*', 'Referer': 'https://115vod.com/' }
+        });
+        const txt = String(r.responseText || '').trim();
+        if (txt.indexOf('#EXTM3U') < 0) {
+          let errMsg = '115 未返回视频流（请确认账号已登录且视频已完成云端转码）';
+          try {
+            const j = JSON.parse(txt);
+            if (j && (j.error || j.msg)) errMsg = j.error || j.msg;
+          } catch (e) {}
+          throw new Error(errMsg);
+        }
+        const lines = txt.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
+        let bestUrl = '';
+        let bestBw = -1;
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].indexOf('#EXT-X-STREAM-INF') === 0) {
+            const bwMatch = lines[i].match(/BANDWIDTH=(\d+)/i);
+            const bw = bwMatch ? parseInt(bwMatch[1], 10) : 0;
+            const nextLine = lines[i + 1] || '';
+            if (/^https?:\/\//i.test(nextLine) && bw >= bestBw) {
+              bestBw = bw;
+              bestUrl = nextLine;
+            }
+          } else if (!bestUrl && /^https?:\/\//i.test(lines[i])) {
+            bestUrl = lines[i];
+          }
+        }
+        if (!bestUrl) throw new Error('未能从 M3U8 清单提取有效串流地址');
+        streamUrlMem.set(pc, { ts: Date.now(), url: bestUrl });
+        return bestUrl;
+      }
+
+      function buildExternalPlayerHref(player, streamUrl) {
+        const p = String(player || '').toLowerCase();
+        if (p === 'iina') return 'iina://weblink?url=' + encodeURIComponent(streamUrl);
+        if (p === 'potplayer') return 'potplayer://' + streamUrl;
+        if (p === 'mpv') return 'mpv://' + streamUrl;
+        if (p === 'vlc') return 'vlc://' + streamUrl;
+        if (p === 'infuse') return 'infuse://x-callback-url/play?url=' + encodeURIComponent(streamUrl);
+        return streamUrl;
+      }
+
+      async function launchExternalPlayer(player, pickcode, label) {
+        try {
+          magToast('⏳ 正在向 115 请求最高码率签名串流…', true);
+          const streamUrl = await resolveStreamUrl(pickcode);
+          if (player === 'copy') {
+            GM_setClipboard(streamUrl);
+            magToast('✅ 已复制 115 签名原画 M3U8 串流直链', true);
+            return;
+          }
+          const href = buildExternalPlayerHref(player, streamUrl);
+          const a = document.createElement('a');
+          a.href = href;
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(function () { a.remove(); }, 600);
+          magToast('🎬 已唤起 ' + (label || player.toUpperCase()) + ' 串流播放', true);
+        } catch (e) {
+          magToast('❌ 外部播放器唤起失败：' + (e && e.message ? e.message : '未知错误'), false);
+        }
+      }
+
+      // 提取当前 JAVDB 详情页真实元数据（演员 / 片商 / 系列 / 导演 / 年份 / 标题 / 中字）
+      function extractPageMeta() {
+        const meta = { code: '', actor: '', actors: '', maker: '', series: '', director: '', date: '', year: '', cleanTitle: '', cnsub: '' };
+        try {
+          if (typeof isDetailPage === 'function' && !isDetailPage()) return meta;
+          const code = (typeof currentPageCode === 'function' ? currentPageCode() : '') || '';
+          meta.code = code;
+          const actorList = [];
+          document.querySelectorAll('#emby-detail-root .emby-actor-chip:not(.is-male)').forEach(function (chip) {
+            const nm = (chip.getAttribute('data-actor-name') || (chip.querySelector('.nm') ? chip.querySelector('.nm').textContent : '') || '').replace(/[\u2640\u2642]/g, '').trim();
+            if (nm && actorList.indexOf(nm) < 0) actorList.push(nm);
+          });
+          if (!actorList.length) {
+            document.querySelectorAll('.movie-panel-info .panel-block a[href*="/actors/"]').forEach(function (a) {
+              const nextSym = a.nextElementSibling;
+              if (nextSym && nextSym.classList && nextSym.classList.contains('male')) return;
+              const nm = (a.textContent || '').replace(/[\u2640\u2642]/g, '').trim();
+              if (nm && actorList.indexOf(nm) < 0) actorList.push(nm);
+            });
+          }
+          meta.actor = actorList[0] || '佚名';
+          meta.actors = actorList.slice(0, 4).join(' ') || meta.actor;
+
+          const pickFirstLink = function (sel) {
+            const el = document.querySelector('#emby-detail-root ' + sel) || document.querySelector('.movie-panel-info ' + sel);
+            return el ? (el.textContent || '').trim() : '';
+          };
+          meta.maker = pickFirstLink('a[href*="/makers/"]');
+          meta.series = pickFirstLink('a[href*="/series/"]');
+          meta.director = pickFirstLink('a[href*="/directors/"]');
+
+          const bodyTxt = ((document.querySelector('.movie-panel-info') || document.querySelector('#emby-detail-root') || {}).textContent) || '';
+          const dm = bodyTxt.match(/\b(20\d{2}|19\d{2})-(\d{2})-(\d{2})\b/);
+          if (dm) {
+            meta.date = dm[0];
+            meta.year = dm[1];
+          }
+          const titleEl = document.querySelector('.current-title') || document.querySelector('#emby-detail-root h1') || document.querySelector('h2.title.is-4 strong:nth-of-type(2)');
+          if (titleEl) {
+            let t = (titleEl.textContent || '').trim();
+            if (code) t = t.replace(new RegExp('^' + code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*', 'i'), '').trim();
+            meta.cleanTitle = t.slice(0, 90);
+          }
+          if (/中文字幕/.test(bodyTxt)) meta.cnsub = '-C';
+        } catch (e) {}
+        return meta;
       }
 
       /* ---- 模板引擎 ---- */
@@ -29556,133 +29916,333 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         return String(tpl || '').replace(/\$\{(\w+)\}/g, function (all, k) {
           const v = vars[k];
           return (v === undefined || v === null || v === '') ? '' : String(v);
-        }).replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+        }).replace(/[\\:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
       }
-      // 从文件名里抽番号
-      function codeOf(name) {
-        const m = String(name || '').match(/([A-Za-z0-9]{2,})[-_]?(\d{2,6})/);
-        return m ? (m[1].toUpperCase() + '-' + m[2]) : '';
-      }
-      // 保留 -U / -4K 之类的后缀
       function suffixOf(name) {
-        const m = String(name || '').match(/((?:-|_)(?:U|UC|UW|4K|2K|HEVC|X264|X265|FHD|HD|1080|720)[A-Za-z0-9]*)/i);
-        return m ? m[1] : '';
+        const m = String(name || '').match(/((?:-|_)(?:LTX|U|UC|UW|4K|2K|HEVC|X264|X265|FHD|HD|1080P?|720P?)[A-Za-z0-9]*)/i);
+        return m ? m[1].toUpperCase() : '';
       }
       function varsFor(code, name, extra) {
+        const realCode = code || codeOf(name);
+        const pageMeta = extractPageMeta();
+        const usePage = pageMeta.code && normalizeCode(pageMeta.code) === normalizeCode(realCode);
+        const rawBase = String(name || '')
+          .replace(/^[a-z0-9.-]+\.(?:com|net|org|me|cc|tv|xyz|info|vip|la|pw|top)@/i, '')
+          .replace(/\.[a-z0-9]{2,5}$/i, '');
+        const hasCnsubInName = /(?:[-_.]c|[-_.]ch|ch|cnsub|中字|中文字幕)(?:[-_.]|$)/i.test(rawBase);
         const v = {
-          code: code || codeOf(name),
-          title: String(name || '').replace(/\.[a-z0-9]{2,4}$/i, ''),
+          code: realCode,
+          actor: usePage ? pageMeta.actor : '佚名',
+          actors: usePage ? pageMeta.actors : '佚名',
+          maker: usePage ? pageMeta.maker : '',
+          series: usePage ? pageMeta.series : '',
+          director: usePage ? pageMeta.director : '',
+          date: usePage ? pageMeta.date : '',
+          year: usePage ? pageMeta.year : '',
+          title: (usePage && pageMeta.cleanTitle) ? pageMeta.cleanTitle : rawBase,
+          raw_name: rawBase,
+          cnsub: hasCnsubInName ? '-C' : (usePage ? pageMeta.cnsub : ''),
           suffix: suffixOf(name),
-          crack: /破解|无码|uncensored/i.test(name) ? '无码' : '',
-          res: /4k|2160/i.test(name) ? '4K' : (/1080|720|hd/i.test(name) ? 'HD' : '')
+          crack: /破解|无码|uncensored|[-_]u(?:c|w)?\b/i.test(rawBase) ? '无码' : '',
+          res: /4k|2160/i.test(rawBase) ? '4K' : (/1080|fhd/i.test(rawBase) ? '1080P' : (/720|hd/i.test(rawBase) ? 'HD' : ''))
         };
-        if (extra) Object.keys(extra).forEach(function (k) { v[k] = extra[k]; });
+        if (extra) {
+          Object.keys(extra).forEach(function (k) {
+            if (extra[k] !== undefined && extra[k] !== '') v[k] = extra[k];
+          });
+        }
         return v;
       }
-      // 垃圾文件判定：0 字节 / 样片 / 广告 / 预览图
+      // 根据模板生成新文件名，自动保留原始扩展名及外挂字幕语言后缀（如 .zh.srt / .chs.ass）
+      function buildTargetFileName(tpl, code, fileObj, extra) {
+        const origName = String((fileObj && fileObj.name) || fileObj || '');
+        const extMatch = origName.match(/(\.(?:zh|chs|cht|jpn|ja|en|sc|tc|big5|gb))?\.([a-z0-9]{2,5})$/i);
+        const subLang = (extMatch && fileObj && fileObj.isSub && extMatch[1]) ? extMatch[1] : '';
+        const ext = extMatch ? extMatch[2].toLowerCase() : ((fileObj && fileObj.ext) || '');
+        let base = pickTpl(tpl, varsFor(code, origName, extra)).replace(/\//g, ' ').trim();
+        if (!base) return origName;
+        if (ext && base.toLowerCase().endsWith('.' + ext)) {
+          base = base.slice(0, -(ext.length + 1));
+        }
+        return ext ? (base + subLang + '.' + ext) : base;
+      }
+
+      // 安全垃圾文件判定：绝不误判目录或 >= 50MB 的正片视频！仅清理 0 字节及 < 50MB 的广告/样片/推广杂项
       function isJunk(it) {
+        if (!it || !it.isFile || it.dir) return false;
+        const size = Number(it.size || 0);
+        if (size >= 50 * 1048576) return false;
+        if (it.isSub) return false;
         const n = String(it.name || '').toLowerCase();
-        if (it.size === 0) return true;
-        if (/sample|preview|广告|ad[-_. ]?ver|readme|nfo|txt$|\.url$|\.rar$/.test(n)) return true;
+        if (size === 0) return true;
+        if (/sample|preview|trailer|广告|宣传|福利|最新地址|网址|扫码|直播|美女荷官|澳门|赌场|ad[-_. ]?ver|readme|\.nfo$|\.txt$|\.url$|\.html?$|\.htm$|\.mht$|\.apk$|\.chm$|\.torrent$|\.jpg$|\.jpeg$|\.png$|\.gif$|\.bmp$/i.test(n)) return true;
+        if (it.isVideo && size > 0 && size < 25 * 1048576) return true;
         return false;
       }
 
-      /* ---- 整理面板 ---- */
+      // 核心全自动整理执行器（可被面板一键调用，也可被推送秒传后静默调用）
+      async function executeAutoArchive(cid, code, extraMeta, onStep) {
+        const c = conf();
+        const step = function (msg) { if (typeof onStep === 'function') onStep(msg); };
+        step('正在扫描目录文件…');
+        let files = await listDir(cid);
+        files.forEach(function (f) { f.isJunk = f.isFile && isJunk(f); });
+
+        // 若当前目录下是一个刚离线生成的番号子文件夹，自动深入该子文件夹整理
+        const matchedSubDir = (!files.some(function (f) { return f.isVideo && !f.isJunk; }))
+          ? files.find(function (f) { return f.dir && f.cid && code && matchesMovieCode(f.name, code); })
+          : null;
+        const workCid = matchedSubDir ? matchedSubDir.cid : cid;
+        if (matchedSubDir) {
+          files = await listDir(workCid);
+          files.forEach(function (f) { f.isJunk = f.isFile && isJunk(f); });
+        }
+
+        let cleaned = 0, renamed = 0, moved = 0;
+        if (c.autoClean) {
+          const junk = files.filter(function (f) { return f.isJunk && f.fid; });
+          if (junk.length) {
+            step('正在清理 ' + junk.length + ' 个广告/垃圾文件…');
+            await remove(junk.map(function (f) { return f.fid; }), workCid);
+            cleaned = junk.length;
+            files = files.filter(function (f) { return !f.isJunk; });
+          }
+        }
+
+        const targets = files.filter(function (f) {
+          if (!f.isFile || f.isJunk || !f.fid) return false;
+          if (!code) return f.isVideo || f.isSub;
+          return (f.isVideo || f.isSub) && (matchesMovieCode(f.name, code) || files.filter(function (x) { return x.isVideo; }).length === 1);
+        });
+        if (!targets.length) {
+          return { ok: false, cleaned: cleaned, renamed: 0, moved: 0, message: '目录中暂无可归档的视频文件（可能仍在离线下载中）' };
+        }
+
+        const mainVideo = targets.filter(function (f) { return f.isVideo; }).sort(function (a, b) { return b.size - a.size; })[0] || targets[0];
+        const finalCode = code || codeOf(mainVideo.name);
+        // 多分段视频（CD1/CD2）自动附加序号，避免重名冲突
+        const videoTargets = targets.filter(function (f) { return f.isVideo; });
+        for (let idx = 0; idx < targets.length; idx++) {
+          const f = targets[idx];
+          let nv = buildTargetFileName(c.fileTpl, finalCode, f, extraMeta);
+          if (f.isVideo && videoTargets.length > 1) {
+            const vIdx = videoTargets.indexOf(f) + 1;
+            nv = nv.replace(/(\.[a-z0-9]{2,5})$/i, '-CD' + vIdx + '$1');
+          }
+          if (nv && nv !== f.name) {
+            step('改名：' + nv);
+            try {
+              await rename(f.fid, nv);
+              f.name = nv;
+              renamed++;
+            } catch (e) {}
+          }
+        }
+
+        const vars = varsFor(finalCode, mainVideo.name, extraMeta);
+        const dirPath = pickTpl(c.dirTpl, vars);
+        const subFolder = pickTpl(c.folderTpl, vars);
+        const fullRelPath = [dirPath, subFolder].filter(Boolean).join('/');
+        let destCid = workCid;
+        if (fullRelPath) {
+          step('创建/定位归档目录：' + fullRelPath);
+          // 若 dirTpl 以根目录逻辑（如「云下载/演员」）书写，默认从 0（根目录）逐级定位；若用户指定了目标 cid 且 dirTpl 不含 /，则在 cid 下建
+          const rootBase = (dirPath.indexOf('/') >= 0 || dirPath.indexOf('云下载') === 0) ? '0' : (cid || '0');
+          destCid = await ensureDirPath(rootBase, fullRelPath);
+          if (destCid && destCid !== workCid) {
+            step('移动 ' + targets.length + ' 个文件至「' + fullRelPath + '」…');
+            await move(targets.map(function (f) { return f.fid; }), destCid);
+            moved = targets.length;
+          }
+        }
+        videoHitMem.delete(normalizeCode(finalCode));
+        markCodeHit115(finalCode, true);
+        return { ok: true, cleaned: cleaned, renamed: renamed, moved: moved, path: fullRelPath, destCid: destCid };
+      }
+
+      // 离线推送后静默轮询秒传并自动归档（3.5s / 8s / 15s 三次轻量探测）
+      function scheduleSilentArchiveAfterPush(link, targetCid) {
+        const code = (typeof currentPageCode === 'function' ? currentPageCode() : '') || codeOf(link);
+        const metaSnapshot = extractPageMeta();
+        const btihMatch = String(link || '').match(/xt=urn:btih:([a-f0-9]{40})/i);
+        const btih = btihMatch ? btihMatch[1].toLowerCase() : '';
+        const delays = [3500, 8500, 16000];
+        let done = false;
+        delays.forEach(function (ms) {
+          setTimeout(async function () {
+            if (done) return;
+            try {
+              const r = await gmReq({
+                url: 'https://115.com/web/lixian/?ct=lixian&ac=task_lists&page=1',
+                headers: { 'Accept': 'application/json, text/plain, */*', 'Referer': 'https://115.com/' }, timeout: 9000
+              });
+              const j = JSON.parse(r.responseText || '{}');
+              const tasks = j.tasks || j.data || [];
+              const hit = tasks.find(function (t) {
+                if (!t) return false;
+                if (btih && t.info_hash && String(t.info_hash).toLowerCase() === btih) return true;
+                if (code && matchesMovieCode(t.name || '', code)) return true;
+                return false;
+              });
+              if (hit && Number(hit.status) === 2) {
+                done = true;
+                const taskDirCid = String(hit.file_id || hit.wp_path_id || targetCid || '0');
+                // 若 hit.file_id 是离线生成的文件夹 cid，直接进去整理；否则在 wp_path_id 整理
+                const res = await executeAutoArchive(taskDirCid, code, metaSnapshot);
+                if (res && res.ok) {
+                  magToast('✨ 115 秒传并自动归档完成 → ' + (res.path || code), true);
+                  if (typeof injectPan115PlayButton === 'function') {
+                    const oldWrap = document.querySelector('.jf-pan115-play-wrap');
+                    if (oldWrap) oldWrap.remove();
+                    injectPan115PlayButton();
+                  }
+                }
+              }
+            } catch (e) {}
+          }, ms);
+        });
+      }
+
+      /* ---- Apple TV 毛玻璃整理面板 ---- */
       function openOrganizePanel(code, targetCid) {
         const old = document.getElementById('jf-pan115-panel');
         if (old) old.remove();
+        const pageMeta = extractPageMeta();
         const cid = (targetCid || (MagConf.u115Cid || '').trim() || '0');
+        const c = conf();
+        const previewVars = varsFor(code || pageMeta.code, (code || 'VIDEO') + '.mp4', pageMeta);
+        const previewPath = [pickTpl(c.dirTpl, previewVars), pickTpl(c.folderTpl, previewVars)].filter(Boolean).join('/');
         const mask = document.createElement('div');
         mask.id = 'jf-pan115-panel';
-        mask.style.cssText = 'position:fixed;inset:0;z-index:2147483600;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;';
+        mask.style.cssText = 'position:fixed;inset:0;z-index:2147483600;background:rgba(6,6,9,.64);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);display:flex;align-items:center;justify-content:center;padding:20px;';
         mask.innerHTML =
-          '<div class="jf-pan115-card" style="width:min(860px,92vw);max-height:84vh;overflow:auto;background:#16181d;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:1.1em 1.2em;box-shadow:0 20px 60px rgba(0,0,0,.6)">' +
-          '<div style="display:flex;align-items:center;gap:.6em;margin-bottom:.8em">' +
-          '<span class="material-symbols-outlined" style="color:var(--e-accent,#00a4dc)">drive_file_move</span>' +
-          '<b style="font-size:1.05em">115 整理面板</b>' +
-          '<span style="font-size:.82em;color:var(--e-text3)">目录 CID ' + escapeHtml(cid) + '</span>' +
-          '<button type="button" class="jf-magtool-btn" data-pan-close style="margin-left:auto">关闭</button></div>' +
-          '<div style="display:flex;gap:.5em;flex-wrap:wrap;margin-bottom:.8em">' +
-          '<input class="jhs-input-text" data-pan-cid placeholder="目标目录 CID（留空=根目录）" value="' + escapeAttr(cid) + '" style="flex:1;min-width:200px">' +
-          '<button type="button" class="jf-magtool-btn" data-pan-load>列出文件</button>' +
-          '<button type="button" class="jf-magtool-btn" data-pan-clean>一键清理</button>' +
-          '<button type="button" class="jf-magtool-btn" data-pan-rename>一键规范改名</button>' +
-          '<button type="button" class="jf-magtool-btn" data-pan-move>归入模板目录</button>' +
+          '<div class="jf-pan115-card" style="width:min(900px,94vw);max-height:86vh;overflow:auto;background:rgba(24,26,32,.95);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:18px 20px;box-shadow:0 28px 70px rgba(0,0,0,.72);color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">' +
+          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
+          '<span class="material-symbols-outlined" style="color:#0a84ff;font-size:22px;">drive_file_move</span>' +
+          '<b style="font-size:15.5px;letter-spacing:-.01em;">115 智能归档与整理中心</b>' +
+          '<span style="font-size:12px;padding:2px 9px;border-radius:999px;background:rgba(10,132,255,.16);color:#7cc4ff;">目标路径预览：' + escapeHtml(previewPath || '当前目录') + '</span>' +
+          '<button type="button" class="jf-magtool-btn" data-pan-close style="margin-left:auto;border-radius:999px;padding:5px 14px;">关闭</button></div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center;">' +
+          '<input class="jhs-input-text" data-pan-cid placeholder="源目录 CID（0 = 根目录）" value="' + escapeAttr(cid) + '" style="flex:1;min-width:180px;">' +
+          '<button type="button" class="jf-magtool-btn" data-pan-load>🔄 刷新目录</button>' +
+          '<button type="button" class="jf-magtool-btn" data-pan-auto style="background:#0a84ff;border-color:transparent;color:#fff;font-weight:700;">⚡ 一键全自动归档（清理+改名+建目录移动）</button>' +
+          '<button type="button" class="jf-magtool-btn" data-pan-clean>🧹 仅清垃圾</button>' +
+          '<button type="button" class="jf-magtool-btn" data-pan-rename>✏️ 仅规范改名</button>' +
+          '<button type="button" class="jf-magtool-btn" data-pan-move>📂 仅归入目录</button>' +
           '</div>' +
-          '<div data-pan-log style="font-size:.82em;color:var(--e-text3);margin-bottom:.6em">就绪。番号：' + escapeHtml(code || '') + '</div>' +
-          '<div data-pan-list style="font-size:.86em"></div>' +
+          '<div data-pan-log style="font-size:12.5px;color:rgba(235,235,245,.66);margin-bottom:10px;padding:7px 10px;border-radius:9px;background:rgba(255,255,255,.04);">就绪 · 当前识别番号：' + escapeHtml(code || pageMeta.code || '自动从文件名提取') + (pageMeta.actor ? ' · 演员：' + escapeHtml(pageMeta.actor) : '') + '</div>' +
+          '<div data-pan-list style="font-size:13px;"></div>' +
           '</div>';
         document.body.appendChild(mask);
         const logEl = mask.querySelector('[data-pan-log]');
         const listEl = mask.querySelector('[data-pan-list]');
         let files = [];
-        const say = function (m, bad) { logEl.textContent = m; logEl.style.color = bad ? '#ff8080' : 'var(--e-text3)'; };
+        const say = function (m, bad) { logEl.textContent = m; logEl.style.color = bad ? '#ff8080' : 'rgba(235,235,245,.82)'; };
         mask.querySelector('[data-pan-close]').addEventListener('click', function () { mask.remove(); });
         mask.addEventListener('click', function (e) { if (e.target === mask) mask.remove(); });
 
         function draw() {
-          if (!files.length) { listEl.innerHTML = '<div style="color:var(--e-text3);padding:.6em 0">（无文件）</div>'; return; }
+          if (!files.length) { listEl.innerHTML = '<div style="color:rgba(235,235,245,.45);padding:18px 0;text-align:center;">（该目录下暂无文件）</div>'; return; }
+          const tpl = conf().fileTpl;
           listEl.innerHTML = files.map(function (f) {
-            return '<div style="display:flex;gap:.6em;padding:.35em 0;border-bottom:1px solid rgba(255,255,255,.06)">' +
-              '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(f.name) + '</span>' +
-              '<span style="color:var(--e-text3);font-size:.86em">' + (f.isFile ? (Math.round((f.size || 0) / 1048576) + ' MB') : '目录') + '</span>' +
-              (f.isJunk ? '<span style="color:#ffb703;font-size:.8em">垃圾</span>' : '') +
+            const c2 = code || codeOf(f.name);
+            const nextName = (f.isFile && !f.isJunk && (f.isVideo || f.isSub)) ? buildTargetFileName(tpl, c2, f, pageMeta) : '';
+            const badge = f.dir
+              ? '<span style="color:#60a5fa;font-size:11px;padding:1px 6px;border-radius:5px;background:rgba(96,165,250,.14);">文件夹</span>'
+              : (f.isJunk
+                ? '<span style="color:#fbbf24;font-size:11px;padding:1px 6px;border-radius:5px;background:rgba(251,191,36,.15);">广告/垃圾</span>'
+                : (f.isVideo
+                  ? '<span style="color:#4ade80;font-size:11px;padding:1px 6px;border-radius:5px;background:rgba(74,222,128,.14);">正片视频</span>'
+                  : (f.isSub ? '<span style="color:#c084fc;font-size:11px;padding:1px 6px;border-radius:5px;background:rgba(192,132,252,.14);">外挂字幕</span>' : '')));
+            return '<div style="display:flex;flex-direction:column;gap:3px;padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.06);">' +
+              '<div style="display:flex;align-items:center;gap:8px;">' +
+                badge +
+                '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;">' + escapeHtml(f.name) + '</span>' +
+                (f.dir ? '<button type="button" class="jf-magtool-btn" data-enter-cid="' + escapeAttr(f.cid) + '" style="padding:2px 8px;font-size:11px;">进入</button>' : '') +
+                (f.isVideo && f.pickcode ? '<button type="button" class="jf-magtool-btn" data-play-pc="' + escapeAttr(f.pickcode) + '" style="padding:2px 8px;font-size:11px;">▶ IINA</button>' : '') +
+                '<span style="color:rgba(235,235,245,.52);font-size:12px;font-variant-numeric:tabular-nums;">' + (f.isFile ? formatBytes(f.size) : 'CID ' + escapeHtml(f.cid)) + '</span>' +
+              '</div>' +
+              (nextName && nextName !== f.name ? '<div style="font-size:11.5px;color:#7cc4ff;padding-left:4px;">↳ 拟改名为：' + escapeHtml(nextName) + '</div>' : '') +
               '</div>';
           }).join('');
+          listEl.querySelectorAll('[data-enter-cid]').forEach(function (b) {
+            b.addEventListener('click', function () {
+              mask.querySelector('[data-pan-cid]').value = b.getAttribute('data-enter-cid') || '0';
+              load();
+            });
+          });
+          listEl.querySelectorAll('[data-play-pc]').forEach(function (b) {
+            b.addEventListener('click', function () {
+              launchExternalPlayer('iina', b.getAttribute('data-play-pc'), 'IINA');
+            });
+          });
         }
         async function load() {
-          const c = (mask.querySelector('[data-pan-cid]').value || '0').trim();
-          say('正在列出…');
+          const curCid = (mask.querySelector('[data-pan-cid]').value || '0').trim();
+          say('正在读取 115 目录 CID ' + curCid + '…');
           try {
-            files = await listDir(c);
+            files = await listDir(curCid);
             files.forEach(function (f) { f.isJunk = f.isFile && isJunk(f); });
             draw();
-            say('共 ' + files.length + ' 个条目');
+            say('共列出 ' + files.length + ' 个条目（正片 ' + files.filter(function (x) { return x.isVideo && !x.isJunk; }).length + '，垃圾 ' + files.filter(function (x) { return x.isJunk; }).length + '）');
           } catch (e) { say('列出失败: ' + e.message, true); }
         }
         mask.querySelector('[data-pan-load]').addEventListener('click', load);
 
-        mask.querySelector('[data-pan-clean]').addEventListener('click', async function () {
-          const junk = files.filter(function (f) { return f.isJunk; });
-          if (!junk.length) { say('没有需要清理的垃圾文件'); return; }
-          say('正在清理 ' + junk.length + ' 个…');
+        mask.querySelector('[data-pan-auto]').addEventListener('click', async function () {
+          const curCid = (mask.querySelector('[data-pan-cid]').value || '0').trim();
           try {
-            await remove(junk.map(function (f) { return f.id; }));
-            say('已清理 ' + junk.length + ' 个垃圾文件');
+            const res = await executeAutoArchive(curCid, code || pageMeta.code, pageMeta, function (m) { say(m); });
+            if (!res.ok) { say(res.message || '未找到可整理文件', true); return; }
+            if (res.destCid) mask.querySelector('[data-pan-cid]').value = res.destCid;
+            await load();
+            say('✅ 全自动归档完成！清理 ' + res.cleaned + ' 项 · 改名 ' + res.renamed + ' 项 · 移入「' + (res.path || '当前目录') + '」');
+          } catch (e) { say('全自动归档失败: ' + e.message, true); }
+        });
+
+        mask.querySelector('[data-pan-clean]').addEventListener('click', async function () {
+          const curCid = (mask.querySelector('[data-pan-cid]').value || '0').trim();
+          const junk = files.filter(function (f) { return f.isJunk && f.fid; });
+          if (!junk.length) { say('没有需要清理的垃圾文件'); return; }
+          say('正在清理 ' + junk.length + ' 个垃圾文件…');
+          try {
+            await remove(junk.map(function (f) { return f.fid; }), curCid);
+            say('✅ 已移入回收站 ' + junk.length + ' 个垃圾文件');
             await load();
           } catch (e) { say('清理失败: ' + e.message, true); }
         });
 
         mask.querySelector('[data-pan-rename]').addEventListener('click', async function () {
-          const c = conf();
-          const targets = files.filter(function (f) { return f.isFile && !f.isJunk; });
-          if (!targets.length) { say('没有可改名的文件'); return; }
-          say('正在按模板改名 ' + targets.length + ' 个…');
+          const tpl = conf().fileTpl;
+          const targets = files.filter(function (f) { return f.isFile && !f.isJunk && f.fid && (f.isVideo || f.isSub); });
+          if (!targets.length) { say('没有可改名的视频或字幕文件'); return; }
+          say('正在按模板规范改名 ' + targets.length + ' 个文件…');
           let ok = 0, fail = 0;
           for (const f of targets) {
             const code2 = code || codeOf(f.name);
-            const nv = pickTpl(c.fileTpl, varsFor(code2, f.name));
-            if (!nv || nv === f.name) { continue; }
-            try { await rename(f.id, nv); ok++; f.name = nv; } catch (e) { fail++; }
+            const nv = buildTargetFileName(tpl, code2, f, pageMeta);
+            if (!nv || nv === f.name) continue;
+            try { await rename(f.fid, nv); ok++; f.name = nv; } catch (e) { fail++; }
           }
           draw();
-          say('改名完成：成功 ' + ok + '，失败 ' + fail + '（模板：' + c.fileTpl + '）', fail > 0);
+          say('改名完成：成功 ' + ok + '，失败 ' + fail + '（保留原扩展名，模板：' + tpl + '）', fail > 0);
         });
 
         mask.querySelector('[data-pan-move]').addEventListener('click', async function () {
-          const c = conf();
-          const parentCid = (mask.querySelector('[data-pan-cid]').value || '0').trim();
-          const targets = files.filter(function (f) { return f.isFile && !f.isJunk; });
+          const c2 = conf();
+          const curCid = (mask.querySelector('[data-pan-cid]').value || '0').trim();
+          const targets = files.filter(function (f) { return f.isFile && !f.isJunk && f.fid && (f.isVideo || f.isSub); });
           if (!targets.length) { say('没有可归集的文件'); return; }
-          const vars = varsFor(code, targets[0].name, { actor: '', maker: '', series: '' });
-          const folder = pickTpl(c.folderTpl, vars) || (code || 'JAVDB');
-          say('正在归入目录「' + folder + '」…');
+          const finalCode = code || codeOf(targets[0].name);
+          const vars = varsFor(finalCode, targets[0].name, pageMeta);
+          const fullRelPath = [pickTpl(c2.dirTpl, vars), pickTpl(c2.folderTpl, vars)].filter(Boolean).join('/') || (finalCode || 'JAVDB');
+          say('正在创建/定位目录「' + fullRelPath + '」…');
           try {
-            const mk = await mkdir(parentCid, folder);
-            const dirCid = (mk && (mk.cid || mk.file_id || mk.id)) || '';
-            if (!dirCid) { say('目录创建失败', true); return; }
-            await move(targets.map(function (f) { return f.id; }), dirCid);
-            say('已归入目录「' + folder + '」');
+            const rootBase = (fullRelPath.indexOf('/') >= 0 || fullRelPath.indexOf('云下载') === 0) ? '0' : curCid;
+            const dirCid = await ensureDirPath(rootBase, fullRelPath);
+            await move(targets.map(function (f) { return f.fid; }), dirCid);
+            mask.querySelector('[data-pan-cid]').value = dirCid;
+            say('✅ 已归入目录「' + fullRelPath + '」');
             await load();
           } catch (e) { say('归集失败: ' + e.message, true); }
         });
@@ -29691,8 +30251,13 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       }
 
       return {
-        conf: conf, setConf: setConf, sign: sign, listDir: listDir, mkdir: mkdir,
+        conf: conf, setConf: setConf, sign: sign, listDir: listDir, mkdir: mkdir, ensureDirPath: ensureDirPath,
         rename: rename, move: move, remove: remove, search: search,
+        findVideosByCode: findVideosByCode, resolveStreamUrl: resolveStreamUrl,
+        launchExternalPlayer: launchExternalPlayer, formatBytes: formatBytes,
+        hasCachedHit: hasCachedHit, markCodeHit115: markCodeHit115,
+        extractPageMeta: extractPageMeta, buildTargetFileName: buildTargetFileName,
+        executeAutoArchive: executeAutoArchive, scheduleSilentArchiveAfterPush: scheduleSilentArchiveAfterPush,
         pickTpl: pickTpl, codeOf: codeOf, suffixOf: suffixOf, isJunk: isJunk,
         openPanel: openOrganizePanel,
         DEF: { dirTpl: DEF_DIR_TPL, fileTpl: DEF_FILE_TPL, folderTpl: DEF_FOLDER_TPL }
@@ -29763,9 +30328,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
                   const res = JSON.parse(response.responseText);
                   if (res.state) {
                     finish(true, cid ? '✅ 已发送到 115 指定目录' : '✅ 已发送到 115');
-                    // 离线后整理：推送成功后打开整理面板（可一键清理 / 规范改名 / 归入目录）
                     try {
-                      if (Pan115.conf().autoOrganize) {
+                      const pConf = Pan115.conf();
+                      if (pConf.autoSilentArchive) {
+                        Pan115.scheduleSilentArchiveAfterPush(target, cid);
+                      }
+                      if (pConf.autoOrganize) {
                         setTimeout(function () {
                           try { Pan115.openPanel(currentPageCode ? currentPageCode() : '', cid); } catch (e) {}
                         }, 400);
@@ -30737,45 +31305,77 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         }
       })();
     }
-    // 番号行入库徽章（每个服务器一个 chip）
+    // 番号行入库徽章（每个服务器一个 chip + 115 云盘命中 chip）
     function injectCodeBadges() {
-      if (!isPluginEnabled('fusionMediaLib')) return;
       const codeRow = document.querySelector('#emby-detail-root .em-row.em-code');
-      if (!codeRow || codeRow.querySelector('.jf-lib-chips')) return;
-      const servers = getActiveServers();
-      if (!servers.length) return;
+      if (!codeRow) return;
       const code = (typeof currentPageCode === 'function' ? currentPageCode() : '') || '';
       if (!code) return;
-      const wrap = document.createElement('span');
-      wrap.className = 'jf-lib-chips';
-      codeRow.appendChild(wrap);
-      servers.forEach(async function (s) {
-        const chip = document.createElement('a');
-        chip.className = 'jf-lib-chip jf-lib-loading';
-        chip.href = '#';
-        chip.innerHTML = '<span class="jf-lib-dot"></span>' + escapeHtml(s.name);
-        chip.title = s.name + '：入库查询中…';
-        wrap.appendChild(chip);
-        try {
-          const r = await checkExists(s, code);
-          if (r.hit) {
-            chip.className = 'jf-lib-chip jf-lib-hit';
-            chip.title = s.name + '：已入库，点击跳转播放';
-            chip.href = buildJumpUrl(s, code, r.item);
-            chip.target = '_blank';
-            chip.rel = 'noopener';
-          } else {
-            chip.className = 'jf-lib-chip jf-lib-miss';
-            chip.title = s.name + '：未入库，点击跳转搜索';
-            chip.href = buildJumpUrl(s, code, null);
-            chip.target = '_blank';
-            chip.rel = 'noopener';
+      let wrap = codeRow.querySelector('.jf-lib-chips');
+      const servers = isPluginEnabled('fusionMediaLib') ? getActiveServers() : [];
+      const check115 = Pan115.conf().playBtn;
+      if (!servers.length && !check115) return;
+      if (!wrap) {
+        wrap = document.createElement('span');
+        wrap.className = 'jf-lib-chips';
+        codeRow.appendChild(wrap);
+      }
+      if (servers.length && !wrap.dataset.jfMediaRendered) {
+        wrap.dataset.jfMediaRendered = '1';
+        servers.forEach(async function (s) {
+          const chip = document.createElement('a');
+          chip.className = 'jf-lib-chip jf-lib-loading';
+          chip.href = '#';
+          chip.innerHTML = '<span class="jf-lib-dot"></span>' + escapeHtml(s.name);
+          chip.title = s.name + '：入库查询中…';
+          wrap.appendChild(chip);
+          try {
+            const r = await checkExists(s, code);
+            if (r.hit) {
+              chip.className = 'jf-lib-chip jf-lib-hit';
+              chip.title = s.name + '：已入库，点击跳转播放';
+              chip.href = buildJumpUrl(s, code, r.item);
+              chip.target = '_blank';
+              chip.rel = 'noopener';
+            } else {
+              chip.className = 'jf-lib-chip jf-lib-miss';
+              chip.title = s.name + '：未入库，点击跳转搜索';
+              chip.href = buildJumpUrl(s, code, null);
+              chip.target = '_blank';
+              chip.rel = 'noopener';
+            }
+          } catch (e) {
+            chip.className = 'jf-lib-chip jf-lib-error';
+            chip.title = s.name + '：查询失败';
           }
-        } catch (e) {
-          chip.className = 'jf-lib-chip jf-lib-error';
-          chip.title = s.name + '：查询失败';
-        }
-      });
+        });
+      }
+      if (check115 && !wrap.querySelector('.jf-115-code-chip')) {
+        const chip115 = document.createElement('a');
+        chip115.className = 'jf-lib-chip jf-115-code-chip jf-lib-loading';
+        chip115.href = '#';
+        chip115.style.display = 'none';
+        wrap.appendChild(chip115);
+        Pan115.findVideosByCode(code).then(function (vids) {
+          if (!chip115.isConnected) return;
+          if (!vids || !vids.length) { chip115.remove(); return; }
+          const v0 = vids[0];
+          chip115.style.display = '';
+          chip115.className = 'jf-lib-chip jf-115-code-chip jf-lib-hit';
+          chip115.innerHTML = '<span class="jf-lib-dot" style="background:#38bdf8;box-shadow:0 0 6px rgba(56,189,248,.9);"></span>115 已存 · ' + escapeHtml(Pan115.formatBytes(v0.size));
+          chip115.title = '115 云盘已存：' + v0.name + '（点击调用默认播放器原画串流）';
+          chip115.href = 'https://115vod.com/?pickcode=' + encodeURIComponent(v0.pickcode) + '&share_id=0';
+          chip115.target = '_blank';
+          chip115.rel = 'noopener';
+          chip115.addEventListener('click', function (e) {
+            const dp = Pan115.conf().defaultPlayer || 'iina';
+            if (dp !== '115vod') {
+              e.preventDefault(); e.stopPropagation();
+              Pan115.launchExternalPlayer(dp, v0.pickcode, dp.toUpperCase());
+            }
+          });
+        }).catch(function () { chip115.remove(); });
+      }
     }
     // 封面悬浮预告片按钮（集成到 #emby-detail-hero .poster-wrap 封面上）
     function injectPosterTrailerBtn() {
@@ -30886,6 +31486,118 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         }
       })();
     }
+
+    // 115 云盘命中醒目胶囊按钮（支持 115 网页云播 + IINA / PotPlayer / mpv / VLC / Infuse 签名 M3U8 原画直调）
+    function injectPan115PlayButton() {
+      if (!Pan115.conf().playBtn) return;
+      const btnGroup = document.querySelector('#emby-detail-root .emby-btn-group');
+      if (!btnGroup || btnGroup.querySelector('.jf-pan115-play-wrap')) return;
+      const code = (typeof currentPageCode === 'function' ? currentPageCode() : '') || '';
+      if (!code) return;
+
+      const wrap = document.createElement('div');
+      wrap.className = 'jf-lib-play-wrap jf-pan115-play-wrap';
+      wrap.style.display = 'none';
+      btnGroup.insertBefore(wrap, btnGroup.children[1] || null);
+
+      Pan115.findVideosByCode(code).then(function (videos) {
+        if (!document.body.contains(wrap)) return;
+        const nowCode = (typeof currentPageCode === 'function' ? currentPageCode() : '') || '';
+        if (nowCode !== code || !videos || !videos.length) { wrap.remove(); return; }
+
+        let activeVideo = videos[0];
+        const defPlayer = Pan115.conf().defaultPlayer || 'iina';
+        const playerLabels = { '115vod': '在 115 云播', 'iina': '用 IINA 云播', 'potplayer': '用 PotPlayer 云播', 'mpv': '用 mpv 云播', 'infuse': '用 Infuse 云播' };
+        const mainText = (playerLabels[defPlayer] || '用 IINA 云播') + (videos.length > 1 ? ' · ' + videos.length : '') + ' (' + Pan115.formatBytes(activeVideo.size) + ')';
+        const vodUrl = function (pc) { return 'https://115vod.com/?pickcode=' + encodeURIComponent(pc) + '&share_id=0'; };
+
+        wrap.style.display = 'inline-flex';
+        wrap.innerHTML =
+          '<div class="jf-lib-play-split jf-pan115-split">' +
+            '<a class="jf-lib-play-main jf-lib-play-pan115" href="' + escapeAttr(vodUrl(activeVideo.pickcode)) + '" target="_blank" rel="noopener" title="' + escapeAttr('115 已存正片：' + activeVideo.name + ' (' + Pan115.formatBytes(activeVideo.size) + ')') + '">' +
+              '<span class="jf-lib-play-icon">' +
+                '<svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM10 17v-6l5 3-5 3z"/></svg>' +
+              '</span>' +
+              '<span class="jf-lib-play-label">' + escapeHtml(mainText) + '</span>' +
+            '</a>' +
+            '<div class="jf-lib-play-divider"></div>' +
+            '<button type="button" class="jf-lib-play-arrow jf-pan115-arrow" title="选择本地播放器（IINA / PotPlayer / mpv）或管理 115 文件">' +
+              '<span class="material-symbols-outlined" style="font-size:20px;">arrow_drop_down</span>' +
+            '</button>' +
+          '</div>' +
+          '<div class="jf-lib-play-menu jf-pan115-menu">' +
+            '<div class="jf-pan115-menu-sec">115 云盘命中正片 (' + videos.length + ')</div>' +
+            videos.map(function (v, idx) {
+              return '<button type="button" class="jf-lib-play-menu-item jf-pan115-file-item' + (idx === 0 ? ' is-selected' : '') + '" data-vidx="' + idx + '" title="' + escapeAttr(v.name) + '">' +
+                '<span class="jf-srv-type jf-badge-pan115">' + escapeHtml(Pan115.formatBytes(v.size)) + '</span>' +
+                '<span class="jf-lib-play-menu-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:210px;">' + escapeHtml(v.name) + '</span>' +
+              '</button>';
+            }).join('') +
+            '<div class="jf-pan115-menu-sec">外部播放器免 Cookie 原画直调</div>' +
+            '<a class="jf-lib-play-menu-item" data-act="115vod" href="' + escapeAttr(vodUrl(activeVideo.pickcode)) + '" target="_blank" rel="noopener"><span class="material-symbols-outlined" style="font-size:16px;color:#38bdf8;">cloud_done</span><span>115 官方网页云播</span></a>' +
+            '<button type="button" class="jf-lib-play-menu-item" data-ext="iina"><span class="material-symbols-outlined" style="font-size:16px;color:#60a5fa;">smart_display</span><span>IINA 串流播放 (macOS 推荐)</span></button>' +
+            '<button type="button" class="jf-lib-play-menu-item" data-ext="potplayer"><span class="material-symbols-outlined" style="font-size:16px;color:#fbbf24;">play_circle</span><span>PotPlayer 串流播放 (Windows)</span></button>' +
+            '<button type="button" class="jf-lib-play-menu-item" data-ext="mpv"><span class="material-symbols-outlined" style="font-size:16px;color:#c084fc;">terminal</span><span>mpv 串流播放</span></button>' +
+            '<button type="button" class="jf-lib-play-menu-item" data-ext="infuse"><span class="material-symbols-outlined" style="font-size:16px;color:#fb923c;">live_tv</span><span>Infuse 串流播放</span></button>' +
+            '<button type="button" class="jf-lib-play-menu-item" data-ext="copy"><span class="material-symbols-outlined" style="font-size:16px;color:#4ade80;">content_copy</span><span>复制签名 M3U8 原画串流直链</span></button>' +
+            '<div class="jf-pan115-menu-sec">网盘管理与归档</div>' +
+            '<a class="jf-lib-play-menu-item" data-open-dir href="https://115.com/?cid=' + encodeURIComponent(activeVideo.parentCid || '0') + '&offset=0&mode=wangpan" target="_blank" rel="noopener"><span class="material-symbols-outlined" style="font-size:16px;">folder_open</span><span>打开 115 所在文件夹</span></a>' +
+            '<button type="button" class="jf-lib-play-menu-item" data-open-organize><span class="material-symbols-outlined" style="font-size:16px;">drive_file_move</span><span>打开 115 智能归档中心</span></button>' +
+          '</div>';
+
+        const mainBtn = wrap.querySelector('.jf-lib-play-pan115');
+        const arrow = wrap.querySelector('.jf-pan115-arrow');
+        const menu = wrap.querySelector('.jf-pan115-menu');
+        const vodItem = wrap.querySelector('[data-act="115vod"]');
+        const dirItem = wrap.querySelector('[data-open-dir]');
+
+        mainBtn.addEventListener('click', function (e) {
+          const dp = Pan115.conf().defaultPlayer || 'iina';
+          if (dp !== '115vod') {
+            e.preventDefault(); e.stopPropagation();
+            Pan115.launchExternalPlayer(dp, activeVideo.pickcode, dp.toUpperCase());
+          }
+        });
+        arrow.addEventListener('click', function (e) {
+          e.preventDefault(); e.stopPropagation();
+          menu.classList.toggle('open');
+        });
+        wrap.querySelectorAll('.jf-pan115-file-item').forEach(function (btn) {
+          btn.addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            const idx = parseInt(btn.getAttribute('data-vidx') || '0', 10) || 0;
+            activeVideo = videos[idx] || videos[0];
+            wrap.querySelectorAll('.jf-pan115-file-item').forEach(function (x) { x.classList.toggle('is-selected', x === btn); });
+            mainBtn.href = vodUrl(activeVideo.pickcode);
+            if (vodItem) vodItem.href = vodUrl(activeVideo.pickcode);
+            if (dirItem) dirItem.href = 'https://115.com/?cid=' + encodeURIComponent(activeVideo.parentCid || '0') + '&offset=0&mode=wangpan';
+            const dp = Pan115.conf().defaultPlayer || 'iina';
+            wrap.querySelector('.jf-lib-play-label').textContent = (playerLabels[dp] || '用 IINA 云播') + (videos.length > 1 ? ' · ' + videos.length : '') + ' (' + Pan115.formatBytes(activeVideo.size) + ')';
+          });
+        });
+        wrap.querySelectorAll('[data-ext]').forEach(function (btn) {
+          btn.addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            menu.classList.remove('open');
+            const ext = btn.getAttribute('data-ext');
+            Pan115.launchExternalPlayer(ext, activeVideo.pickcode, ext === 'iina' ? 'IINA' : (ext === 'potplayer' ? 'PotPlayer' : ext));
+          });
+        });
+        const orgBtn = wrap.querySelector('[data-open-organize]');
+        if (orgBtn) {
+          orgBtn.addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            menu.classList.remove('open');
+            Pan115.openPanel(code, activeVideo.parentCid || '0');
+          });
+        }
+        const docClose = function (e) {
+          if (!document.body.contains(wrap)) { document.removeEventListener('click', docClose); return; }
+          if (!wrap.contains(e.target)) menu.classList.remove('open');
+        };
+        document.addEventListener('click', docClose);
+      }).catch(function () { wrap.remove(); });
+    }
     // 播放下拉底部「融合扩展设置」入口（跟在「外部网站与分组排序配置」后面）
     function injectMenuConfigEntry() {
       const menu = document.getElementById('emby-play-menu');
@@ -30907,12 +31619,13 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       const customRankPanel = document.querySelector('#emby-top250-panel.show');
       const customTopItems = customRankPanel && customRankPanel.querySelector('#t250-movie-list .item');
       const hasMovieCards = !!document.querySelector('.movie-list .item, .emby-row .item');
-      const showPreview = (hasMovieCards || !!customTopItems) && isPluginEnabled('fusionTrailer');
+        const showPreview = (hasMovieCards || !!customTopItems) && isPluginEnabled('fusionTrailer');
       const showLibrary = isPluginEnabled('fusionMediaLib');
       const showLibraryBadge = showLibrary && GM_getValue('jf_ui_listbadge', true);
-      if (!showPreview && !showLibrary) return;
+      const show115Badge = Pan115.conf().playBtn && GM_getValue('jf_ui_listbadge', true);
+      if (!showPreview && !showLibrary && !show115Badge) return;
       const servers = showLibrary ? getActiveServers() : [];
-      if (!showPreview && !servers.length) return;
+      if (!showPreview && !servers.length && !show115Badge) return;
       const items = customRankPanel
         ? customRankPanel.querySelectorAll('#t250-movie-list .item')
         : document.querySelectorAll('.movie-list .item, .emby-row .item');
@@ -30998,6 +31711,16 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           it.dataset.jfRankCode = code;
           updateListPlayButton(play, hits[0] || null, servers[0], code);
           if (!hits.length && listLookupObserver) listLookupObserver.observe(it);
+        }
+        if (show115Badge && Pan115.hasCachedHit(norm)) {
+          const box115 = it.querySelector('a.box') || it.querySelector('.box') || it;
+          if (box115 && !box115.querySelector('.jf-pan115-badge')) {
+            const b115 = document.createElement('span');
+            b115.className = 'jf-pan115-badge';
+            b115.textContent = '115';
+            b115.title = code + ' · 已存入你的 115 云盘';
+            cover.appendChild(b115);
+          }
         }
         if (!showLibraryBadge || !hits.length) return;
         const box = it.querySelector('a.box') || it.querySelector('.box') || it;
@@ -31202,18 +31925,31 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           '<input class="jf-inp" id="jfQbtHost" type="text" placeholder="qB 地址（如 http://127.0.0.1:18080）" value="' + escapeAttr(MagConf.qbtHost) + '">' +
           '<div class="jf-srv-row"><input class="jf-inp" id="jfQbtUser" type="text" placeholder="用户名" value="' + escapeAttr(MagConf.qbtUser) + '" style="flex:1;">' +
           '<input class="jf-inp" id="jfQbtPass" type="password" placeholder="密码" value="' + escapeAttr(MagConf.qbtPass) + '" style="flex:1;"></div>' +
-          '<div class="jf-set-sub">115 网盘（需浏览器已登录 115）</div>' +
-          '<input class="jf-inp" id="jf115Cid" type="text" placeholder="可选：115 目录 CID / wp_path_id，留空保存到默认目录" value="' + escapeAttr(MagConf.u115Cid) + '">' +
-          '<div class="jf-set-sub">离线后整理（参考 JAV老司机）</div>' +
-          '<label class="jf-set-row"><input type="checkbox" id="jf115AutoOrganize" ' + (Pan115.conf().autoOrganize ? 'checked' : '') + '> 离线后自动打开整理面板</label>' +
-          '<label class="jf-set-row"><input type="checkbox" id="jf115AutoClean" ' + (Pan115.conf().autoClean ? 'checked' : '') + '> 一键清理垃圾文件（0字节 / 样片 / 广告）</label>' +
-          '<div class="jf-set-sub">离线目录模板</div>' +
+          '<div class="jf-set-sub">115 网盘深度联动（需浏览器已登录 115）</div>' +
+          '<input class="jf-inp" id="jf115Cid" type="text" placeholder="可选：115 离线目标目录 CID / wp_path_id，留空保存到默认目录" value="' + escapeAttr(MagConf.u115Cid) + '">' +
+          '<div class="jf-set-grid">' +
+            '<label class="jf-set-row"><input type="checkbox" id="jf115PlayBtn" ' + (Pan115.conf().playBtn ? 'checked' : '') + '> 详情页自动探测「115 云播」按钮</label>' +
+            '<label class="jf-set-row"><input type="checkbox" id="jf115SilentArchive" ' + (Pan115.conf().autoSilentArchive ? 'checked' : '') + '> 离线秒传后静默全自动归档</label>' +
+            '<label class="jf-set-row"><input type="checkbox" id="jf115AutoOrganize" ' + (Pan115.conf().autoOrganize ? 'checked' : '') + '> 离线推送后弹出整理面板</label>' +
+            '<label class="jf-set-row"><input type="checkbox" id="jf115AutoClean" ' + (Pan115.conf().autoClean ? 'checked' : '') + '> 自动清理 <50MB 广告与垃圾文件</label>' +
+          '</div>' +
+          '<label class="jf-set-row" style="justify-content:space-between;gap:12px;margin:4px 0 8px;">' +
+            '<span>主按钮默认云播方式</span>' +
+            '<select class="jf-inp" id="jf115DefPlayer" style="width:210px;margin:0;">' +
+              '<option value="iina">IINA 原画直调 (macOS 默认)</option>' +
+              '<option value="115vod">115 官方网页云播</option>' +
+              '<option value="potplayer">PotPlayer 原画直调 (Win)</option>' +
+              '<option value="mpv">mpv 原画直调</option>' +
+              '<option value="infuse">Infuse 原画直调</option>' +
+            '</select>' +
+          '</label>' +
+          '<div class="jf-set-sub">归档目录模板（支持多级路径如 云下载/${actor}）</div>' +
           '<input class="jf-inp" id="jf115DirTpl" type="text" placeholder="' + escapeAttr(Pan115.DEF.dirTpl) + '" value="' + escapeAttr(Pan115.conf().dirTpl) + '">' +
-          '<div class="jf-set-sub">文件名模板</div>' +
+          '<div class="jf-set-sub">文件名模板（自动保留 .mp4/.mkv/.srt 扩展名）</div>' +
           '<input class="jf-inp" id="jf115FileTpl" type="text" placeholder="' + escapeAttr(Pan115.DEF.fileTpl) + '" value="' + escapeAttr(Pan115.conf().fileTpl) + '">' +
-          '<div class="jf-set-sub">文件夹名模板</div>' +
+          '<div class="jf-set-sub">番号子目录名模板（留空则直接放进归档目录）</div>' +
           '<input class="jf-inp" id="jf115FolderTpl" type="text" placeholder="' + escapeAttr(Pan115.DEF.folderTpl) + '" value="' + escapeAttr(Pan115.conf().folderTpl) + '">' +
-          '<div class="jf-set-sec" style="margin-top:8px;opacity:.75;">模板变量：<code>${code}</code> 番号 · <code>${actor}</code> 演员 · <code>${maker}</code> 厂商 · <code>${series}</code> 系列 · <code>${title}</code> 原名 · <code>${suffix}</code> 后缀(-U/-4K) · <code>${crack}</code> 无码 · <code>${res}</code> 画质</div>' +
+          '<div class="jf-set-sec" style="margin-top:8px;opacity:.75;">模板变量：<code>${code}</code> 番号 · <code>${actor}</code> 主演 · <code>${actors}</code> 多演员 · <code>${maker}</code> 片商 · <code>${series}</code> 系列 · <code>${year}</code> 年份 · <code>${title}</code> 作品标题 · <code>${cnsub}</code> 中字(-C) · <code>${suffix}</code> 后缀(-LTX/-4K) · <code>${crack}</code> 无码 · <code>${res}</code> 画质</div>' +
           '<div class="jf-set-sec" style="margin-top:12px;opacity:.6;">保存后自动生效，无需刷新页面。</div>';
         const bind = function (id, key) {
           body.querySelector('#' + id).addEventListener('change', function (e) { GM_setValue(key, e.target.checked); scanMagnetTables(); });
@@ -31224,11 +31960,26 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         body.querySelector('#jfQbtUser').addEventListener('change', function (e) { GM_setValue('jf_qbt_user', e.target.value.trim()); });
         body.querySelector('#jfQbtPass').addEventListener('change', function (e) { GM_setValue('jf_qbt_pass', e.target.value); });
         body.querySelector('#jf115Cid').addEventListener('change', function (e) { GM_setValue('jf_115_cid', e.target.value.trim()); });
-        ['jf115AutoOrganize', 'jf115AutoClean'].forEach(function (id) {
-          const el = body.querySelector('#' + id);
+        const defPlSel = body.querySelector('#jf115DefPlayer');
+        if (defPlSel) {
+          defPlSel.value = Pan115.conf().defaultPlayer || 'iina';
+          defPlSel.addEventListener('change', function () {
+            Pan115.setConf('jf_115_default_player', defPlSel.value);
+            const w = document.querySelector('.jf-pan115-play-wrap');
+            if (w) { w.remove(); injectPan115PlayButton(); }
+          });
+        }
+        [['jf115PlayBtn', 'jf_115_play_btn'], ['jf115SilentArchive', 'jf_115_silent_archive'],
+         ['jf115AutoOrganize', 'jf_115_offline_organize'], ['jf115AutoClean', 'jf_115_auto_clean']].forEach(function (pair) {
+          const el = body.querySelector('#' + pair[0]);
           if (!el) return;
           el.addEventListener('change', function () {
-            Pan115.setConf(id === 'jf115AutoOrganize' ? 'jf_115_offline_organize' : 'jf_115_auto_clean', el.checked);
+            Pan115.setConf(pair[1], el.checked);
+            if (pair[0] === 'jf115PlayBtn') {
+              const w = document.querySelector('.jf-pan115-play-wrap');
+              if (!el.checked && w) w.remove();
+              else if (el.checked) fullScan();
+            }
           });
         });
         [['jf115DirTpl', 'jf_115_dir_tpl'], ['jf115FileTpl', 'jf_115_file_tpl'], ['jf115FolderTpl', 'jf_115_folder_tpl']].forEach(function (pair) {
@@ -31251,6 +32002,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<label class="jf-set-row"><input type="checkbox" id="jfTrAutoplay" ' + (TrConf.autoplay ? 'checked' : '') + '> 打开播放器后自动播放（默认关闭）</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfTrPrefetch" ' + (TrConf.prefetch ? 'checked' : '') + '> 详情页后台预热片源</label>' +
             '<label class="jf-set-row"><input type="checkbox" id="jfTrProbe" ' + (TrConf.probe ? 'checked' : '') + '> 后台探测线路可用性</label>' +
+            '<label class="jf-set-row" style="grid-column:1/-1;"><input type="checkbox" id="jfTrInlineHover" ' + (GM_getValue('jf_inline_hover_trailer', true) !== false ? 'checked' : '') + '> 🎬 Apple TV+ 列表海报悬停约 1s 内嵌静音直播预告片（替代放大气泡）</label>' +
           '</div>' +
           '<div class="jf-set-sec" style="margin-top:12px;opacity:.6;">DMM/FANZA 片源按最高画质优先；打开播放器默认暂停，解析在后台继续，关闭播放器不会取消请求。后台探测只对每条线路发 1 字节请求，用来标记可用/失效。</div>' +
           '<div class="jf-set-sec" style="margin-top:14px;">会员状态</div>' +
@@ -31264,6 +32016,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         bind('jfTrReplaceNative', 'jf_tr_replace_native');
         bind('jfTrAutoplay', 'jf_tr_autoplay'); bind('jfTrPrefetch', 'jf_tr_prefetch');
         bind('jfTrProbe', 'jf_tr_probe');
+        body.querySelector('#jfTrInlineHover').addEventListener('change', function (e) {
+          GM_setValue('jf_inline_hover_trailer', e.target.checked);
+          if (e.target.checked) dfPopupHide();
+          else if (typeof window.__jfInlineHoverStop === 'function') window.__jfInlineHoverStop();
+          try { syncSettingsControls(); } catch (err) {}
+        });
         body.querySelector('#jfForceWebTop').addEventListener('change', function (e) {
           if (e.target.checked) localStorage.setItem('jf_force_web_top', '1');
           else localStorage.removeItem('jf_force_web_top');
@@ -31900,10 +32658,484 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         '.jf-lib-play-menu.open{display:flex;}',
         '.jf-lib-play-menu-item{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:8px;color:#e6eaf2;text-decoration:none!important;font-size:13px;transition:background .15s;}',
         '.jf-lib-play-menu-item:hover{background:rgba(255,255,255,.1);color:#fff;}',
-        '.jf-lib-play-menu-name{font-weight:600;}'
+        '.jf-lib-play-menu-name{font-weight:600;}',
+        /* 115 云播醒目胶囊 & 列表角标 */
+        '.jf-lib-play-main.jf-lib-play-pan115,html.emby-skin .jf-lib-play-main.jf-lib-play-pan115,html.emby-skin.emby-style-appletv .jf-lib-play-main.jf-lib-play-pan115{background:linear-gradient(135deg,#2563eb 0%,#0a84ff 55%,#0284c7 100%)!important;border-color:rgba(10,132,255,.5)!important;color:#fff!important;box-shadow:0 8px 24px rgba(10,132,255,.38),inset 0 1px 0 rgba(255,255,255,.28)!important;}',
+        '.jf-pan115-split .jf-pan115-arrow{background:#0369a1!important;color:#fff!important;}',
+        'html.emby-light .jf-pan115-card{background:rgba(255,255,255,.96)!important;color:#1d1d1f!important;border-color:rgba(0,0,0,.1)!important;box-shadow:0 24px 64px rgba(0,0,0,.18)!important;}',
+        'html.emby-light .jf-pan115-card [data-pan-log]{background:rgba(0,0,0,.04)!important;color:#515154!important;}',
+        'html.emby-light .jf-pan115-card [data-pan-auto]{background:#0071e3!important;border-color:#0071e3!important;color:#fff!important;}',
+        '.jf-pan115-menu{min-width:290px;}',
+        '.jf-pan115-menu-sec{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:rgba(235,235,245,.45);padding:6px 10px 3px;}',
+        '.jf-pan115-menu button.jf-lib-play-menu-item{width:100%;border:none;background:transparent;cursor:pointer;text-align:left;font-family:inherit;}',
+        '.jf-pan115-file-item.is-selected{background:rgba(10,132,255,.18)!important;border:1px solid rgba(10,132,255,.4);}',
+        '.jf-badge-pan115{background:rgba(10,132,255,.2);color:#7cc4ff;border:1px solid rgba(10,132,255,.38);font-variant-numeric:tabular-nums;}',
+        '.jf-pan115-badge{position:absolute;top:7px;left:7px;z-index:7;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.04em;color:#fff;background:linear-gradient(135deg,rgba(37,99,235,.92),rgba(10,132,255,.92));border:.5px solid rgba(255,255,255,.35);box-shadow:0 4px 12px rgba(0,0,0,.45);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);pointer-events:none;}',
+        /* Apple TV+ 列表海报悬停内嵌静音直播预告片 */
+        '.jf-inline-card-player{position:absolute;inset:0;z-index:6;border-radius:inherit;overflow:hidden;background:#050508;opacity:0;pointer-events:none;transition:opacity .36s cubic-bezier(.22,1,.36,1);}',
+        '.jf-inline-card-player.is-playing{opacity:1;}',
+        '.jf-inline-card-player video{width:100%;height:100%;object-fit:cover;display:block;background:#050508;}',
+        '.jf-inline-live-pill{position:absolute;top:8px;left:8px;z-index:8;display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:rgba(12,12,16,.68);border:.5px solid rgba(255,255,255,.22);backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);color:#f5f5f7;font-size:10px;font-weight:700;letter-spacing:.04em;pointer-events:none;}',
+        '.jf-inline-live-dot{width:6px;height:6px;border-radius:50%;background:#30d158;box-shadow:0 0 6px #30d158;}',
+        '.jf-inline-mute-btn{position:absolute;top:8px;right:8px;z-index:9;width:28px;height:28px;border-radius:50%;border:.5px solid rgba(255,255,255,.28);background:rgba(16,16,22,.72);backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);color:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;pointer-events:auto;transition:transform .18s ease,background .18s ease;}',
+        '.jf-inline-mute-btn:hover{transform:scale(1.1);background:rgba(10,132,255,.88);border-color:transparent;}',
+        '.jf-inline-loader{position:absolute;top:8px;right:8px;z-index:7;width:18px;height:18px;border-radius:50%;border:2px solid rgba(255,255,255,.22);border-top-color:#fff;animation:jfSpin .75s linear infinite;pointer-events:none;}',
+        /* 多维净化黑名单（隐藏 / 半透明折叠） */
+        '.jf-purity-hidden{display:none!important;}',
+        '.jf-purity-dim{opacity:.2!important;filter:grayscale(1) contrast(.85)!important;transition:opacity .25s ease,filter .25s ease!important;position:relative;}',
+        '.jf-purity-dim:hover{opacity:.88!important;filter:none!important;}',
+        '.jf-purity-reason-pill{position:absolute;inset:auto 7px 7px 7px;z-index:9;padding:3px 8px;border-radius:7px;background:rgba(220,38,38,.86);color:#fff;font-size:10.5px;font-weight:700;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;}',
+        '#jf-purity-stat-pill{display:inline-flex;align-items:center;gap:4px;height:30px;padding:0 11px;margin-left:6px;border-radius:999px;border:.5px solid rgba(255,255,255,.16);background:rgba(36,36,42,.62);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);color:rgba(245,245,247,.84);font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .18s ease,transform .18s ease;}',
+        '#jf-purity-stat-pill:hover{background:rgba(10,132,255,.25);color:#fff;transform:scale(1.03);}',
+        '.jf-purity-tag-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}',
+        '.jf-purity-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:12px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:var(--e-text,#f5f5f7);}',
+        '.jf-purity-chip button{border:none;background:none;color:#f87171;cursor:pointer;font-size:13px;line-height:1;padding:0 2px;}',
+        'html.emby-light .jf-pan115-menu{background:rgba(255,255,255,.96);border-color:rgba(0,0,0,.1);box-shadow:0 16px 40px rgba(0,0,0,.14);}',
+        'html.emby-light .jf-pan115-menu .jf-lib-play-menu-item{color:#1d1d1f;}',
+        'html.emby-light .jf-pan115-menu .jf-lib-play-menu-item:hover{background:rgba(0,0,0,.06);color:#000;}',
+        'html.emby-light .jf-pan115-menu-sec{color:rgba(60,60,67,.56);}',
+        'html.emby-light #jf-purity-stat-pill{background:rgba(255,255,255,.82);border-color:rgba(0,0,0,.1);color:#1d1d1f;}',
+        'html.emby-light .jf-purity-chip{background:rgba(0,0,0,.05);border-color:rgba(0,0,0,.1);color:#1d1d1f;}'
       ].join('\n');
       (document.head || document.documentElement).appendChild(st);
     }
+
+    /* =======================================================================
+     * 八点五、多维净化与黑名单屏蔽引擎 (PurityFilter)
+     * ===================================================================== */
+    const PurityFilter = (function () {
+      const KEY = 'jf_purity_rules_v1';
+      let cache = null;
+
+      function getRules() {
+        if (cache) return cache;
+        const def = { enabled: true, mode: 'hide', actors: [], prefixes: [], tags: [], keywords: [], minScore: 0 };
+        try {
+          const raw = GM_getValue(KEY, '');
+          const parsed = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {};
+          cache = {
+            enabled: parsed.enabled !== false,
+            mode: parsed.mode === 'dim' ? 'dim' : 'hide',
+            actors: Array.isArray(parsed.actors) ? parsed.actors.filter(Boolean) : [],
+            prefixes: Array.isArray(parsed.prefixes) ? parsed.prefixes.map(function (s) { return String(s).toUpperCase().replace(/-$/, '').trim(); }).filter(Boolean) : [],
+            tags: Array.isArray(parsed.tags) ? parsed.tags.filter(Boolean) : [],
+            keywords: Array.isArray(parsed.keywords) ? parsed.keywords.filter(Boolean) : [],
+            minScore: Number(parsed.minScore) > 0 ? Number(parsed.minScore) : 0
+          };
+        } catch (e) { cache = def; }
+        return cache;
+      }
+      function saveRules(next) {
+        cache = next;
+        try { GM_setValue(KEY, JSON.stringify(next)); } catch (e) {}
+        scan();
+      }
+      function addItem(field, val) {
+        const v = String(val || '').trim();
+        if (!v) return false;
+        const r = getRules();
+        const normV = field === 'prefixes' ? v.toUpperCase().replace(/-$/, '') : v;
+        if (!Array.isArray(r[field])) return false;
+        if (r[field].some(function (x) { return String(x).toLowerCase() === normV.toLowerCase(); })) return false;
+        r[field].push(normV);
+        saveRules(r);
+        return true;
+      }
+      function removeItem(field, idx) {
+        const r = getRules();
+        if (Array.isArray(r[field]) && idx >= 0 && idx < r[field].length) {
+          r[field].splice(idx, 1);
+          saveRules(r);
+        }
+      }
+
+      function matchCard(it, r) {
+        if (!r || !r.enabled) return '';
+        const hasAnyRule = r.actors.length || r.prefixes.length || r.tags.length || r.keywords.length || r.minScore > 0;
+        if (!hasAnyRule) return '';
+
+        const titleEl = it.querySelector('.video-title');
+        const strongEl = it.querySelector('.video-title strong');
+        const rawTitle = (titleEl ? titleEl.textContent : '') || '';
+        const code = (it.dataset.code || extractCodeFromText((strongEl ? strongEl.textContent : rawTitle).trim()) || '').toUpperCase();
+        const prefix = (code.split('-')[0] || '').trim();
+
+        if (prefix && r.prefixes.length) {
+          for (let i = 0; i < r.prefixes.length; i++) {
+            if (prefix === r.prefixes[i]) return '番号前缀: ' + r.prefixes[i];
+          }
+        }
+        if (r.actors.length) {
+          const box = it.querySelector('.box');
+          const actorStr = [
+            box ? (box.getAttribute('data-actors') || '') : '',
+            Array.prototype.map.call(it.querySelectorAll('.efav-actor-badge'), function (b) { return b.textContent || ''; }).join(' '),
+            rawTitle
+          ].join(' ').toLowerCase();
+          for (let i = 0; i < r.actors.length; i++) {
+            const act = r.actors[i];
+            if (act && actorStr.indexOf(act.toLowerCase()) >= 0) return '屏蔽演员: ' + act;
+          }
+        }
+        if (r.tags.length) {
+          const tagStr = (rawTitle + ' ' + Array.prototype.map.call(it.querySelectorAll('.tags .tag'), function (t) { return t.textContent || ''; }).join(' ')).toLowerCase();
+          for (let i = 0; i < r.tags.length; i++) {
+            const tg = r.tags[i];
+            if (tg && tagStr.indexOf(tg.toLowerCase()) >= 0) return '屏蔽标签: ' + tg;
+          }
+        }
+        if (r.keywords.length) {
+          for (let i = 0; i < r.keywords.length; i++) {
+            const kw = r.keywords[i];
+            if (!kw) continue;
+            if (kw.charAt(0) === '/' && kw.lastIndexOf('/') > 1) {
+              try {
+                const lastSlash = kw.lastIndexOf('/');
+                const re = new RegExp(kw.slice(1, lastSlash), kw.slice(lastSlash + 1) || 'i');
+                if (re.test(rawTitle)) return '正则屏蔽: ' + kw;
+              } catch (e) {}
+            } else if (rawTitle.toLowerCase().indexOf(kw.toLowerCase()) >= 0) {
+              return '关键词: ' + kw;
+            }
+          }
+        }
+        if (r.minScore > 0) {
+          const scoreEl = it.querySelector('.score');
+          if (scoreEl) {
+            const sm = (scoreEl.textContent || '').match(/([0-5]\.\d{1,2})/);
+            if (sm) {
+              const sc = parseFloat(sm[1]);
+              if (!isNaN(sc) && sc > 0 && sc < r.minScore) return '低于 ' + r.minScore.toFixed(1) + ' 分 (' + sc + ')';
+            }
+          }
+        }
+        return '';
+      }
+
+      function updateStatPill(blockedCount) {
+        let pill = document.getElementById('jf-purity-stat-pill');
+        if (!blockedCount) {
+          if (pill) pill.remove();
+          return;
+        }
+        const topbar = document.getElementById('emby-topbar');
+        if (!topbar) return;
+        if (!pill) {
+          pill = document.createElement('button');
+          pill.type = 'button';
+          pill.id = 'jf-purity-stat-pill';
+          pill.title = '点击管理多维净化黑名单规则';
+          pill.addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            if (typeof openSettingsPanel === 'function') openSettingsPanel('purity');
+          });
+          const gear = document.getElementById('emby-settings-btn');
+          if (gear && gear.parentNode) gear.parentNode.insertBefore(pill, gear);
+          else topbar.appendChild(pill);
+        }
+        pill.innerHTML = '<span class="material-symbols-outlined" style="font-size:14px;color:#38bdf8;">shield</span><span>已净化 ' + blockedCount + '</span>';
+      }
+
+      function scan() {
+        if (isDetailPage()) {
+          updateStatPill(0);
+          return 0;
+        }
+        const r = getRules();
+        const cards = document.querySelectorAll('.movie-list .item, .emby-row .item, #t250-movie-list .item');
+        let blocked = 0;
+        cards.forEach(function (it) {
+          const reason = matchCard(it, r);
+          const oldPill = it.querySelector('.jf-purity-reason-pill');
+          if (reason) {
+            blocked++;
+            it.dataset.jfPurityReason = reason;
+            if (r.mode === 'dim') {
+              it.classList.remove('jf-purity-hidden');
+              it.classList.add('jf-purity-dim');
+              const cov = it.querySelector('.cover');
+              if (cov && !oldPill) {
+                const p = document.createElement('div');
+                p.className = 'jf-purity-reason-pill';
+                p.textContent = '🛡️ ' + reason;
+                cov.appendChild(p);
+              } else if (oldPill) {
+                oldPill.textContent = '🛡️ ' + reason;
+              }
+            } else {
+              it.classList.remove('jf-purity-dim');
+              it.classList.add('jf-purity-hidden');
+              if (oldPill) oldPill.remove();
+            }
+          } else {
+            delete it.dataset.jfPurityReason;
+            it.classList.remove('jf-purity-hidden', 'jf-purity-dim');
+            if (oldPill) oldPill.remove();
+          }
+        });
+        updateStatPill(blocked);
+        return blocked;
+      }
+
+      // 详情页按住 Alt 点击演员或类别标签即可快速拉黑
+      function bindDetailQuickBlock() {
+        const root = document.getElementById('emby-detail-root') || document.querySelector('.video-detail');
+        if (!root || root.dataset.jfPurityAltBound) return;
+        root.dataset.jfPurityAltBound = '1';
+        root.addEventListener('click', function (e) {
+          if (!e.altKey) return;
+          const actorChip = e.target.closest && e.target.closest('.emby-actor-chip, a[href*="/actors/"]');
+          if (actorChip) {
+            e.preventDefault(); e.stopPropagation();
+            const nm = (actorChip.getAttribute('data-actor-name') || (actorChip.querySelector('.nm') ? actorChip.querySelector('.nm').textContent : actorChip.textContent) || '').replace(/[\u2640\u2642]/g, '').trim();
+            if (nm && addItem('actors', nm)) magToast('🛡️ 已将演员「' + nm + '」加入净化黑名单', true);
+            else if (nm) magToast('ℹ️ 「' + nm + '」已在黑名单中', true);
+            return;
+          }
+          const tagLink = e.target.closest && e.target.closest('a[href*="/tags"], .em-tag');
+          if (tagLink) {
+            e.preventDefault(); e.stopPropagation();
+            const tg = (tagLink.textContent || '').trim();
+            if (tg && addItem('tags', tg)) magToast('🛡️ 已将类别「' + tg + '」加入净化黑名单', true);
+            else if (tg) magToast('ℹ️ 「' + tg + '」已在黑名单中', true);
+          }
+        }, true);
+      }
+
+      function renderSettings(mask) {
+        const mount = (mask || document).querySelector('#jf-purity-settings-mount');
+        if (!mount) return;
+        const r = getRules();
+        const sections = [
+          { key: 'prefixes', title: '屏蔽番号前缀', desc: '如 FC2、HEYZO、VRTM（自动忽略连字符与大小写）', ph: '输入前缀如 FC2 回车添加' },
+          { key: 'actors', title: '屏蔽演员名单', desc: '命中演员名字即屏蔽（收藏夹/榜单演员徽章及标题均生效；详情页可 Alt+点击演员快速拉黑）', ph: '输入演员名回车添加' },
+          { key: 'tags', title: '屏蔽类别 / 标签词', desc: '如 VR、総集編、合集、AI（匹配卡片标签与标题；详情页可 Alt+点击类别快速拉黑）', ph: '输入类别或标签词回车添加' },
+          { key: 'keywords', title: '屏蔽标题关键词 / 正则', desc: '支持普通词或 /正则/i 语法（例如 /4時間以上|ベスト/i）', ph: '输入关键词或 /regex/i 回车添加' }
+        ];
+        mount.innerHTML =
+          '<div class="jhs-item-row">' +
+            '<div class="jhs-item-info"><div class="jhs-item-name">启用多维净化过滤</div><div class="jhs-item-desc">在首页、排行榜、搜索页、演员页及 TOP250 实时净化命中规则的卡片</div></div>' +
+            '<div><input type="checkbox" id="jf-pur-enable" class="mini-switch" ' + (r.enabled ? 'checked' : '') + '></div>' +
+          '</div>' +
+          '<div class="jhs-item-row">' +
+            '<div class="jhs-item-info"><div class="jhs-item-name">净化处理方式</div><div class="jhs-item-desc">选择彻底无痕隐藏，或半透明灰阶折叠（鼠标悬停可临时查看被屏蔽原因与封面）</div></div>' +
+            '<div style="width:190px;"><select id="jf-pur-mode" class="jhs-input-text"><option value="hide"' + (r.mode === 'hide' ? ' selected' : '') + '>彻底隐藏卡片</option><option value="dim"' + (r.mode === 'dim' ? ' selected' : '') + '>半透明灰阶折叠</option></select></div>' +
+          '</div>' +
+          '<div class="jhs-item-row">' +
+            '<div class="jhs-item-info"><div class="jhs-item-name">最低评分门槛 (<span id="jf-pur-score-val">' + (r.minScore > 0 ? r.minScore.toFixed(1) + ' 分' : '不限') + '</span>)</div><div class="jhs-item-desc">自动过滤低于指定评分的低质雷作（无评分新片默认保留不误杀）</div></div>' +
+            '<div style="width:190px;"><input type="range" id="jf-pur-score" min="0" max="4.5" step="0.1" value="' + r.minScore + '" style="width:100%;"></div>' +
+          '</div>' +
+          sections.map(function (sec) {
+            const list = r[sec.key] || [];
+            return '<div style="margin-top:14px;padding:12px 14px;border-radius:10px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);">' +
+              '<div style="font-size:13px;font-weight:700;margin-bottom:3px;">' + sec.title + ' <span style="font-size:11px;opacity:.55;">(' + list.length + ')</span></div>' +
+              '<div style="font-size:11.5px;color:var(--e-text3,#888);margin-bottom:8px;">' + sec.desc + '</div>' +
+              '<div style="display:flex;gap:8px;">' +
+                '<input type="text" class="jhs-input-text" data-pur-inp="' + sec.key + '" placeholder="' + escapeAttr(sec.ph) + '" style="flex:1;">' +
+                '<button type="button" class="jhs-btn jhs-btn-primary" data-pur-add="' + sec.key + '">添加</button>' +
+              '</div>' +
+              '<div class="jf-purity-tag-wrap">' +
+                (list.length ? list.map(function (v, idx) {
+                  return '<span class="jf-purity-chip"><span>' + escapeHtml(v) + '</span><button type="button" data-pur-del="' + sec.key + '" data-idx="' + idx + '" title="移除">×</button></span>';
+                }).join('') : '<span style="font-size:11.5px;opacity:.45;">暂未添加</span>') +
+              '</div>' +
+            '</div>';
+          }).join('');
+
+        mount.querySelector('#jf-pur-enable').addEventListener('change', function (e) {
+          const cur = getRules(); cur.enabled = e.target.checked; saveRules(cur);
+        });
+        mount.querySelector('#jf-pur-mode').addEventListener('change', function (e) {
+          const cur = getRules(); cur.mode = e.target.value === 'dim' ? 'dim' : 'hide'; saveRules(cur);
+        });
+        const scInp = mount.querySelector('#jf-pur-score'), scVal = mount.querySelector('#jf-pur-score-val');
+        scInp.addEventListener('input', function () {
+          const v = parseFloat(scInp.value) || 0;
+          scVal.textContent = v > 0 ? (v.toFixed(1) + ' 分') : '不限';
+          const cur = getRules(); cur.minScore = v; saveRules(cur);
+        });
+        const handleAdd = function (key) {
+          const inp = mount.querySelector('[data-pur-inp="' + key + '"]');
+          if (!inp) return;
+          const raw = (inp.value || '').trim();
+          if (!raw) return;
+          raw.split(/[,，\n]+/).map(function (s) { return s.trim(); }).filter(Boolean).forEach(function (part) {
+            addItem(key, part);
+          });
+          inp.value = '';
+          renderSettings(mask);
+        };
+        mount.querySelectorAll('[data-pur-add]').forEach(function (btn) {
+          btn.addEventListener('click', function () { handleAdd(btn.getAttribute('data-pur-add')); });
+        });
+        mount.querySelectorAll('[data-pur-inp]').forEach(function (inp) {
+          inp.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); handleAdd(inp.getAttribute('data-pur-inp')); }
+          });
+        });
+        mount.querySelectorAll('[data-pur-del]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            removeItem(btn.getAttribute('data-pur-del'), parseInt(btn.getAttribute('data-idx'), 10));
+            renderSettings(mask);
+          });
+        });
+      }
+
+      window.__jfRenderPuritySettings = renderSettings;
+      return { getRules: getRules, saveRules: saveRules, addItem: addItem, scan: scan, bindDetailQuickBlock: bindDetailQuickBlock, renderSettings: renderSettings };
+    })();
+
+    /* =======================================================================
+     * 八点六、Apple TV+ 列表海报悬停内嵌静音直播预告片 (InlineHoverTrailer)
+     * ===================================================================== */
+    const InlineHoverTrailer = (function () {
+      let hoverTimer = 0;
+      let activeItem = null;
+      let activeToken = 0;
+      let abortCtrl = null;
+      let sessionMuted = true;
+      let playerWrap = null;
+      let videoEl = null;
+      let muteBtn = null;
+      let loaderEl = null;
+
+      function isEnabled() {
+        return isPluginEnabled('fusionTrailer') && GM_getValue('jf_inline_hover_trailer', true) !== false;
+      }
+
+      function ensureSingleton() {
+        if (playerWrap && videoEl) return;
+        playerWrap = document.createElement('div');
+        playerWrap.className = 'jf-inline-card-player';
+        playerWrap.innerHTML =
+          '<video muted loop playsinline preload="auto"></video>' +
+          '<span class="jf-inline-live-pill"><span class="jf-inline-live-dot"></span>PREVIEW</span>' +
+          '<button type="button" class="jf-inline-mute-btn" title="切换静音"><span class="material-symbols-outlined" style="font-size:15px;">volume_off</span></button>';
+        videoEl = playerWrap.querySelector('video');
+        muteBtn = playerWrap.querySelector('.jf-inline-mute-btn');
+        muteBtn.addEventListener('click', function (e) {
+          e.preventDefault(); e.stopPropagation();
+          sessionMuted = !sessionMuted;
+          if (videoEl) videoEl.muted = sessionMuted;
+          muteBtn.querySelector('.material-symbols-outlined').textContent = sessionMuted ? 'volume_off' : 'volume_up';
+        });
+      }
+
+      function stop() {
+        activeToken++;
+        if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = 0; }
+        if (abortCtrl) { try { abortCtrl.abort(); } catch (e) {} abortCtrl = null; }
+        if (loaderEl) { loaderEl.remove(); loaderEl = null; }
+        if (videoEl) {
+          try {
+            videoEl.onloadeddata = null;
+            videoEl.onerror = null;
+            videoEl.pause();
+            videoEl.removeAttribute('src');
+            videoEl.load();
+          } catch (e) {}
+        }
+        if (playerWrap) {
+          playerWrap.classList.remove('is-playing');
+          if (playerWrap.parentNode) playerWrap.parentNode.removeChild(playerWrap);
+        }
+        activeItem = null;
+      }
+
+      function start(item) {
+        if (!isEnabled() || !item || isDetailPage()) return false;
+        const cover = item.querySelector('.cover');
+        if (!cover) return false;
+        const titleEl = item.querySelector('.video-title strong, .video-title');
+        const code = item.dataset.code || extractCodeFromText((titleEl && titleEl.textContent || '').trim());
+        if (!code) return false;
+
+        if (activeItem === item && (hoverTimer || (playerWrap && playerWrap.parentNode === cover))) return true;
+        stop();
+        activeItem = item;
+        const myToken = ++activeToken;
+
+        hoverTimer = setTimeout(async function () {
+          hoverTimer = 0;
+          if (myToken !== activeToken || !item.isConnected || !cover.isConnected) return;
+          ensureSingleton();
+          cover.style.position = 'relative';
+          loaderEl = document.createElement('div');
+          loaderEl.className = 'jf-inline-loader';
+          cover.appendChild(loaderEl);
+
+          abortCtrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+          let candidateQueue = [];
+          let trying = false;
+          let startedPlaying = false;
+          const triedUrls = new Set();
+
+          const tryNext = function () {
+            if (myToken !== activeToken || startedPlaying) return;
+            if (!candidateQueue.length) { trying = false; return; }
+            trying = true;
+            const nextUrl = candidateQueue.shift();
+            if (!nextUrl || triedUrls.has(nextUrl)) { tryNext(); return; }
+            triedUrls.add(nextUrl);
+            if (playerWrap.parentNode !== cover) cover.appendChild(playerWrap);
+            videoEl.muted = sessionMuted;
+            muteBtn.querySelector('.material-symbols-outlined').textContent = sessionMuted ? 'volume_off' : 'volume_up';
+            videoEl.onloadeddata = function () {
+              if (myToken !== activeToken) return;
+              startedPlaying = true;
+              if (loaderEl) { loaderEl.remove(); loaderEl = null; }
+              playerWrap.classList.add('is-playing');
+              const p = videoEl.play();
+              if (p && typeof p.catch === 'function') {
+                p.catch(function () {
+                  videoEl.muted = true;
+                  sessionMuted = true;
+                  muteBtn.querySelector('.material-symbols-outlined').textContent = 'volume_off';
+                  videoEl.play().catch(function () {});
+                });
+              }
+            };
+            videoEl.onerror = function () {
+              if (myToken !== activeToken) return;
+              tryNext();
+            };
+            videoEl.src = nextUrl;
+          };
+
+          const enqueueSources = function (list) {
+            if (myToken !== activeToken || startedPlaying) return;
+            (list || []).forEach(function (s) {
+              if (!s || !s.url || /\.m3u8(\?|$)/i.test(s.url)) return;
+              if (!triedUrls.has(s.url) && candidateQueue.indexOf(s.url) < 0) candidateQueue.push(s.url);
+              if (s.alt && !triedUrls.has(s.alt) && candidateQueue.indexOf(s.alt) < 0) candidateQueue.push(s.alt);
+            });
+            if (!trying) tryNext();
+          };
+
+          try {
+            const finalSources = await resolveTrailer(code, enqueueSources, abortCtrl ? abortCtrl.signal : undefined);
+            enqueueSources(finalSources);
+            if (myToken === activeToken && !startedPlaying && !candidateQueue.length && !trying) {
+              if (loaderEl) { loaderEl.remove(); loaderEl = null; }
+            }
+          } catch (e) {
+            if (loaderEl) { loaderEl.remove(); loaderEl = null; }
+          }
+        }, 950);
+        return true;
+      }
+
+      window.addEventListener('scroll', function () {
+        if (activeItem) stop();
+      }, { passive: true, capture: true });
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) stop();
+      });
+
+      window.__jfInlineHoverStart = start;
+      window.__jfInlineHoverStop = stop;
+      return { start: start, stop: stop, isEnabled: isEnabled };
+    })();
 
     /* =======================================================================
      * 九、插件注册 + 注入调度
@@ -31912,8 +33144,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       try {
         const defs = [
           { id: 'fusionMediaLib', name: '媒体库跳转（Emby/Jellyfin）', desc: '播放下拉「媒体库」分组、番号旁入库徽章、列表页入库角标，一键跳转 Emby/Jellyfin 播放（JavdbBuddy 功能模型）', default: true },
-          { id: 'fusionTrailer', name: '预告片播放', desc: '封面悬停预告片按钮 + 操作区圆按钮，官方预告片 / DMM 多画质 / 厂商直链 / javspyl 多源解析（ZiPenOk 预告片链路）', default: true },
-          { id: 'fusionMagnet', name: '磁力工具箱', desc: '磁力链接旁按钮框：复制精简链接 / 推送 qB / 115 离线 / whatslink 验车截图轮播（ZiPenOk 磁力助手）', default: true }
+          { id: 'fusionTrailer', name: '预告片播放', desc: '封面悬停预告片按钮 + 操作区圆按钮 + 列表海报内嵌静音直播预告片，官方 / DMM 多画质 / 厂商直链 / javspyl 多源解析', default: true },
+          { id: 'fusionMagnet', name: '磁力工具箱', desc: '磁力链接旁按钮框：复制精简链接 / 推送 qB / 115 离线与自动归档 / whatslink 验车截图轮播', default: true }
         ];
         defs.forEach(function (d) {
           if (!PLUGIN_REGISTRY.some(function (p) { return p.id === d.id; })) PLUGIN_REGISTRY.push(d);
@@ -31924,16 +33156,21 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       try { ensureFusionStyle(); } catch (e) {}
       try {
         if (isDetailPage()) {
+          InlineHoverTrailer.stop();
           injectMediaGroup();
           injectCodeBadges();
           injectPosterTrailerBtn();
           injectCircleTrailerBtn();
           injectMenuConfigEntry();
           injectLibPlayButton();
+          injectPan115PlayButton();
           injectMagnetPanel();
           scanMagnetTables();
+          PurityFilter.bindDetailQuickBlock();
+          PurityFilter.scan();
         } else {
           injectListBadges();
+          PurityFilter.scan();
           try { ltxApply(); } catch (e) {}
           try { ltxUpdateButton(); } catch (e) {}
           // 非详情页：移除右侧磁力面板（它挂在 body 上，不随皮肤重构清理）
@@ -31946,7 +33183,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     function startObserver() {
       if (observer) return;
       const schedule = debounce(fullScan, 350);
-      const ownUiSelector = '.jf-trailer-overlay, .jf-whatslink-overlay, .jf-set-mask, .jf-mag-toast, .jf-mag-btn-group, .jf-lib-chips, .jf-poster-play, .jf-circle-btn, .jf-lib-badge, .jf-rank-actions, .jf-rank-action, .emby-card-shine';
+      const ownUiSelector = '.jf-trailer-overlay, .jf-whatslink-overlay, .jf-set-mask, .jf-mag-toast, .jf-mag-btn-group, .jf-lib-chips, .jf-poster-play, .jf-circle-btn, .jf-lib-badge, .jf-pan115-badge, .jf-pan115-play-wrap, .jf-inline-card-player, .jf-inline-loader, .jf-purity-reason-pill, #jf-purity-stat-pill, .jf-rank-actions, .jf-rank-action, .emby-card-shine';
       function isRelevant(muts) {
         const detail = isDetailPage();
         for (let i = 0; i < muts.length; i++) {
@@ -31996,12 +33233,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       window.__javdbFusionScanListBadges = injectListBadges;
       ensureFusionStyle();
       GM_registerMenuCommand('🎬 融合扩展设置（媒体库/预告片/磁力工具）', function () { openFusionSettings(); });
+      GM_registerMenuCommand('🛡️ 净化与黑名单屏蔽设置', function () { if (typeof openSettingsPanel === 'function') openSettingsPanel('purity'); });
+      GM_registerMenuCommand('☁️ 115 智能归档与整理面板', function () { Pan115.openPanel(typeof currentPageCode === 'function' ? currentPageCode() : '', ''); });
       // 首次扫描后由相关 DOM 变更观察器接管，无需多轮全页轮询。
       fullScan();
       startObserver();
-      flog('融合模块已加载（媒体库跳转 / 预告片 / 磁力工具箱）');
+      flog('融合模块已加载（媒体库跳转 / 预告片 / 磁力与 115 云播归档 / 多维净化）');
     }
-    return { init: init, openSettings: openFusionSettings, openTrailer: openTrailerPlayer, prefetch: prefetchTrailerInBackground, push115: push115Retry, push115Batch: push115Batch, query115Status: query115Status, toast: magToast };
+    return { init: init, openSettings: openFusionSettings, openTrailer: openTrailerPlayer, prefetch: prefetchTrailerInBackground, push115: push115Retry, push115Batch: push115Batch, query115Status: query115Status, pan115: Pan115, purity: PurityFilter, inlineTrailer: InlineHoverTrailer, toast: magToast };
   })();
 
 
