@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.383-ed2k-space
+// @version      7.390-appletv-pro
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -9,6 +9,7 @@
 // @connect      gitee.com
 // @connect      cdn.jsdelivr.net
 // @connect      fastly.jsdelivr.net
+// @connect      testingcf.jsdelivr.net
 // @connect      raw.githubusercontent.com
 // @connect      translate.googleapis.com
 // @connect      translate-pa.googleapis.com
@@ -16,6 +17,19 @@
 // @connect      icons.duckduckgo.com
 // @connect      sukebei.nyaa.si
 // @connect      bt4gprx.com
+// @connect      btdig.com
+// @connect      u9a9.com
+// @connect      btsow.com
+// @connect      whatslink.info
+// @connect      115.com
+// @connect      webapi.115.com
+// @connect      proapi.115.com
+// @connect      subtitlecat.com
+// @connect      api-shoulei-ssl.xunlei.com
+// @connect      smovie.1pondo.tv
+// @connect      smovie.caribbeancom.com
+// @connect      www.heyzo.com
+// @connect      my.cdn.tokyo-hot.com
 // @connect      downloadtorrentfile.com
 // @connect      api.javspyl.eu.org
 // @connect      123av.com
@@ -167,7 +181,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.383-ed2k-space';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.390-appletv-pro';
   // 记录启动时的 hash 深链接：JAVDB 自己的脚本/跳转可能在 DOMContentLoaded 前就把 # 清掉
   var JF_BOOT_HASH = (location.hash || '').replace('#emby-dtab-', '');
   var tabHome = null, tabFav = null, favPanel = null;
@@ -236,86 +250,243 @@
     if (key) { __embyNetPending.set(key, p); p.then(function () {}, function () {}); }
     return p;
   }
+  /* GM_* 安全垫片：必须在 GM_xmlhttpRequest 包装层之前执行，grant 缺失/被禁用时回退 Web 标准 API，防止 ReferenceError。
+   * 只向 globalThis 挂载、绝不在本作用域声明同名 var，否则会遮蔽油猴真实实现。 */
+  var __gmHost = (typeof globalThis !== 'undefined') ? globalThis : ((typeof window !== 'undefined') ? window : null);
+  (function __gmShim() {
+    if (!__gmHost) return;
+    try {
+      if (typeof GM_xmlhttpRequest === 'undefined') {
+        __gmHost.GM_xmlhttpRequest = function (d) {
+          d = d || {};
+          var ctrl = null, timer = null, done = false;
+          var task = {
+            abort: function () {
+              if (done) return; done = true;
+              try { if (timer) clearTimeout(timer); } catch (e) {}
+              try { if (ctrl) ctrl.abort(); } catch (e) {}
+              if (d.onabort) { try { d.onabort(); } catch (e) {} }
+            }
+          };
+          if (typeof fetch === 'undefined') {
+            if (d.onerror) { try { d.onerror(new Error('no fetch')); } catch (e) {} }
+            return task;
+          }
+          try {
+            try { ctrl = new AbortController(); } catch (e) { ctrl = null; }
+            if (d.timeout > 0) {
+              timer = setTimeout(function () {
+                task.abort();
+                if (d.ontimeout) { try { d.ontimeout(); } catch (e) {} }
+              }, d.timeout);
+            }
+            fetch(d.url, {
+              method: d.method || 'GET',
+              headers: d.headers || {},
+              body: (d.data != null ? d.data : undefined),
+              credentials: d.anonymous ? 'omit' : 'include',
+              signal: ctrl ? ctrl.signal : undefined
+            }).then(function (resp) {
+              var asBlob = d.responseType === 'blob';
+              var reader = asBlob ? resp.blob() : resp.text();
+              reader.then(function (bodyVal) {
+                if (done) return; done = true;
+                try { if (timer) clearTimeout(timer); } catch (e) {}
+                if (d.onload) {
+                  try {
+                    d.onload({
+                      status: resp.status,
+                      statusText: resp.statusText,
+                      responseText: asBlob ? '' : bodyVal,
+                      response: bodyVal,
+                      finalUrl: resp.url || d.url
+                    });
+                  } catch (e) {}
+                }
+              }).catch(function (err) {
+                if (done) return; done = true;
+                if (d.onerror) { try { d.onerror(err); } catch (e) {} }
+              });
+            }).catch(function (err) {
+              if (done) return; done = true;
+              try { if (timer) clearTimeout(timer); } catch (e) {}
+              if (d.onerror) { try { d.onerror(err); } catch (e) {} }
+            });
+          } catch (e) {
+            if (d.onerror) { try { d.onerror(e); } catch (e2) {} }
+          }
+          return task;
+        };
+      }
+    } catch (e) {}
+    try {
+      if (typeof GM_getValue === 'undefined') {
+        __gmHost.GM_getValue = function (k, def) {
+          try {
+            var raw = localStorage.getItem('gm:' + k);
+            if (raw === null || raw === undefined) return def;
+            try { return JSON.parse(raw); } catch (e) { return raw; }
+          } catch (e) { return def; }
+        };
+      }
+      if (typeof GM_setValue === 'undefined') {
+        __gmHost.GM_setValue = function (k, v) {
+          try { localStorage.setItem('gm:' + k, (typeof v === 'string') ? v : JSON.stringify(v)); } catch (e) {}
+        };
+      }
+    } catch (e) {}
+    try {
+      if (typeof GM_setClipboard === 'undefined') {
+        __gmHost.GM_setClipboard = function (txt) {
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(String(txt)).catch(function () {});
+              return;
+            }
+          } catch (e) {}
+          try {
+            var ta = document.createElement('textarea');
+            ta.value = String(txt == null ? '' : txt);
+            ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            ta.remove();
+          } catch (e) {}
+        };
+      }
+    } catch (e) {}
+    try {
+      if (typeof GM_registerMenuCommand === 'undefined') {
+        __gmHost.GM_registerMenuCommand = function () {};
+      }
+    } catch (e) {}
+  })();
+
   /* =======================================================================
    * 同一 GET 的在途请求合并（修掉详情页的一堆重复请求）
    * =======================================================================
-   * 脚本里所有「先查缓存 → 发请求 → 拿到结果再写缓存」的写法，在并发调用时
-   * 两个调用都会查不到缓存（缓存要等请求结束才写入）→ 各发一次请求。
-   * 实测一次详情页加载：JAV_info 演员索引 x2、12 个站点的可用性探测各 x2、
-   * 标题翻译 x2、站点 favicon x2，合计多打 15+ 个请求。
-   * 站点探测走的是裸 GM_xmlhttpRequest（绕过了 gmReq 自带的 embyNetRun 去重），
-   * 所以必须在 GM_xmlhttpRequest 这一层统一处理。
-   * 实现：相同 method+url 的并发 GET 共享同一个底层请求，结果扇出给所有订阅者。 */
+   * 实现：相同 method+url+responseType+关键头 的并发 GET 共享同一个底层请求，
+   * 结果扇出给所有订阅者；每个订阅者拥有独立引用计数 abort()，互不误伤；
+   * 完整透传 responseType / onprogress / onreadystatechange，保护 Blob 取色与流式探测。 */
   const __gmGetInFlight = new Map();
-  const __gmRawXhr = GM_xmlhttpRequest;
-  // 短期响应备忘：同一 URL 在冷却窗口内再次请求直接复用上次结果。
-  // 只缓存 2xx 成功响应；失败不缓存（避免把网络抖动固化成「不可用」）。
+  const __gmRawXhr = typeof GM_xmlhttpRequest === 'function' ? GM_xmlhttpRequest : null;
   const __gmMemo = new Map();
   const __gmMemoMax = 40;
   const __gmMemoCool = 300000; // 5 分钟，与站点可用性缓存 TTL 一致
-  // 排除表：这些 GET 接口会改状态（115 改名/移动/删除），不能复用旧响应，
-  // 否则「改名完成 → 重新列目录」会显示旧数据。
   const __gmMemoExclude = ['webapi.115.com', '115.com/proapi', 'proapi.115.com'];
-  GM_xmlhttpRequest = function (opt) {
-    const method = String((opt && opt.method) || 'GET').toUpperCase();
-    const key = (method === 'GET' && opt && opt.url) ? (method + ' ' + opt.url) : null;
-    if (!key) return __gmRawXhr(opt);
-    // ① 冷却窗口内的重复请求 → 直接复用上次响应
-    const excluded = __gmMemoExclude.some(function (h) { return opt.url.indexOf(h) >= 0; });
-    const memo = excluded ? null : __gmMemo.get(key);
-    if (memo && (Date.now() - memo.t) < __gmMemoCool) {
-      const deliver = function () {
-        try { if (opt.onload) opt.onload(memo.resp); } catch (e) {}
-        try { if (opt.onloadend) opt.onloadend(memo.resp); } catch (e) {}
-      };
-      if (memo.settled) deliver();
-      else memo.waiters.push(deliver);
-      return { abort: function () {} };
-    }
-    // ② 并发中的同一请求 → 共享同一个底层请求
-    let entry = __gmGetInFlight.get(key);
-    if (entry) {
-      entry.subs.push({
-        load: opt.onload, error: opt.onerror, timeout: opt.ontimeout,
-        abort: opt.onabort, loadend: opt.onloadend
-      });
-      return entry.raw;
-    }
-    entry = { subs: [], done: false, raw: null, waiters: [] };
-    __gmGetInFlight.set(key, entry);
-    entry.subs.push({
-      load: opt.onload, error: opt.onerror, timeout: opt.ontimeout,
-      abort: opt.onabort, loadend: opt.onloadend
-    });
-    const finish = function (kind, resp) {
-      if (entry.done) return;
-      entry.done = true;
-      __gmGetInFlight.delete(key);
-      entry.subs.forEach(function (s) {
-        try { if (s[kind]) s[kind](resp); } catch (e) {}
-      });
-      entry.subs.forEach(function (s) {
-        try { if (s.loadend) s.loadend(resp); } catch (e) {}
-      });
-      // 成功响应进入短期备忘，供冷却窗口内的后续请求复用
-      if (kind === 'load' && resp && resp.status >= 200 && resp.status < 300) {
-        __gmMemo.set(key, { t: Date.now(), resp: resp, settled: true, waiters: [] });
-        if (__gmMemo.size > __gmMemoMax) {
-          const oldest = __gmMemo.keys().next().value;
-          __gmMemo.delete(oldest);
-        }
+  function __gmHeaderSig(headers) {
+    if (!headers || typeof headers !== 'object') return '';
+    const keys = Object.keys(headers);
+    if (!keys.length) return '';
+    const picked = [];
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      const kl = k.toLowerCase();
+      if (kl === 'range' || kl === 'authorization' || kl === 'x-emby-token' || kl === 'jdsignature') {
+        picked.push(kl + ':' + String(headers[k] || '').slice(0, 48));
       }
+    }
+    return picked.length ? ('|' + picked.sort().join('|')) : '';
+  }
+  if (__gmRawXhr) {
+    const __gmWrapped = function (opt) {
+      opt = opt || {};
+      const method = String(opt.method || 'GET').toUpperCase();
+      const rType = String(opt.responseType || '').toLowerCase();
+      const hasStreamHook = typeof opt.onprogress === 'function' || typeof opt.onreadystatechange === 'function';
+      const hdrSig = __gmHeaderSig(opt.headers);
+      const isRange = hdrSig.indexOf('range:') >= 0;
+      const isBinary = rType === 'blob' || rType === 'arraybuffer';
+      // 带流式钩子/Range 探针的请求直接走底层句柄，确保调用方可随时精准 abort 截断流量
+      const key = (method === 'GET' && opt.url && !hasStreamHook && !isRange)
+        ? (method + ' ' + opt.url + (rType ? (' [' + rType + ']') : '') + hdrSig)
+        : null;
+      if (!key) return __gmRawXhr(opt);
+
+      // ① 冷却窗口内的重复请求 → 直接复用上次响应（排除二进制与状态变更接口）
+      const excluded = isBinary || __gmMemoExclude.some(function (h) { return opt.url.indexOf(h) >= 0; });
+      const memo = excluded ? null : __gmMemo.get(key);
+      if (memo && (Date.now() - memo.t) < __gmMemoCool) {
+        const deliver = function () {
+          try { if (opt.onload) opt.onload(memo.resp); } catch (e) {}
+          try { if (opt.onloadend) opt.onloadend(memo.resp); } catch (e) {}
+        };
+        if (memo.settled) setTimeout(deliver, 0);
+        else memo.waiters.push(deliver);
+        return { abort: function () {} };
+      }
+
+      // ② 并发中的同一请求 → 共享同一个底层请求（引用计数 abort 隔离）
+      const makeSubHandle = function (entryObj, subObj) {
+        return {
+          abort: function () {
+            if (subObj.cancelled || entryObj.done) return;
+            subObj.cancelled = true;
+            try { if (subObj.abort) subObj.abort(); } catch (e) {}
+            try { if (subObj.loadend) subObj.loadend(); } catch (e) {}
+            const anyAlive = entryObj.subs.some(function (s) { return !s.cancelled; });
+            if (!anyAlive && entryObj.raw && typeof entryObj.raw.abort === 'function') {
+              entryObj.done = true;
+              __gmGetInFlight.delete(key);
+              try { entryObj.raw.abort(); } catch (e) {}
+            }
+          }
+        };
+      };
+
+      let entry = __gmGetInFlight.get(key);
+      const sub = {
+        load: opt.onload, error: opt.onerror, timeout: opt.ontimeout,
+        abort: opt.onabort, loadend: opt.onloadend, cancelled: false
+      };
+      if (entry) {
+        entry.subs.push(sub);
+        return makeSubHandle(entry, sub);
+      }
+      entry = { subs: [sub], done: false, raw: null, waiters: [] };
+      __gmGetInFlight.set(key, entry);
+      const finish = function (kind, resp) {
+        if (entry.done) return;
+        entry.done = true;
+        __gmGetInFlight.delete(key);
+        entry.subs.forEach(function (s) {
+          if (s.cancelled) return;
+          try { if (s[kind]) s[kind](resp); } catch (e) {}
+        });
+        entry.subs.forEach(function (s) {
+          if (s.cancelled) return;
+          try { if (s.loadend) s.loadend(resp); } catch (e) {}
+        });
+        if (!excluded && kind === 'load' && resp && resp.status >= 200 && resp.status < 300) {
+          __gmMemo.set(key, { t: Date.now(), resp: resp, settled: true, waiters: [] });
+          if (__gmMemo.size > __gmMemoMax) {
+            const oldest = __gmMemo.keys().next().value;
+            __gmMemo.delete(oldest);
+          }
+        }
+      };
+      entry.raw = __gmRawXhr({
+        method: opt.method,
+        url: opt.url,
+        headers: opt.headers,
+        data: opt.data,
+        responseType: opt.responseType,
+        overrideMimeType: opt.overrideMimeType,
+        nocache: opt.nocache,
+        redirect: opt.redirect,
+        fetch: opt.fetch,
+        timeout: opt.timeout,
+        anonymous: opt.anonymous,
+        onload: function (r) { finish('load', r); },
+        onerror: function (r) { finish('error', r); },
+        ontimeout: function (r) { finish('timeout', r); },
+        onabort: function (r) { finish('abort', r); }
+      });
+      return makeSubHandle(entry, sub);
     };
-    entry.raw = __gmRawXhr({
-      method: opt.method, url: opt.url, headers: opt.headers, data: opt.data,
-      timeout: opt.timeout, anonymous: opt.anonymous,
-      onload: function (r) { finish('load', r); },
-      onerror: function (r) { finish('error', r); },
-      ontimeout: function (r) { finish('timeout', r); },
-      onabort: function (r) { finish('abort', r); }
-    });
-    return entry.raw;
-  };
+    try { GM_xmlhttpRequest = __gmWrapped; } catch (e) { if (__gmHost) __gmHost.GM_xmlhttpRequest = __gmWrapped; }
+  }
 
   function log(m) { try { console.log('[JAVDB→Emby] ' + m); } catch (e) {} }
   log('脚本已注入页面');
@@ -334,7 +505,7 @@
     const clean = url.trim();
     // 严格防御：杜绝任何 javascript:、vbscript:、data:text/html 等伪协议代码执行
     if (/^\s*(?:javascript|vbscript|data):/i.test(clean)) return fallback || '#';
-    if (/^(?:https?:\/\/|\/|#|magnet:)/i.test(clean)) return clean;
+    if (/^(?:https?:\/\/|\/|#|magnet:|ed2k:\/\/)/i.test(clean)) return clean;
     return fallback || '#';
   }
   function toAbsUrl(u, base) {
@@ -414,107 +585,6 @@
       }, true);
     } catch (e) {}
   }
-
-  /* GM_* 安全垫片：grant 缺失/被禁用时回退 Web 标准 API，只求不抛错、功能降级。
-   * 只向 globalThis 挂载、绝不在本作用域声明同名 var，否则会遮蔽油猴真实实现。 */
-  var __gmHost = (typeof globalThis !== 'undefined') ? globalThis : ((typeof window !== 'undefined') ? window : null);
-  (function __gmShim() {
-    if (!__gmHost) return;
-    try {
-      if (typeof GM_xmlhttpRequest === 'undefined') {
-        __gmHost.GM_xmlhttpRequest = function (d) {
-          d = d || {};
-          var ctrl = null, timer = null, done = false;
-          var task = {
-            abort: function () {
-              if (done) return; done = true;
-              try { if (timer) clearTimeout(timer); } catch (e) {}
-              try { if (ctrl) ctrl.abort(); } catch (e) {}
-              if (d.onabort) { try { d.onabort(); } catch (e) {} }
-            }
-          };
-          if (typeof fetch === 'undefined') {
-            if (d.onerror) { try { d.onerror(new Error('no fetch')); } catch (e) {} }
-            return task;
-          }
-          try {
-            try { ctrl = new AbortController(); } catch (e) { ctrl = null; }
-            if (d.timeout > 0) {
-              timer = setTimeout(function () {
-                task.abort();
-                if (d.ontimeout) { try { d.ontimeout(); } catch (e) {} }
-              }, d.timeout);
-            }
-            fetch(d.url, {
-              method: d.method || 'GET',
-              headers: d.headers || {},
-              body: (d.data != null ? d.data : undefined),
-              credentials: d.anonymous ? 'omit' : 'include',
-              signal: ctrl ? ctrl.signal : undefined
-            }).then(function (resp) {
-              resp.text().then(function (txt) {
-                if (done) return; done = true;
-                try { if (timer) clearTimeout(timer); } catch (e) {}
-                if (d.onload) { try { d.onload({ status: resp.status, statusText: resp.statusText, responseText: txt, response: txt, finalUrl: resp.url || d.url }); } catch (e) {} }
-              }).catch(function (err) {
-                if (done) return; done = true;
-                if (d.onerror) { try { d.onerror(err); } catch (e) {} }
-              });
-            }).catch(function (err) {
-              if (done) return; done = true;
-              try { if (timer) clearTimeout(timer); } catch (e) {}
-              if (d.onerror) { try { d.onerror(err); } catch (e) {} }
-            });
-          } catch (e) {
-            if (d.onerror) { try { d.onerror(e); } catch (e2) {} }
-          }
-          return task;
-        };
-      }
-    } catch (e) {}
-    try {
-      if (typeof GM_getValue === 'undefined') {
-        __gmHost.GM_getValue = function (k, def) {
-          try {
-            var raw = localStorage.getItem('gm:' + k);
-            if (raw === null || raw === undefined) return def;
-            try { return JSON.parse(raw); } catch (e) { return raw; }
-          } catch (e) { return def; }
-        };
-      }
-      if (typeof GM_setValue === 'undefined') {
-        __gmHost.GM_setValue = function (k, v) {
-          try { localStorage.setItem('gm:' + k, (typeof v === 'string') ? v : JSON.stringify(v)); } catch (e) {}
-        };
-      }
-    } catch (e) {}
-    try {
-      if (typeof GM_setClipboard === 'undefined') {
-        __gmHost.GM_setClipboard = function (txt) {
-          try {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-              navigator.clipboard.writeText(String(txt)).catch(function () {});
-              return;
-            }
-          } catch (e) {}
-          try {
-            var ta = document.createElement('textarea');
-            ta.value = String(txt == null ? '' : txt);
-            ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            ta.remove();
-          } catch (e) {}
-        };
-      }
-    } catch (e) {}
-    try {
-      if (typeof GM_registerMenuCommand === 'undefined') {
-        __gmHost.GM_registerMenuCommand = function () {};
-      }
-    } catch (e) {}
-  })();
 
   function getBackupFileName() {
     const d = new Date();
@@ -848,9 +918,11 @@
   }
 
   let hideTipTimer = null;
+  let noteTipSeq = 0;
   async function showNoteTip(target) {
     if (!target) return;
     if (hideTipTimer) { clearTimeout(hideTipTimer); hideTipTimer = null; }
+    const seq = ++noteTipSeq;
 
     const isActor = target.key && target.key.startsWith('actor:');
     const n = (detailNoteCache && detailNoteCache[target.key]) ? detailNoteCache[target.key] : null;
@@ -867,6 +939,7 @@
       try {
         actorData = await ActressService.getActressData(actorName);
       } catch (e) {}
+      if (seq !== noteTipSeq || !target.el || !target.el.isConnected) return;
     }
 
     if (!noteTipEl) {
@@ -1019,9 +1092,11 @@
     if (hideTipTimer) clearTimeout(hideTipTimer);
     const ms = typeof delay === 'number' ? delay : 180;
     if (ms <= 0) {
+      noteTipSeq++;
       if (noteTipEl) noteTipEl.classList.remove('show');
     } else {
       hideTipTimer = setTimeout(function () {
+        noteTipSeq++;
         if (noteTipEl) noteTipEl.classList.remove('show');
       }, ms);
     }
@@ -6942,11 +7017,60 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   // 统一「视图 Tab」定义：首页标签栏（.emby-home-tabs）与顶栏常驻按钮（.emby-topnav）共用。
   // 后期新增按钮只需在此数组加一项，两处 UI 自动同步出现。
   const HOME_TAB_DEFS = [
-    { key: 'home', label: '主页', icon: 'home_max_dots' },
+    { key: 'home', label: '主页', icon: 'home_max_dots', href: '/' },
+    { key: 'daily', label: '每日排行', icon: 'local_fire_department', href: '/rankings/movies?p=daily&t=censored' },
     { key: 'favorites', label: '收藏夹', icon: 'diagnosis' },
     { key: 'gallery', label: '预览画廊', icon: 'local_see' },
     { key: 'top250', label: 'TOP250', icon: 'social_leaderboard' }
   ];
+
+  function resolveActiveNavKey(tab) {
+    if (tab === 'favorites' || tab === 'gallery' || tab === 'top250') return tab;
+    if (/^\/rankings\/movies(?:\/|$)/.test(location.pathname)) return 'daily';
+    if (location.pathname === '/') return 'home';
+    return '';
+  }
+
+  function syncTopNavActiveState(tabOverride) {
+    try {
+      const inFavView = document.documentElement.classList.contains('emby-fav-view');
+      const curTab = tabOverride || (inFavView ? (localStorage.getItem(HOME_TAB_KEY) || 'home') : 'home');
+      const activeKey = resolveActiveNavKey(curTab);
+      document.querySelectorAll('.emby-home-tab[data-tab]').forEach(function (t) {
+        t.classList.toggle('active', !!activeKey && t.dataset.tab === activeKey);
+      });
+      if (tabHome) tabHome.classList.toggle('active', activeKey === 'home');
+      if (tabFav) tabFav.classList.toggle('active', activeKey === 'favorites');
+      if (tabGallery) tabGallery.classList.toggle('active', activeKey === 'gallery');
+      if (tabTop250) tabTop250.classList.toggle('active', activeKey === 'top250');
+    } catch (e) {}
+  }
+
+  function handleHomeTabClick(def, e) {
+    if (e) e.preventDefault();
+    const inFavView = document.documentElement.classList.contains('emby-fav-view');
+    if (def.key === 'daily') {
+      // 若当前底层路由本就在 /rankings/movies 且仅打开了收藏夹/画廊浮层，直接收起浮层露出排行页
+      if (inFavView && /^\/rankings\/movies(?:\/|$)/.test(location.pathname)) {
+        switchTab('home');
+        return;
+      }
+      try { localStorage.setItem(HOME_TAB_KEY, 'home'); } catch (err) {}
+      document.documentElement.classList.remove('emby-fav-view');
+      location.href = def.href || '/rankings/movies?p=daily&t=censored';
+      return;
+    }
+    if (def.key === 'home') {
+      if (!inFavView && location.pathname !== '/') {
+        try { localStorage.setItem(HOME_TAB_KEY, 'home'); } catch (err) {}
+        location.href = '/';
+        return;
+      }
+      switchTab('home');
+      return;
+    }
+    switchTab(def.key);
+  }
 
   // 金标皇冠图标：内联 SVG（Material Symbols outlined crown 标准 path）。
   // 不用 .material-symbols-outlined 字体字形——Google Fonts 偶发加载失败时字形会退化为字面文本 "crown"，
@@ -7395,18 +7519,17 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       HOME_TAB_DEFS.forEach(function (def) {
         const a = document.createElement('a');
         a.className = 'emby-home-tab';
-        a.href = '#' + def.key;
+        a.href = def.href || ('#' + def.key);
         a.dataset.tab = def.key;
         a.innerHTML = '<span class="material-symbols-outlined" style="font-size:1em;margin-right:.3em;vertical-align:-2px;">' + def.icon + '</span>' + def.label;
         a.addEventListener('click', function (e) {
-          e.preventDefault();
-          // 点击切换后立即收回（不留 3 秒延迟）
           clearTimeout(navHideTimer);
           logoWrap.classList.remove('show');
-          switchTab(def.key);
+          handleHomeTabClick(def, e);
         });
         topNav.appendChild(a);
       });
+      syncTopNavActiveState();
     }
 
     // 抽屉遮罩
@@ -8002,7 +8125,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     ].join(', ');
 
     const registry = []; // {el, svg, filter, feImage, feDisp, canvas, filterId, W, H}
+    const mapDataUriCache = new Map(); // 相同物理几何(W,H,r)复用同一位移贴图，免去重复 2D SDF 采样与 toDataURL 编码
     let resizeTimer = null;
+    let listenersBound = false;
     // 液态折射强度（基准系数）；由设置面板实时调节，默认 0.22
     let liquidAmp = 0.22;
 
@@ -8096,41 +8221,46 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       const maxW = W > 400 ? 512 : 240;
       const w = Math.max(16, Math.min(maxW, Math.round(W * 0.5)));
       const h = Math.max(16, Math.min(240, Math.round(H * 0.5)));
-      const cv = entry.canvas;
-      cv.width = w; cv.height = h;
-      const ctx = cv.getContext('2d');
-      if (!ctx) return false;
-      const img = ctx.createImageData(w, h);
-      const data = img.data;
+      const cacheKey = W + 'x' + H + 'r' + Math.round(r);
+      let dataUri = mapDataUriCache.get(cacheKey);
+      if (!dataUri) {
+        const cv = entry.canvas;
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d');
+        if (!ctx) return false;
+        const img = ctx.createImageData(w, h);
+        const data = img.data;
 
-      // 默认中位中性无位移基底 (R=128, G=128, B=0, A=255)
-      data.fill(128);
-      for (let i = 2; i < data.length; i += 4) {
-        data[i] = 0;
-        data[i + 1] = 255;
-      }
+        // 默认中位中性无位移基底 (R=128, G=128, B=0, A=255)
+        data.fill(128);
+        for (let i = 2; i < data.length; i += 4) {
+          data[i] = 0;
+          data[i + 1] = 255;
+        }
 
-      // 遍历采样网格，仅在边缘倒角带 [-bevel, 0] 计算物理凸透镜向心折射
-      for (let py = 0; py < h; py++) {
-        const y = (py / (h - 1) - 0.5) * H;
-        for (let px = 0; px < w; px++) {
-          const x = (px / (w - 1) - 0.5) * W;
-          const d = roundedBoxSDF(x, y, hw, hh, r);
-          if (d >= -bevel && d <= 0) {
-            const t = (d + bevel) / bevel;
-            // smoothStep 三次非线性平滑过渡 (childrentime/liquid-glass)
-            const sc = t * t * (3 - 2 * t);
-            const norm = getNormal(x, y, hw, hh, r);
-            const idx = (py * w + px) * 4;
-            // 光线穿过凸透镜边缘时向内折射（方向为 -norm）
-            data[idx]     = Math.max(0, Math.min(255, Math.round((-norm.nx * sc * 0.5 + 0.5) * 255)));
-            data[idx + 1] = Math.max(0, Math.min(255, Math.round((-norm.ny * sc * 0.5 + 0.5) * 255)));
+        // 遍历采样网格，仅在边缘倒角带 [-bevel, 0] 计算物理凸透镜向心折射
+        for (let py = 0; py < h; py++) {
+          const y = (py / (h - 1) - 0.5) * H;
+          for (let px = 0; px < w; px++) {
+            const x = (px / (w - 1) - 0.5) * W;
+            const d = roundedBoxSDF(x, y, hw, hh, r);
+            if (d >= -bevel && d <= 0) {
+              const t = (d + bevel) / bevel;
+              // smoothStep 三次非线性平滑过渡 (childrentime/liquid-glass)
+              const sc = t * t * (3 - 2 * t);
+              const norm = getNormal(x, y, hw, hh, r);
+              const idx = (py * w + px) * 4;
+              // 光线穿过凸透镜边缘时向内折射（方向为 -norm）
+              data[idx]     = Math.max(0, Math.min(255, Math.round((-norm.nx * sc * 0.5 + 0.5) * 255)));
+              data[idx + 1] = Math.max(0, Math.min(255, Math.round((-norm.ny * sc * 0.5 + 0.5) * 255)));
+            }
           }
         }
-      }
 
-      ctx.putImageData(img, 0, 0);
-      const dataUri = cv.toDataURL();
+        ctx.putImageData(img, 0, 0);
+        dataUri = cv.toDataURL();
+        memCacheSetCapped(mapDataUriCache, cacheKey, dataUri, 64);
+      }
       entry.feImage.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUri);
       entry.feImage.setAttribute('href', dataUri);
       entry.feImage.setAttribute('preserveAspectRatio', 'none');
@@ -8215,12 +8345,31 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       return makeEntry(el);
     }
 
+    function onResizeInvalidate() {
+      if (!document.documentElement.classList.contains('emby-style-liquid')) return;
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        registry.forEach(function (e) {
+          const W = Math.max(0, Math.round(e.el.offsetWidth || e.el.getBoundingClientRect().width));
+          const H = Math.max(0, Math.round(e.el.offsetHeight || e.el.getBoundingClientRect().height));
+          if (W > 10 && H > 10 && (e.W !== W || e.H !== H)) {
+            buildMap(e);
+          }
+        });
+      }, 150);
+    }
+
     function apply() {
       if (!document.documentElement.classList.contains('emby-style-liquid')) return;
       clear();
       document.querySelectorAll(TARGETS).forEach(function (el) {
         if (el && document.body.contains(el)) makeEntry(el);
       });
+      if (!listenersBound) {
+        listenersBound = true;
+        window.addEventListener('scroll', onScrollInvalidate, { passive: true, capture: true });
+        window.addEventListener('resize', onResizeInvalidate);
+      }
       if (!observer) {
         observer = new MutationObserver(function (muts) {
           if (!document.documentElement.classList.contains('emby-style-liquid')) return;
@@ -8278,11 +8427,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       });
     }
 
-    window.addEventListener('scroll', onScrollInvalidate, { passive: true, capture: true });
-
     function clear() {
       if (observer) { observer.disconnect(); observer = null; }
+      if (listenersBound) {
+        listenersBound = false;
+        window.removeEventListener('scroll', onScrollInvalidate, { capture: true });
+        window.removeEventListener('resize', onResizeInvalidate);
+      }
       clearTimeout(scrollEndTimer);
+      clearTimeout(resizeTimer);
       if (scrollRaf) { cancelAnimationFrame(scrollRaf); scrollRaf = null; }
       registry.forEach(function (e) {
         if (e.svg && e.svg.parentNode) e.svg.parentNode.removeChild(e.svg);
@@ -8300,20 +8453,6 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         });
       } catch (err) {}
     }
-
-    window.addEventListener('resize', function () {
-      if (!document.documentElement.classList.contains('emby-style-liquid')) return;
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(function () {
-        registry.forEach(function (e) {
-          const W = Math.max(0, Math.round(e.el.offsetWidth || e.el.getBoundingClientRect().width));
-          const H = Math.max(0, Math.round(e.el.offsetHeight || e.el.getBoundingClientRect().height));
-          if (W > 10 && H > 10 && (e.W !== W || e.H !== H)) {
-            buildMap(e);
-          }
-        });
-      }, 150);
-    });
 
     return {
       apply: apply,
@@ -9853,7 +9992,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     const STORE_NAME = 'cache_items';
 
     const state = {
-      mode: 'playback',     // 默认免登录热播榜秒开呈现
+      mode: 'top',          // 点击顶栏 TOP250 默认直接呈现 VIP / 官方 TOP250 榜单
       // TOP250 参数
       handleType: 'all',    // 'all' | 'video_type' | 'year'
       typeValue: '',        // '' | '0' | '1' | '2' | '3' | '2025'
@@ -10010,7 +10149,68 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         ? ReviewListInfiniteManager.getSignature() : '';
     }
 
-    // 1. 获取热播榜单（纯免登录，仅需单一客户端签名）
+    // 通用官方榜单 HTML 解析器（供 /rankings/top 与 /rankings/playback 网页会话共用）
+    function parseOfficialRankingHtml(html, pageNo, awardName) {
+      if (/window\.location\.href\s*=\s*['\"]\/(?:login|plans)/i.test(html)) {
+        throw new Error('JAVDB 未返回榜单数据：当前网页会话未登录或需 VIP 权限（请确认已登录当前镜像站）');
+      }
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      let items = Array.from(doc.querySelectorAll('.movie-list .item'));
+      if (!items.length) items = Array.from(doc.querySelectorAll('.item'));
+      const perPage = 50;
+      const offset = (pageNo - 1) * perPage;
+      const movies = items.map(function (item, i) {
+        const link = item.querySelector('a[href^="/v/"]');
+        if (!link) return null;
+        const match = (link.getAttribute('href') || '').match(/\/v\/([^/?#]+)/);
+        if (!match) return null;
+        const titleEl = item.querySelector('.video-title, .title');
+        const titleText = (titleEl ? titleEl.textContent : link.textContent || '').replace(/\s+/g, ' ').trim();
+        const code = (item.querySelector('.video-title strong, strong') || {}).textContent || (titleText.match(/\b[A-Z0-9]+-\d+\b/i) || [''])[0];
+        const title = titleText.replace(code, '').trim();
+        const img = item.querySelector('.cover img, img');
+        const cover = img ? (img.getAttribute('data-src') || img.getAttribute('src') || '') : '';
+        const rankText = (item.querySelector('.top250-rank-badge, .rank, .tag.is-dark') || {}).textContent || '';
+        const rankMatch = rankText.match(/\d+/);
+        const scoreText = (item.querySelector('.score .value, .score') || {}).textContent || '';
+        const scoreMatch = scoreText.match(/[0-5](?:\.\d+)?/);
+        const date = ((item.querySelector('.meta, .time') || {}).textContent || '').trim();
+        const hasCnsub = /中字|字幕/.test(item.textContent || '');
+        const rank = rankMatch ? parseInt(rankMatch[0], 10) : offset + i + 1;
+        return {
+          id: match[1], code: String(code).trim(), number: String(code).trim(),
+          title: title || titleText, origin_title: title || titleText,
+          detailHref: '/v/' + match[1], coverThumb: cover, coverLarge: cover,
+          thumb_url: cover, cover_url: cover, date: date, release_date: date,
+          score: scoreMatch ? parseFloat(scoreMatch[0]) : 0,
+          has_cnsub: hasCnsub, magnets_count: 0,
+          _topRank: rank,
+          awards: awardName ? [{ name: awardName, rank: rank }] : []
+        };
+      }).filter(Boolean);
+      if (!movies.length) {
+        if (doc.querySelector('form[action*="/user_sessions"], a[href="/login"]')) {
+          throw new Error('当前镜像站会话未登录，请先登录账号');
+        }
+        const anyItem = doc.querySelector('.item');
+        if (anyItem) {
+          throw new Error('已读取 JAVDB 榜单页面，但当前筛选条件下没有影片（可尝试切换类型或年份）');
+        }
+        throw new Error('未能从 JAVDB 官方页面解析出榜单卡片（可能需要 VIP 权限或页面结构已变更）');
+      }
+      return movies;
+    }
+
+    async function fetchOfficialPlayback(period) {
+      const p = encodeURIComponent(period || 'daily');
+      const url = location.origin + '/rankings/playback?p=' + p;
+      const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
+      if (!response.ok) throw new Error('JAVDB 网页热播榜请求失败 (' + response.status + ')');
+      const html = await response.text();
+      return parseOfficialRankingHtml(html, 1, '');
+    }
+
+    // 1. 获取热播榜单（优先使用当前镜像站 VIP 网页会话，失败再回退移动端 API）
     async function fetchPlayback(period, bypassCache) {
       const cacheKey = 'playback_' + period;
       if (!bypassCache) {
@@ -10018,21 +10218,37 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         if (cached && cached.length) return cached;
       }
 
+      let webErr = null;
+      try {
+        const webMovies = await fetchOfficialPlayback(period);
+        if (webMovies && webMovies.length) {
+          await setCached(cacheKey, webMovies);
+          return webMovies;
+        }
+      } catch (e) {
+        webErr = e;
+      }
+
       const url = API_BASE + '/v1/rankings/playback?period=' + encodeURIComponent(period) + '&filter_by=high_score';
       const sig = getSignature();
-      // 第一性原理修复：仅传单一 jdSignature，杜绝重复与伪造 UA 触发 HTTP 400
+      const token = getAuthToken();
       const headers = { 'jdSignature': sig };
-      const text = await gmHttp.get(url, headers);
-      const res = JSON.parse(text);
-      if (res.data && Array.isArray(res.data.movies)) {
-        await setCached(cacheKey, res.data.movies);
-        return res.data.movies;
+      if (token) headers['authorization'] = 'Bearer ' + token;
+      try {
+        const text = await gmHttp.get(url, headers);
+        const res = JSON.parse(text);
+        if (res.data && Array.isArray(res.data.movies)) {
+          await setCached(cacheKey, res.data.movies);
+          return res.data.movies;
+        }
+        if (Array.isArray(res)) {
+          await setCached(cacheKey, res);
+          return res;
+        }
+        throw new Error((webErr && webErr.message) || res.message || '获取热播榜失败');
+      } catch (apiErr) {
+        throw new Error((apiErr && apiErr.message) || (webErr && webErr.message) || '获取热播榜失败');
       }
-      if (Array.isArray(res)) {
-        await setCached(cacheKey, res);
-        return res;
-      }
-      throw new Error(res.message || '获取热播榜失败');
     }
 
     // 2. 获取 TOP250 榜单
@@ -10116,61 +10332,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
       if (!response.ok) throw new Error('JAVDB 官方 TOP250 请求失败 (' + response.status + ')');
       const html = await response.text();
-      // 未登录时 /rankings/top 不会返回 302，而是返回 HTTP 200 + 一段 JS 跳转语句
-      // （实测响应体就是 window.location.href='/login';）。
-      // 这种情况下页面里根本没有榜单节点，旧代码只查 .movie-list .item 拿不到任何
-      // 数据，最终只抛一句泛化的「请确认已登录」，导致 VIP 用户明明已登录却仍被要求
-      // 粘贴 Token。这里显式识别该响应并给出准确原因。
-      if (/window\.location\.href\s*=\s*['\"]\/login/i.test(html)) {
-        throw new Error('JAVDB 未返回榜单数据：当前网页会话未登录或 Cookie 已失效（请刷新页面重新登录后再试）');
-      }
-      const doc = new DOMParser().parseFromString(html, 'text/html');
-      // 兼容两种结构：带 .movie-list 祖先容器，或卡片直接平铺在页面里。
-      // 旧写法 '.movie-list .item' 要求祖先存在，结构一变就整页取不到数据。
-      let items = Array.from(doc.querySelectorAll('.movie-list .item'));
-      if (!items.length) items = Array.from(doc.querySelectorAll('.item'));
-      const perPage = 50;
-      const offset = (pageNo - 1) * perPage;
-      const movies = items.map(function (item, i) {
-        const link = item.querySelector('a[href^="/v/"]');
-        if (!link) return null;
-        const match = (link.getAttribute('href') || '').match(/\/v\/([^/?#]+)/);
-        if (!match) return null;
-        const titleEl = item.querySelector('.video-title, .title');
-        const titleText = (titleEl ? titleEl.textContent : link.textContent || '').replace(/\s+/g, ' ').trim();
-        const code = (item.querySelector('.video-title strong, strong') || {}).textContent || (titleText.match(/\b[A-Z0-9]+-\d+\b/i) || [''])[0];
-        const title = titleText.replace(code, '').trim();
-        const img = item.querySelector('.cover img, img');
-        const cover = img ? (img.getAttribute('data-src') || img.getAttribute('src') || '') : '';
-        const rankText = (item.querySelector('.top250-rank-badge, .rank, .tag.is-dark') || {}).textContent || '';
-        const rankMatch = rankText.match(/\d+/);
-        const scoreText = (item.querySelector('.score .value, .score') || {}).textContent || '';
-        const scoreMatch = scoreText.match(/[0-5](?:\.\d+)?/);
-        const date = ((item.querySelector('.meta, .time') || {}).textContent || '').trim();
-        const hasCnsub = /中字|字幕/.test(item.textContent || '');
-        const rank = rankMatch ? parseInt(rankMatch[0], 10) : offset + i + 1;
-        return {
-          id: match[1], code: String(code).trim(), number: String(code).trim(),
-          title: title || titleText, origin_title: title || titleText,
-          detailHref: '/v/' + match[1], coverThumb: cover, coverLarge: cover,
-          thumb_url: cover, cover_url: cover, date: date, release_date: date,
-          score: scoreMatch ? parseFloat(scoreMatch[0]) : 0,
-          has_cnsub: hasCnsub, magnets_count: 0,
-          _topRank: rank,
-          awards: [{ name: 'JavDB 影片TOP250', rank: rank }]
-        };
-      }).filter(Boolean);
-      if (!movies.length) {
-        // 区分两种失败原因，避免一律提示"请登录"而误导已登录的 VIP 用户：
-        //  · 已登录且页面结构正常 → 说明筛选条件（类型/年份）或该页码下确实没有数据
-        //  · 已登录但一个卡片都没有 → 结构变更，需要更新选择器
-        const anyItem = doc.querySelector('.item');
-        if (anyItem) {
-          throw new Error('已读取 JAVDB 榜单页面，但当前筛选条件下没有影片（可尝试切换类型或年份）');
-        }
-        throw new Error('未能从 JAVDB 官方页面解析出榜单卡片（页面结构可能已变更，需更新解析规则）');
-      }
-      return movies;
+      return parseOfficialRankingHtml(html, pageNo, 'JavDB 影片TOP250');
     }
     // 异步评分加载与持久化系统（复用顶层共享 scoreMemCache）
     let scoreQueueRunning = false;
@@ -11151,7 +11313,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               '<a href="' + escapeAttr(href) + '" class="box" title="' + escapeAttr(title) + '">' +
                 '<div class="top250-rank-badge ' + rankCls + '">' + (rank === 1 ? '👑 ' : '') + '#' + rank + '</div>' +
                 '<div class="cover">' +
-                  '<img loading="lazy" referrerpolicy="no-referrer" src="' + escapeAttr(coverSrc) + '"' +
+                  '<img ' + (idx < 12 ? '' : 'loading="lazy" ') + 'referrerpolicy="no-referrer" src="' + escapeAttr(coverSrc) + '"' +
                     (coverLargeSrc ? ' data-large="' + escapeAttr(coverLargeSrc) + '"' : '') +
                     (coverThumbSrc ? ' data-thumb="' + escapeAttr(coverThumbSrc) + '"' : '') +
                     ' alt="">' +
@@ -12165,11 +12327,23 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         }
       } catch (e) {}
 
+      try {
+        const failTs = Number(localStorage.getItem('jhs_repo_index_404_at')) || 0;
+        if (failTs && Date.now() - failTs < 43200000) {
+          this._idxFailAt = Date.now();
+          return null;
+        }
+      } catch (e) {}
+
       let txt = '';
       for (const base of [this.repoBase, this.repoBaseFallback]) {
         try { txt = await gmHttp.get(base + 'index.json'); if (txt) break; } catch (e) {}
       }
-      if (!txt) { this._idxFailAt = Date.now(); return null; }
+      if (!txt) {
+        this._idxFailAt = Date.now();
+        try { localStorage.setItem('jhs_repo_index_404_at', String(Date.now())); } catch (e) {}
+        return null;
+      }
       try {
         const d = JSON.parse(txt);
         this._idxMem = d;
@@ -12234,8 +12408,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       };
     },
 
+    _wikiCooldownUntil: 0,
+    _inflight: new Map(),
+
     lookupWiki: async function (name) {
       if (!name) return null;
+      if (this._wikiCooldownUntil && Date.now() < this._wikiCooldownUntil) return { _rateLimited: true };
       let targetName = name;
       if (targetName === '三上悠亞') targetName = '三上悠亜';
       const wikiUrl = 'https://ja.wikipedia.org/wiki/' + encodeURIComponent(targetName);
@@ -12269,7 +12447,13 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           bodyRetired: bodyRetired,
           url: wikiUrl
         };
-      } catch (e) { return null; }
+      } catch (e) {
+        if (/429/.test(String((e && e.message) || e))) {
+          this._wikiCooldownUntil = Date.now() + 600000;
+          return { _rateLimited: true };
+        }
+        return null;
+      }
     },
 
     computeStatus: function (data) {
@@ -12297,17 +12481,30 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (!name) return null;
       const cache = this.getLocalCache();
       const cached = cache[name];
-      if (cached && cached._ts && (Date.now() - cached._ts < 7 * 86400000)) return cached;
-      let data = await this.lookupRepo(name);
-      if (!data) data = await this.lookupWiki(name);
-      if (data) {
-        data.status = this.computeStatus(data);
-        data._ts = Date.now();
-        cache[name] = data;
-        this.saveLocalCache(cache);
-        return data;
+      if (cached && cached._ts) {
+        if (cached._notFound && (Date.now() - cached._ts < 3 * 86400000)) return null;
+        if (!cached._notFound && (Date.now() - cached._ts < 7 * 86400000)) return cached;
       }
-      return cached || null;
+      if (this._inflight.has(name)) return this._inflight.get(name);
+      const p = (async () => {
+        let data = await this.lookupRepo(name);
+        if (!data) data = await this.lookupWiki(name);
+        if (data && data._rateLimited) return (cached && !cached._notFound) ? cached : null;
+        if (data) {
+          data.status = this.computeStatus(data);
+          data._ts = Date.now();
+          const latest = this.getLocalCache();
+          latest[name] = data;
+          this.saveLocalCache(latest);
+          return data;
+        }
+        const latest = this.getLocalCache();
+        latest[name] = { _notFound: true, _ts: Date.now() };
+        this.saveLocalCache(latest);
+        return null;
+      })();
+      this._inflight.set(name, p);
+      try { return await p; } finally { this._inflight.delete(name); }
     }
   };
 
@@ -12804,11 +13001,19 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     }
 
     async function fetchIndex() {
-      // 【去重 2026-10】loadPromise 之前声明了却没接上：并发调用会各自下载一次
-      // 4.6MB 的 Filetree.json。现在承接在途 Promise，只下一次。
+      if (indexMap) return indexMap;
       if (loadPromise) return loadPromise;
-      loadPromise = fetchIndexInner();
-      try { return await loadPromise; } finally { loadPromise = null; }
+      loadPromise = fetchIndexInner().then(function (res) {
+        loadPromise = null;
+        if (res) {
+          try { refreshAllAvatarsUI(); } catch (e) {}
+        }
+        return res;
+      }, function (err) {
+        loadPromise = null;
+        throw err;
+      });
+      return loadPromise;
     }
 
     async function fetchIndexInner() {
@@ -12881,11 +13086,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         indexMap = new Map(Object.entries(compactObj));
         log('Gfriends 头像索引构建完成，共收录 ' + indexMap.size + ' 位演员头像');
 
-        // 异步存入 IndexedDB
+        const payloadObj = { time: Date.now(), map: compactObj };
+        // 异步存入 IndexedDB；仅当 IndexedDB 不可用或写入失败时降级写入 GM 存储，避免双份占用内存
         if (typeof FAV !== 'undefined' && typeof FAV.dbSetMeta === 'function') {
-          FAV.dbSetMeta(META_KEY, { time: Date.now(), map: compactObj }).catch(function (err) {
-            log('保存 Gfriends 索引至 IndexedDB 异常: ' + err.message);
+          FAV.dbSetMeta(META_KEY, payloadObj).catch(function (err) {
+            log('保存 Gfriends 索引至 IndexedDB 异常，回退 GM 存储: ' + err.message);
+            try { GM_setValue(META_KEY, JSON.stringify(payloadObj)); } catch (e2) {}
           });
+        } else {
+          try { GM_setValue(META_KEY, JSON.stringify(payloadObj)); } catch (e2) {}
         }
 
         return indexMap;
@@ -12897,19 +13106,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
 
     function ensureLoaded() {
       if (indexMap) return Promise.resolve(indexMap);
-      if (!loadPromise) {
-        loadPromise = fetchIndex().then(function (res) {
-          loadPromise = null;
-          if (res) {
-            try { refreshAllAvatarsUI(); } catch (e) {}
-          }
-          return res;
-        }).catch(function (err) {
-          loadPromise = null;
-          return null;
-        });
-      }
-      return loadPromise;
+      return fetchIndex().catch(function () { return null; });
     }
 
     // 智能别名与名称规范化匹配
@@ -14266,7 +14463,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<div class="jhs-panel-title"><span class="material-symbols-outlined">palette</span> 外观与显示设置</div>' +
             '<div class="jhs-item-row">' +
               '<div class="jhs-item-info"><div class="jhs-item-name">视觉风格</div><div class="jhs-item-desc">选择整体界面质感主题</div></div>' +
-              '<div style="width:160px;"><select id="full-style" class="jhs-input-text"><option value="appletv">Apple TV 简约</option><option value="emby">EMBY 经典</option><option value="glass">毛玻璃</option><option value="liquid">液态玻璃</option></select></div>' +
+              '<div style="width:160px;"><select id="full-style" class="jhs-input-text"><option value="appletv">Apple TV+ 影院</option><option value="emby">EMBY 经典</option><option value="glass">毛玻璃</option><option value="liquid">液态玻璃</option></select></div>' +
             '</div>' +
             '<div class="jhs-item-row">' +
               '<div class="jhs-item-info"><div class="jhs-item-name">颜色模式</div><div class="jhs-item-desc">跟随系统 / 浅色 / 深色</div></div>' +
@@ -14540,9 +14737,19 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       });
     });
 
-    // 关闭按钮与 Esc
+    // 关闭按钮与 Esc（独立全局守卫，无需先打开搜索框即可随时按 Esc 关闭设置/快捷浮窗）
     mask.querySelector('.jhs-settings-close').addEventListener('click', closeSettingsPanel);
     mask.addEventListener('click', function (e) { if (e.target === mask) closeSettingsPanel(); });
+    if (!window.__jhsGlobalEscBound) {
+      window.__jhsGlobalEscBound = true;
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        const sp = document.getElementById('jhs-settings-mask') || document.getElementById('emby-settings-panel');
+        if (sp && sp.classList.contains('open')) closeSettingsPanel();
+        const qs = document.getElementById('emby-quick-settings-popover');
+        if (qs && qs.classList.contains('open')) qs.classList.remove('open');
+      });
+    }
 
     // 外观控件事件
     const fStyle = mask.querySelector('#full-style');
@@ -15925,12 +16132,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     if (closeBtn) closeBtn.addEventListener('click', closeSearchModal);
     m.addEventListener('click', function (e) { if (e.target === m) closeSearchModal(); });
 
-    // Esc 关闭（搜索 / 设置）
+    // Esc 关闭（搜索 / 设置 / 快捷浮窗）
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Escape') return;
       if (m.classList.contains('open')) closeSearchModal();
       const sp = document.getElementById('jhs-settings-mask') || document.getElementById('emby-settings-panel');
       if (sp && sp.classList.contains('open')) closeSettingsPanel();
+      const qs = document.getElementById('emby-quick-settings-popover');
+      if (qs && qs.classList.contains('open')) qs.classList.remove('open');
     });
   }
 
@@ -16101,6 +16310,16 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           if (card && !card.classList.contains('video-detail') && !card.classList.contains('emby-detail-root') && !card.id.startsWith('emby-')) {
             card.style.setProperty('display', 'none', 'important');
           }
+        }
+      });
+      // 隐藏原站新版底部常驻「官方 App … 下載 App」悬浮横幅（类名会随镜像混淆变更，按固定定位 + 官方App文本双重校验）
+      document.querySelectorAll('body > div, body > nav, body > aside, body > section').forEach(function (el) {
+        if (!el || (el.id && (el.id.startsWith('emby-') || el.id.startsWith('jhs-') || el.id.startsWith('jf-')))) return;
+        const txt = (el.textContent || '').replace(/\s+/g, ' ');
+        if (!/官方\s*App/i.test(txt) || !/下載\s*App|下载\s*App/i.test(txt)) return;
+        const cs = getComputedStyle(el);
+        if ((cs.position === 'fixed' || cs.position === 'sticky') && el.getBoundingClientRect().height <= 110) {
+          el.style.setProperty('display', 'none', 'important');
         }
       });
     } catch (e) {}
@@ -16442,29 +16661,57 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       try { attachCoverStatusAndPreview(box.closest('.item') || box.parentElement || box); } catch (e) {}
     }
     let raf = null;
+    let cachedRect = null;
+    let rectAt = 0;
+    let lastClientX = 0, lastClientY = 0;
     // 悬停封面预览（全局）：标准网格/瀑布流/动态聚焦卡片共用同一套气泡；
     // noPreview 用于详情页推荐行等场景——保留倾斜/辉光，不弹封面预览
     const noPreview = !!(opts && opts.noPreview);
     box.addEventListener('mouseenter', function (ev) {
+      cachedRect = box.getBoundingClientRect();
+      rectAt = Date.now();
       if (noPreview) return;
       try { dfHoverStart(box.closest('.item') || box, ev.clientX, ev.clientY); } catch (err) {}
     });
     box.addEventListener('mousemove', function (e) {
-      const r = box.getBoundingClientRect();
-      const px = (e.clientX - r.left) / r.width;   // 0~1
-      const py = (e.clientY - r.top) / r.height;   // 0~1
-      const ry = (px - 0.5) * (TILT_MAX * 2);
-      const rx = (0.5 - py) * (TILT_MAX * 2);
-      if (raf) cancelAnimationFrame(raf);
+      if (document.documentElement.classList.contains('reduce-motion')) return;
+      lastClientX = e.clientX;
+      lastClientY = e.clientY;
+      if (raf) return;
       raf = requestAnimationFrame(function () {
-        box.style.transform = 'perspective(700px) rotateX(' + rx.toFixed(2) + 'deg) rotateY(' + ry.toFixed(2) + 'deg) scale(1.05)';
+        raf = null;
+        const now = Date.now();
+        if (!cachedRect || (now - rectAt) > 250) {
+          cachedRect = box.getBoundingClientRect();
+          rectAt = now;
+        }
+        if (!cachedRect.width || !cachedRect.height) return;
+        const px = Math.max(0, Math.min(1, (lastClientX - cachedRect.left) / cachedRect.width));
+        const py = Math.max(0, Math.min(1, (lastClientY - cachedRect.top) / cachedRect.height));
+        const isAppleTv = document.documentElement.classList.contains('emby-style-appletv');
+        const maxDeg = isAppleTv ? 3.2 : TILT_MAX;
+        const ry = (px - 0.5) * (maxDeg * 2);
+        const rx = (0.5 - py) * (maxDeg * 2);
+        if (isAppleTv) {
+          // Apple TV 聚焦交互：仅海报封面做细腻视差微倾与弹性浮起，标题区保持光学静止锐利
+          const coverEl = box.querySelector('.cover');
+          if (coverEl) {
+            coverEl.style.transform = 'perspective(900px) translateY(-5px) rotateX(' + rx.toFixed(2) + 'deg) rotateY(' + ry.toFixed(2) + 'deg) scale(1.032)';
+          }
+          box.style.transform = '';
+        } else {
+          box.style.transform = 'perspective(700px) rotateX(' + rx.toFixed(2) + 'deg) rotateY(' + ry.toFixed(2) + 'deg) scale(1.05)';
+        }
         box.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
         box.style.setProperty('--my', (py * 100).toFixed(1) + '%');
       });
     });
     box.addEventListener('mouseleave', function () {
-      if (raf) cancelAnimationFrame(raf);
+      if (raf) { cancelAnimationFrame(raf); raf = null; }
+      cachedRect = null;
       box.style.transform = '';
+      const coverEl = box.querySelector('.cover');
+      if (coverEl) coverEl.style.transform = '';
       dfPopupHide(); // 移出卡片立即收气泡/遮罩（全局 mousemove 兜底之外再加一道即时回收）
     });
   }
@@ -19739,6 +19986,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       favGenderMap = res[1] || {};
       noteMap = {};
       (res[2] || []).forEach(function (n) { if (n && n.key) noteMap[n.key] = n; });
+      // 预建搜索小写串与日期毫秒戳索引，免去 applyAndRender 在万级收藏库下每次输入都重复拼接 toLowerCase / Date.parse
+      if (cache && Array.isArray(cache.videos)) {
+        for (let vi = 0; vi < cache.videos.length; vi++) {
+          const mv = cache.videos[vi];
+          if (!mv) continue;
+          mv._searchLower = ((mv.code || '') + ' ' + (mv.title || '')).toLowerCase();
+          mv._dateTs = mv.date ? Date.parse(String(mv.date).trim()) : NaN;
+        }
+      }
       log('[DIAG] reload: FAV.getAll 完成, videos=' + ((cache && cache.videos) ? cache.videos.length : 0));
       refreshScopeMenu();
       applyAndRender();
@@ -20018,38 +20274,50 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     function applyAndRender() {
       if (!cache) return;
       const f = state.filters;
-      // 清单范围：movie.listIds 与选中清单求交集
-      const scopeSet = state.scope.length ? state.scope : null;
-      const kw = state.keyword.toLowerCase();
+      // 预提所有筛选集合至循环外部（O(1) Set 查找，避免万级作品在 .filter 内反复分配/线性扫描）
+      const scopeSet = state.scope.length ? new Set(state.scope) : null;
+      const kw = state.keyword ? state.keyword.toLowerCase() : '';
+      const prefixUpper = f.codePrefix ? f.codePrefix.toUpperCase() : '';
+      const normActorsArr = f.actors.length ? f.actors.map(normActorName) : null;
+      const normActorSet = normActorsArr ? new Set(normActorsArr) : null;
+      const tagSet = f.tags.length ? new Set(f.tags) : null;
+      const makerSet = f.makers.length ? new Set(f.makers) : null;
+      const seriesSet = f.series.length ? new Set(f.series) : null;
+      const directorSet = f.directors.length ? new Set(f.directors) : null;
+      const yearSet = f.years.length ? new Set(f.years) : null;
+      const awardSet = f.awards.length ? new Set(f.awards) : null;
+      const recentWindowMs = state.recentDays > 0 ? state.recentDays * 86400000 : 0;
+      const nowMs = Date.now();
+
       renderList = (cache.videos || []).filter(function (v) {
         // 真实收藏守卫：必须属于某个清单或带有想看/看過标记
         if (!((Array.isArray(v.listIds) && v.listIds.length > 0) || v.reviewStatus)) return false;
-        if (scopeSet && !(v.listIds || []).some(function (id) { return scopeSet.indexOf(id) !== -1; })) return false;
+        if (scopeSet && !(v.listIds || []).some(function (id) { return scopeSet.has(id); })) return false;
         // 番号组前缀（详情页番号组「去收藏夹筛选」带入）：前缀匹配、大小写不敏感
-        if (f.codePrefix) {
-          const p = f.codePrefix.toUpperCase();
-          if ((v.code || '').toUpperCase().substring(0, p.length) !== p) return false;
+        if (prefixUpper) {
+          if ((v.code || '').toUpperCase().substring(0, prefixUpper.length) !== prefixUpper) return false;
         }
-        // 关键词命中番号/标题/关联备注文本（作品备注与演员备注）
-        if (kw && (v.code + ' ' + (v.title || '')).toLowerCase().indexOf(kw) === -1 &&
-            workNoteText(v).toLowerCase().indexOf(kw) === -1) return false;
-        if (f.actors.length) {
-          // 归一化匹配：演员名去掉尾部括号标记后比较（如「逢沢はるか(無碼)」可命中库里存的「逢沢はるか」）
-          var normActors = f.actors.map(normActorName);
-          var has = (v.actors || []).some(function (x) { return x && normActors.indexOf(normActorName(x.name)) !== -1; });
+        // 关键词命中番号/标题/关联备注文本（优先走预计算 _searchLower）
+        if (kw) {
+          const baseLower = v._searchLower !== undefined ? v._searchLower : ((v.code || '') + ' ' + (v.title || '')).toLowerCase();
+          if (baseLower.indexOf(kw) === -1 && workNoteText(v).toLowerCase().indexOf(kw) === -1) return false;
+        }
+        if (normActorSet) {
+          var vActors = v.actors || [];
+          var has = vActors.some(function (x) { return x && normActorSet.has(normActorName(x.name)); });
           if (!has) return false;
           if (state.coactMode) {
-            var all = f.actors.every(function (name) {
-              return (v.actors || []).some(function (x) { return x && normActorName(x.name) === normActorName(name); });
+            var all = normActorsArr.every(function (targetNm) {
+              return vActors.some(function (x) { return x && normActorName(x.name) === targetNm; });
             });
             if (!all) return false;
           }
         }
-        if (f.tags.length && !f.tags.some(function (t) { return (v.categories || []).some(function (x) { return x && x.text === t; }); })) return false;
-        if (f.makers.length && f.makers.indexOf((v.maker && v.maker.text) || '') === -1) return false;
-        if (f.series.length && f.series.indexOf((v.series && v.series.text) || '') === -1) return false;
-        if (f.directors.length && f.directors.indexOf((v.director && v.director.text) || '') === -1) return false;
-        if (f.years.length && f.years.indexOf((v.date || '').slice(0, 4)) === -1) return false;
+        if (tagSet && !(v.categories || []).some(function (x) { return x && tagSet.has(x.text); })) return false;
+        if (makerSet && !makerSet.has((v.maker && v.maker.text) || '')) return false;
+        if (seriesSet && !seriesSet.has((v.series && v.series.text) || '')) return false;
+        if (directorSet && !directorSet.has((v.director && v.director.text) || '')) return false;
+        if (yearSet && !yearSet.has((v.date || '').slice(0, 4))) return false;
         if (f.scoreMax != null && f.scoreMax < 5.0) {
           const sc = getMovieScore(v);
           if (sc <= 0 || sc > f.scoreMax) return false;
@@ -20068,36 +20336,42 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           if (!rsOk) return false;
         }
         // 金标筛选：命中任一所选金标名即可（多选 OR）
-        if (f.awards.length && !f.awards.some(function (t) { return (v.awards || []).some(function (x) { return x && x.name === t; }); })) return false;
+        if (awardSet && !(v.awards || []).some(function (x) { return x && awardSet.has(x.name); })) return false;
         // 只看金标：仅显示带 JAVDB 金标(awards)的作品
         if (state.onlyAward && !(v.awards || []).length) return false;
         // 只看未补全：缺关键字段（标题/封面/演员/评分）任一即视为未补全
         if (state.incompleteOnly && !isIncomplete(v)) return false;
-        // 最近 N 天发行：按作品发行日期(date)判定所在区间；缺失/无法解析日期的条目视为不在区间内
-        if (state.recentDays > 0) {
-          const rel = Date.parse(String(v.date || '').trim());
-          if (isNaN(rel) || (Date.now() - rel) > state.recentDays * 86400000) return false;
+        // 最近 N 天发行：优先读取预计算 _dateTs
+        if (recentWindowMs > 0) {
+          const rel = v._dateTs !== undefined ? v._dateTs : Date.parse(String(v.date || '').trim());
+          if (isNaN(rel) || (nowMs - rel) > recentWindowMs) return false;
         }
         return true;
       });
-      // 排序
+      // 排序（ISO 日期 YYYY-MM-DD 直接采用字典序比较，比 localeCompare 快一个数量级；金标权重预计算一次）
       const s = state.sort;
+      const cmpStrDesc = function (sa, sb) { return sb > sa ? 1 : (sb < sa ? -1 : 0); };
+      const cmpStrAsc = function (sa, sb) { return sa > sb ? 1 : (sa < sb ? -1 : 0); };
+      let awardWeightMap = null;
+      if (s === 'awards_asc') {
+        awardWeightMap = new Map();
+        for (let i = 0; i < renderList.length; i++) {
+          awardWeightMap.set(renderList[i], getVideoBestAwardWeight(renderList[i]));
+        }
+      }
       renderList.sort(function (a, b) {
         if (s === 'score_desc') return ((b.rating && b.rating.score) || 0) - ((a.rating && a.rating.score) || 0);
         if (s === 'score_count_desc') return ((b.rating && b.rating.count) || 0) - ((a.rating && a.rating.count) || 0);
-        if (s === 'code_asc') return (a.code || '').localeCompare(b.code || '');
+        if (s === 'code_asc') return cmpStrAsc(a.code || '', b.code || '');
         if (s === 'added_desc') return (b.listSyncedAt || 0) - (a.listSyncedAt || 0);
-        if (s === 'views_desc') return ((b.views || 0) - (a.views || 0)) || (b.date || '').localeCompare(a.date || '');
+        if (s === 'views_desc') return ((b.views || 0) - (a.views || 0)) || cmpStrDesc(a.date || '', b.date || '');
         if (s === 'awards_asc') {
-          // 金标标识 正序（新规则）：
-          // 优先级：JAVDB影片TOP250 > JAVDB有码影片TOP250 > JAVDB年度影片TOP250（年份从新到旧排） > 无码TOP250 > FC2 TOP250 > 欧美TOP250
-          // 相同类别/年份内按名次升序（No.1 排在 No.2 前）；同名次或无名次按日期降序；最后按番号升序
-          var wa = getVideoBestAwardWeight(a);
-          var wb = getVideoBestAwardWeight(b);
+          var wa = awardWeightMap.get(a);
+          var wb = awardWeightMap.get(b);
           if (wa !== wb) return wa - wb;
-          return (b.date || '').localeCompare(a.date || '') || (a.code || '').localeCompare(b.code || '');
+          return cmpStrDesc(a.date || '', b.date || '') || cmpStrAsc(a.code || '', b.code || '');
         }
-        return (b.date || '').localeCompare(a.date || ''); // date_desc
+        return cmpStrDesc(a.date || '', b.date || ''); // date_desc
       });
       refreshChips();
       renderGrid(true);
@@ -21833,7 +22107,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         else if (view === 'all') renderAll(list, agg2.byVid, agg2.vids);
         else renderTile(list, agg2.byVid, agg2.vids);
       }).catch(function (e) {
-        list.innerHTML = '<div class="empty-state">画廊读取失败: ' + ((e && e.message) || e) + '</div>';
+        list.innerHTML = '<div class="empty-state">画廊读取失败: ' + escapeHtml((e && e.message) || e) + '</div>';
       });
     }
     function galleryBuildToolbar(panel) {
@@ -23265,10 +23539,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     HOME_TAB_DEFS.forEach(function (def) {
       const t = document.createElement('a');
       t.className = 'emby-home-tab';
-      t.href = '#' + def.key;
+      t.href = def.href || ('#' + def.key);
       t.dataset.tab = def.key;
       t.innerHTML = '<span class="material-symbols-outlined" style="font-size:1em;margin-right:.3em;vertical-align:-2px;">' + def.icon + '</span>' + def.label;
-      t.addEventListener('click', function (e) { e.preventDefault(); switchTab(def.key); });
+      t.addEventListener('click', function (e) { handleHomeTabClick(def, e); });
       tabsBar.appendChild(t);
       if (def.key === 'home') tabHome = t;
       else if (def.key === 'favorites') tabFav = t;
@@ -23864,7 +24138,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       .filter(function (b) { const s = (b.querySelector('strong') || {}).textContent || ''; return s.indexOf('演員') !== -1; })
       .reduce(function (acc, b) { return acc.concat(Array.from(b.querySelectorAll('a[href^="/actors/"]'))); }, []);
     const actors = actorEls.map(function (a) {
-      return { name: a.textContent.trim(), href: a.getAttribute('href') || '#', avatar: actorAvatarUrl(a.getAttribute('href') || '') };
+      const sym = a.nextElementSibling;
+      const isMale = !!(sym && ((sym.classList && sym.classList.contains('male')) || /♂/.test(sym.textContent || '')));
+      return { name: a.textContent.trim(), href: a.getAttribute('href') || '#', avatar: actorAvatarUrl(a.getAttribute('href') || ''), isMale: isMale };
     });
 
     // 解析金标荣誉榜单数据（TOP250、年度榜等）
@@ -24130,14 +24406,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       }
       var cp = t && t.closest ? t.closest('.em-copy') : null;
       if (cp) { handleCopyClick(cp); }
-      // 短评里的 ed2k → 一键推送 115
+      // 短评里的 ed2k / magnet → 一键推送 115
       var r115 = t && t.closest ? t.closest('.jf-review-115') : null;
       if (r115) {
         e.preventDefault(); e.stopPropagation();
-        var ed2k = r115.getAttribute('data-ed2k') || '';
-        if (!/^ed2k:\/\//i.test(ed2k)) return;
+        var rawLink = (r115.getAttribute('data-link') || r115.getAttribute('data-ed2k') || '').trim();
+        if (!/^(?:ed2k:\/\/|magnet:\?xt=urn:btih:)/i.test(rawLink)) return;
         if (typeof FUSION !== 'undefined' && FUSION && typeof FUSION.push115 === 'function') {
           if (r115.disabled) return;
+          var origLabel = r115.dataset.origLabel || (r115.dataset.origLabel = (r115.textContent || '推送 115'));
           r115.disabled = true;
           r115.textContent = '推送中…';
           const reset = function (label, ok) {
@@ -24145,21 +24422,21 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             r115.textContent = label;
             r115.classList.toggle('is-ok', !!ok);
           };
-          const p = FUSION.push115(ed2k);
+          const p = FUSION.push115(rawLink);
           if (p && typeof p.then === 'function') {
             p.then(function (res) {
               reset(res && res.ok ? '已推送' : '重试推送', res && res.ok);
               if (res && res.ok && typeof FUSION.query115Status === 'function') {
                 setTimeout(function () {
-                  FUSION.query115Status(ed2k).then(function (st) {
+                  FUSION.query115Status(rawLink).then(function (st) {
                     if (st && r115.isConnected) { r115.textContent = '已推送 · ' + st; r115.classList.add('is-ok'); }
                   }).catch(function () {});
                 }, 1800);
               }
-              setTimeout(function () { if (r115.isConnected) reset('推送 115', false); }, res && res.ok ? 8000 : 2500);
+              setTimeout(function () { if (r115.isConnected) reset(origLabel, false); }, res && res.ok ? 8000 : 2500);
             }).catch(function () { reset('重试推送', false); });
           } else {
-            setTimeout(function () { reset('推送 115', false); }, 2500);
+            setTimeout(function () { reset(origLabel, false); }, 2500);
           }
         } else {
           try { showToast('115 推送未就绪，请刷新页面重试'); } catch (err) {}
@@ -24368,6 +24645,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     }
 
     // 2. 借助 GM_xmlhttpRequest 抓取 Blob 本地对象（彻底消除跨域限制），确保 100% 提取成功
+    const bindImgLoadFallback = function () {
+      if (img && !img.complete) {
+        img.addEventListener('load', function () {
+          const sampled = sampleDominantRgbFromCanvas(img);
+          if (sampled) commitRgb(sampled);
+        }, { once: true });
+      }
+    };
     if (iconUrl && typeof GM_xmlhttpRequest !== 'undefined') {
       try {
         GM_xmlhttpRequest({
@@ -24376,7 +24661,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           responseType: 'blob',
           timeout: 6000,
           onload: function (res) {
-            if (res.response && res.response instanceof Blob) {
+            if (res && res.response && res.response instanceof Blob) {
               const blobUrl = URL.createObjectURL(res.response);
               const blobImg = new Image();
               blobImg.onload = function () {
@@ -24386,24 +24671,22 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               };
               blobImg.onerror = function () {
                 URL.revokeObjectURL(blobUrl);
+                bindImgLoadFallback();
               };
               blobImg.src = blobUrl;
+            } else {
+              bindImgLoadFallback();
             }
           },
-          onerror: function () {},
-          ontimeout: function () {}
+          onerror: bindImgLoadFallback,
+          ontimeout: bindImgLoadFallback
         });
         return;
       } catch (e) {}
     }
 
     // 3. 兜底监听 img onload
-    if (img && !img.complete) {
-      img.addEventListener('load', function () {
-        const sampled = sampleDominantRgbFromCanvas(img);
-        if (sampled) commitRgb(sampled);
-      }, { once: true });
-    }
+    bindImgLoadFallback();
   }
 
   /* 详情页多源播放下拉组件
@@ -25197,7 +25480,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (isPluginEnabled('actressInfo')) {
         (async function () {
           for (const act of actors) {
-            if (!act.name) continue;
+            if (!act.name || act.isMale) continue;
             try { await ActressService.getActressData(act.name); } catch (e) {}
           }
         })();
@@ -25310,11 +25593,19 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       '.emby-dtab .material-symbols-outlined{font-size:18px;}',
       '.emby-dtab .emby-dtab-count{background:rgba(0,0,0,.22);border-radius:999px;padding:0 6px;line-height:1.55;}',
       '.emby-dtab.active .emby-dtab-count{background:rgba(0,0,0,.18);}',
-      '.emby-anchor{width:36px;padding:8px 6px;gap:2px;}',
+      '.emby-anchor{width:36px;padding:8px 6px;gap:2px;transition:transform .24s cubic-bezier(.22,1,.36,1),opacity .2s ease,width .18s ease,padding .18s ease;}',
       '.emby-anchor a{font-size:12px;padding:7px 4px;color:rgba(255,255,255,.7);}',
       '.emby-anchor a .material-symbols-outlined{font-size:17px!important;}',
-      '.emby-anchor-title{font-size:10px;color:#a99bc9;}',
-      'html.emby-has-anchor .emby-detail-body{padding-right:3.8em;}',
+      '.emby-anchor-title{font-size:10px;color:#a99bc9;display:flex;align-items:center;justify-content:center;gap:2px;cursor:pointer;background:none;border:none;border-bottom:1px solid rgba(255,255,255,.1);padding:2px 0 6px;margin-bottom:3px;width:100%;user-select:none;transition:color .16s ease,opacity .16s ease;}',
+      '.emby-anchor-title:hover{color:#fff;}',
+      '.emby-anchor-title .emby-anchor-chev{font-size:14px!important;line-height:1;}',
+      '.emby-anchor.is-collapsed{right:0!important;width:22px!important;padding:10px 2px!important;border-radius:12px 0 0 12px!important;border-right:none!important;opacity:.38;}',
+      '.emby-anchor.is-collapsed:hover{width:26px!important;padding:10px 4px!important;opacity:.96;}',
+      '.emby-anchor.is-collapsed a{display:none!important;}',
+      '.emby-anchor.is-collapsed .emby-anchor-title{border-bottom:none!important;margin-bottom:0!important;padding:0!important;}',
+      '.emby-anchor.is-collapsed .emby-anchor-title-txt{display:none!important;}',
+      'html.emby-has-anchor:not(.emby-anchor-collapsed) .emby-detail-body{padding-right:3.8em;}',
+      'html.emby-has-anchor.emby-anchor-collapsed .emby-detail-body{padding-right:2em;}',
       /* 原生 movie-tab：只保留内容，隐藏重复的原生页签条 */
       'html.emby-skin .emby-dpane-native > .columns[data-controller="movie-tab"]{margin-top:.2em;width:100%;}',
       'html.emby-skin .emby-dpane-native > .columns[data-controller="movie-tab"] > .column > .tabs.no-bottom{display:none!important;}',
@@ -25567,16 +25858,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       else hero.style.setProperty('display', 'none', 'important');
       // 原生组件挂到当前页签后再驱动原生子页签
       if (NATIVE_PANE_KEYS[key]) mountNative(key);
-      // 磁力聚合：把磁力条搬进独立面板；其它页签搬回原位
+      // 磁力聚合：当独立的「磁力聚合」页签启用时，固定留在 aggPane，避免挤占「磁力」原生列表首屏空间
       if (key === 'agg') {
         magPanel = document.getElementById('jf-magnet-panel');
         if (magPanel && magPanel.parentNode !== aggPane) aggPane.appendChild(magPanel);
         ensureAggLoaded();
-      } else if (magPanel && magPanel.parentNode === aggPane) {
+      } else if (inlineMagnet && magPanel && magPanel.parentNode === aggPane) {
         const back = magHome || panes.magnet;
         if (back) back.insertBefore(magPanel, back.firstChild);
       }
-      if (key === 'magnet') ensureAggLoaded();
       // 驱动原生子页签（原生页签条已隐藏，只有这套 Emby 页签在驱动它）
       if (!opts.fromNative) {
         const sel = NATIVE_TAB_SEL[key];
@@ -25669,14 +25959,30 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (nt) nt.focus();
     });
 
-    // 锚点导航
+    // 锚点导航（支持一键收起/展开并记忆状态；Apple TV+ 模式默认收起贴边，保持影院画布纯净）
     let anchor = document.querySelector('.emby-anchor');
+    const applyAnchorCollapsed = function (el, collapsed) {
+      if (!el) return;
+      el.classList.toggle('is-collapsed', !!collapsed);
+      document.documentElement.classList.toggle('emby-anchor-collapsed', !!collapsed);
+      const btn = el.querySelector('.emby-anchor-title');
+      const chev = el.querySelector('.emby-anchor-chev');
+      if (btn) {
+        btn.title = collapsed ? '展开右侧快捷导航' : '一键收起右侧导航';
+        btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      }
+      if (chev) chev.textContent = collapsed ? 'chevron_left' : 'chevron_right';
+    };
     if (!anchor) {
       anchor = document.createElement('div');
       anchor.className = 'emby-anchor';
       anchor.setAttribute('role', 'navigation');
       anchor.setAttribute('aria-label', '详情页导航');
-      anchor.innerHTML = '<div class="emby-anchor-title">导航</div>';
+      anchor.innerHTML =
+        '<button type="button" class="emby-anchor-title" title="一键收起右侧导航" aria-expanded="true">' +
+          '<span class="emby-anchor-title-txt">收起</span>' +
+          '<span class="material-symbols-outlined emby-anchor-chev">chevron_right</span>' +
+        '</button>';
       DETAIL_TAB_DEFS.forEach(function (def) {
         const a = document.createElement('a');
         a.href = '?dtab=' + def.key;
@@ -25688,6 +25994,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       });
       document.body.appendChild(anchor);
       anchor.addEventListener('click', function (e) {
+        const toggleBtn = e.target.closest('.emby-anchor-title');
+        if (toggleBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const nextCollapsed = !anchor.classList.contains('is-collapsed');
+          try { localStorage.setItem('javdbEmbyAnchorCollapsed', nextCollapsed ? '1' : '0'); } catch (err) {}
+          applyAnchorCollapsed(anchor, nextCollapsed);
+          return;
+        }
         const a = e.target.closest('[data-dtab]');
         if (!a) return;
         e.preventDefault();
@@ -25696,6 +26011,11 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       });
       document.documentElement.classList.add('emby-has-anchor');
     }
+    const savedAnchorPref = localStorage.getItem('javdbEmbyAnchorCollapsed');
+    const defaultCollapsed = savedAnchorPref != null
+      ? savedAnchorPref === '1'
+      : document.documentElement.classList.contains('emby-style-appletv');
+    applyAnchorCollapsed(anchor, defaultCollapsed);
     // 把已内联的页签从页签栏和右侧锚点里隐藏（只保留一套导航）
     const hideTabAndAnchor = function (k) {
       const t = bar.querySelector('[data-dtab="' + k + '"]');
@@ -25754,7 +26074,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       countEl.textContent = hits.length ? '（' + hits.length + '）' : '';
       if (!hits.length) { list.innerHTML = '<div class="emby-sub-empty">未找到字幕。</div>'; return; }
       list.innerHTML = hits.map(function (h) {
-        return '<a class="emby-sub-item" href="' + escapeAttr(h.url) + '" target="_blank" rel="noopener">' + escapeHtml(h.title) + '</a>';
+        return '<a class="emby-sub-item" href="' + escapeAttr(safeHref(h.url, '#')) + '" target="_blank" rel="noopener">' + escapeHtml(h.title) + '</a>';
       }).join('');
     });
     return block;
@@ -25777,14 +26097,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   function jfReviewLinkify(text) {
     const raw = String(text || '');
     let out = '', last = 0, m;
-    // ed2k 文件名允许空格，不能按空白截断；用 | 分隔符和 32 位 hash 定界。
-    const re = /(ed2k:\/\/\|file\|[^|\r\n]+\|\d+\|[a-f0-9]{32}\|(?:\/)?|magnet:\?[^\s"'<>]+|https?:\/\/[^\s"'<>]+)/gi;
+    // ed2k 用 | 分隔符和 32 位 hash 定界；magnet 精确匹配 40 位 hex 或 32 位 base32 hash 及合法 ASCII 参数，自动截断紧贴的中文评论文案
+    const re = /(ed2k:\/\/\|file\|[^|\r\n]+\|\d+\|[a-f0-9]{32}\|(?:\/)?|magnet:\?xt=urn:btih:(?:[a-f0-9]{40}|[a-z2-7]{32})(?:&[a-z0-9_.-]+=[a-z0-9%._~+:-]*)*|https?:\/\/[^\s"'<>]+)/gi;
     while ((m = re.exec(raw))) {
       out += escapeHtml(raw.slice(last, m.index));
       const url = m[0];
-      out += '<a class="jf-review-link" href="' + escapeAttr(url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(url) + '</a>';
-      if (/^ed2k:\/\//i.test(url)) {
-        out += '<button type="button" class="jf-review-115" data-ed2k="' + escapeAttr(url) + '" title="把这条 ed2k 推送到 115 离线下载">推送 115</button>';
+      out += '<a class="jf-review-link" href="' + escapeAttr(safeHref(url, '#')) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(url) + '</a>';
+      if (/^(?:ed2k:\/\/|magnet:\?xt=urn:btih:)/i.test(url)) {
+        const isMag = /^magnet:/i.test(url);
+        out += '<button type="button" class="jf-review-115" data-link="' + escapeAttr(url) + '" data-ed2k="' + escapeAttr(url) + '" title="把这条' + (isMag ? '磁力链接' : ' ed2k ') + '推送到 115 离线下载">推送 115</button>';
       }
       last = m.index + url.length;
     }
@@ -25805,26 +26126,48 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       '<div class="jf-review-content">' + jfReviewLinkify(r.content) + '</div>' +
     '</article>';
   }
-  // 原生短评里的 ed2k（不切到 API 列表时也能一键推 115）
+  // 原生短评里的 ed2k 与 magnet 磁力链接（不切到 API 列表时也能一键推 115）
   function enhanceNativeReviewEd2k(scope) {
     try {
       const root = scope || document;
+      const linkRe = /ed2k:\/\/\|file\|[^|\r\n]+\|\d+\|[a-f0-9]{32}\|(?:\/)?|magnet:\?xt=urn:btih:(?:[a-f0-9]{40}|[a-z2-7]{32})(?:&[a-z0-9_.-]+=[a-z0-9%._~+:-]*)*/gi;
       root.querySelectorAll('#reviews .review-item .content, [data-movie-tab-target="reviews"] .review-item .content').forEach(function (c) {
         if (c.dataset.jfEd2kScanned === '1') return;
         const text = c.textContent || '';
-        const links = text.match(/ed2k:\/\/\|file\|[^|\r\n]+\|\d+\|[a-f0-9]{32}\|(?:\/)?/gi) || [];
+        const rawMatches = text.match(linkRe) || [];
+        const seen = new Set();
+        const links = rawMatches.filter(function (u) {
+          const k = u.toLowerCase();
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
         c.dataset.jfEd2kScanned = '1';
         if (!links.length) return;
         const row = document.createElement('div');
         row.className = 'jf-review-ed2k-row';
-        links.slice(0, 4).forEach(function (link) {
+        links.slice(0, 6).forEach(function (link) {
           const b = document.createElement('button');
           b.type = 'button';
           b.className = 'jf-review-115';
+          b.setAttribute('data-link', link);
           b.setAttribute('data-ed2k', link);
-          let name = '';
-          try { name = decodeURIComponent((link.match(/^ed2k:\/\/\|file\|([^|]+)\|/i) || [])[1] || ''); } catch (e) { name = ''; }
-          b.textContent = '推送 115' + (name ? ' · ' + name.slice(0, 26) : '');
+          let labelSuffix = '';
+          if (/^ed2k:\/\//i.test(link)) {
+            let name = '';
+            try { name = decodeURIComponent((link.match(/^ed2k:\/\/\|file\|([^|]+)\|/i) || [])[1] || ''); } catch (e) { name = ''; }
+            labelSuffix = name ? name.slice(0, 26) : 'ed2k';
+            b.title = '推送 ed2k 到 115 离线下载';
+          } else {
+            let dn = '';
+            const dnMatch = link.match(/[?&]dn=([^&]+)/i);
+            if (dnMatch) { try { dn = decodeURIComponent(dnMatch[1].replace(/\+/g, ' ')); } catch (e) { dn = dnMatch[1]; } }
+            const hashMatch = link.match(/xt=urn:btih:([a-z0-9]{8})/i);
+            labelSuffix = dn ? dn.slice(0, 26) : ('磁力 ' + (hashMatch ? hashMatch[1].toUpperCase() : ''));
+            b.title = '推送磁力链接到 115 离线下载';
+          }
+          b.textContent = '推送 115' + (labelSuffix ? ' · ' + labelSuffix : '');
+          b.dataset.origLabel = b.textContent;
           row.appendChild(b);
         });
         c.appendChild(row);
@@ -25854,7 +26197,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<button type="button" data-sort="hotly">最热</button>' +
           '</span>' +
           (inline ? '' : '<button type="button" class="jf-review-native-btn" title="显示 JAVDB 原站短评（可点赞 / 举报）">原站</button>') +
-          '<button type="button" class="jf-review-batch" hidden>推送全部 ed2k</button>' +
+          '<button type="button" class="jf-review-batch" hidden>推送全部到 115</button>' +
           (inline ? '<button type="button" class="jf-review-expand" aria-expanded="' + (expanded ? 'true' : 'false') + '">' + (expanded ? '收起' : '展开') + '</button>' : '') +
         '</span>' +
       '</div>' +
@@ -25873,7 +26216,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     const batchLinks = function () {
       const out = [];
       listEl.querySelectorAll('.jf-review-115').forEach(function (b) {
-        const v = b.getAttribute('data-ed2k') || '';
+        const v = b.getAttribute('data-link') || b.getAttribute('data-ed2k') || '';
         if (v && out.indexOf(v) < 0) out.push(v);
       });
       return out;
@@ -25882,7 +26225,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (!batchBtn) return;
       const n = batchLinks().length;
       batchBtn.hidden = n < 2;
-      if (n >= 2 && !batchBtn.disabled) batchBtn.textContent = '推送全部 ed2k (' + n + ')';
+      if (n >= 2 && !batchBtn.disabled) batchBtn.textContent = '推送全部到 115 (' + n + ')';
     };
 
     function syncSort() {
@@ -27060,10 +27403,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       HOME_TAB_DEFS.forEach(function (def) {
         const t = document.createElement('a');
         t.className = 'emby-home-tab';
-        t.href = '#' + def.key;
+        t.href = def.href || ('#' + def.key);
         t.dataset.tab = def.key;
         t.innerHTML = '<span class="material-symbols-outlined" style="font-size:1em;margin-right:.3em;vertical-align:-2px;">' + def.icon + '</span>' + def.label;
-        t.addEventListener('click', function (e) { e.preventDefault(); switchTab(def.key); });
+        t.addEventListener('click', function (e) { handleHomeTabClick(def, e); });
         tabsBar.appendChild(t);
         if (def.key === 'home') tabHome = t;
         else if (def.key === 'favorites') tabFav = t;
@@ -27127,17 +27470,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     if (tab === 'favorites') ensureFavSurface();
     if (tab === 'gallery') ensureFavSurface();
     if (tab === 'top250') ensureFavSurface();
-    // active 高亮统一处理：所有 .emby-home-tab[data-tab] 按钮（首页标签栏 + 顶栏 .emby-topnav 常驻按钮）
-    try {
-      document.querySelectorAll('.emby-home-tab[data-tab]').forEach(function (t) {
-        t.classList.toggle('active', t.dataset.tab === tab);
-      });
-    } catch (e) {}
-    // 兼容旧引用（部分代码直接读 tabHome/tabFav/tabGallery/tabTop250 的状态）
-    if (tabHome) tabHome.classList.toggle('active', tab === 'home');
-    if (tabFav) tabFav.classList.toggle('active', tab === 'favorites');
-    if (tabGallery) tabGallery.classList.toggle('active', tab === 'gallery');
-    if (tabTop250) tabTop250.classList.toggle('active', tab === 'top250');
+    // active 高亮统一处理：根据当前激活面板或底层路由（主页 / 每日排行 / 子详情页）精准点亮
+    syncTopNavActiveState(tab);
     // 防御：buildChrome 可能因 SPA 重入 guard 未给顶层面板赋值，这里兜底重新获取
     if (!favPanel) favPanel = document.getElementById('emby-favorites-panel');
     if (!galleryPanel) galleryPanel = document.getElementById('emby-gallery-panel');
@@ -27193,11 +27527,18 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       try { if (document.documentElement.classList.contains('emby-masonry-large')) WaterfallEngine.refresh(); } catch (e) {}
       if (window.__embyUpdateBackTop) window.__embyUpdateBackTop(top250Panel ? (top250Panel.scrollTop || 0) : 0);
     } else {
+      const wasFavView = document.documentElement.classList.contains('emby-fav-view');
       document.documentElement.classList.remove('emby-fav-view');
       document.documentElement.classList.remove('efav-tabs-hide');
       if (favPanel) favPanel.classList.remove('show');
       if (galleryPanel) galleryPanel.classList.remove('show');
       if (top250Panel) top250Panel.classList.remove('show');
+      // 在详情页/演员页等子路由点击顶栏「主页」（且当前并非从收藏夹/画廊退出）时，平滑跳回根主页
+      if (!wasFavView && location.pathname !== '/' && isDetailPage()) {
+        try { localStorage.setItem(HOME_TAB_KEY, 'home'); } catch (e) {}
+        location.href = '/';
+        return;
+      }
       // 切回首页：原生 .movie-list 重新可见，瀑布流引擎按当前宽度重排
       try { if (document.documentElement.classList.contains('emby-masonry-large')) WaterfallEngine.refresh(); } catch (e) {}
     }
@@ -27454,6 +27795,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         if (enabled) {
           detailBuilt = false;
           restructureCurrent(true);
+          syncTopNavActiveState();
           if (/^\/(actors|directors|makers|series|video_codes)\//.test(location.pathname)) startDetailFilterBtnWatcher();
           // 排行榜全局拦截器（只绑一次）：Emby 模式直接切入自洽的 TOP250 全屏面板
           if (!window.__rankingClickBound) {
@@ -28002,21 +28344,23 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     // 跳转 URL：命中 → 详情深链；否则按模式（搜索页 / 自定义模板）。
     function buildJumpUrl(s, code, item) {
       const base = s.baseUrl.replace(/\/+$/, '');
-      // Jellyfin uses the hash-router deep link in the user's deployed web client.
-      // Keep the same details route across server versions; the legacy #!/item URL
-      // is not handled correctly by many current Jellyfin clients.
       const jfNewRouter = s.type === 'jellyfin';
+      let rawUrl = '';
       if (item && item.Id) {
         const serverId = item.ServerId || item.sid || s.serverId || '';
-        const sid = serverId ? '&serverId=' + serverId : '';
-        if (jfNewRouter) return base + '/web/index.html#/details?id=' + item.Id + sid;
-        return base + '/web/index.html#!/item?id=' + item.Id + sid;
+        const sid = serverId ? '&serverId=' + encodeURIComponent(serverId) : '';
+        const itemId = encodeURIComponent(item.Id);
+        rawUrl = jfNewRouter
+          ? (base + '/web/index.html#/details?id=' + itemId + sid)
+          : (base + '/web/index.html#!/item?id=' + itemId + sid);
+      } else if (s.jumpMode === 'custom' && s.customTemplate) {
+        rawUrl = s.customTemplate.replace('{code}', encodeURIComponent(code));
+      } else {
+        rawUrl = jfNewRouter
+          ? (base + '/web/index.html#/search?q=' + encodeURIComponent(code))
+          : (base + '/web/index.html#!/search.html?q=' + encodeURIComponent(code));
       }
-      if (s.jumpMode === 'custom' && s.customTemplate) {
-        return s.customTemplate.replace('{code}', encodeURIComponent(code));
-      }
-      if (jfNewRouter) return base + '/web/index.html#/search?q=' + encodeURIComponent(code);
-      return base + '/web/index.html#!/search.html?q=' + encodeURIComponent(code);
+      return safeHref(rawUrl, '#');
     }
     // 连接测试（拉取系统信息）
     async function testServer(s) {
@@ -28645,12 +28989,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     function probeTrailerUrl(url) {
       return new Promise(function (resolve) {
         let done = false, req = null, timer = 0;
+        const abortRaw = function () {
+          try { if (req && req.abort) req.abort(); } catch (e) {}
+        };
         const finish = function (ok) {
           if (done) return; done = true;
           clearTimeout(timer);
           resolve(ok);
         };
-        timer = setTimeout(function () { finish(null); try { if (req && req.abort) req.abort(); } catch (e) {} }, 6000);
+        timer = setTimeout(function () { finish(null); abortRaw(); }, 6000);
         try {
           const isHls = /\.m3u8(\?|#|$)/i.test(url);
           const headers = { 'Range': 'bytes=0-0', 'Accept': '*/*' };
@@ -28658,6 +29005,23 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           if (isHls) headers['Referer'] = location.origin + '/';
           req = GM_xmlhttpRequest({
             method: 'GET', url: url, headers: headers, timeout: 6000, anonymous: true,
+            onreadystatechange: function (r) {
+              // 一旦拿到响应头即判定可用性并立刻 abort 断流，防止忽略 Range 的源站在后台偷跑整部 MP4
+              if (done || !r || r.readyState < 2 || !r.status) return;
+              if (r.status === 200 || r.status === 206) {
+                finish(true);
+                if (!isHls) abortRaw();
+              } else if (r.status >= 400) {
+                finish(false);
+                abortRaw();
+              }
+            },
+            onprogress: function (r) {
+              if (!done && r && (r.status === 200 || r.status === 206 || r.loaded > 0)) {
+                finish(true);
+                abortRaw();
+              }
+            },
             onload: function (r) { finish(r.status === 200 || r.status === 206); },
             onerror: function () { finish(false); },
             ontimeout: function () { finish(false); },
@@ -29349,6 +29713,11 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (!name) return null;
       return 'ed2k://|file|' + name + '|' + m[2] + '|' + m[3].toUpperCase() + '|/';
     }
+    function normalizeMagnetLink(raw) {
+      const s = String(raw || '').trim();
+      const m = s.match(/^(magnet:\?xt=urn:btih:(?:[a-f0-9]{40}|[a-z2-7]{32})(?:&[a-z0-9_.-]+=[a-z0-9%._~+:-]*)*)/i);
+      return m ? m[1] : null;
+    }
     function pushTo115(link, opts) {
       opts = opts || {};
       return new Promise(function (resolve) {
@@ -29359,9 +29728,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           if (!opts.silent) { try { magToast(message, ok); } catch (e) {} }
           resolve(Object.assign({ ok: !!ok, message: message }, extra || {}));
         };
-        const isEd2k = /^ed2k:\/\//i.test(String(link || '').trim());
-        const target = isEd2k ? normalizeEd2kLink(link) : link;
+        const rawStr = String(link || '').trim();
+        const isEd2k = /^ed2k:\/\//i.test(rawStr);
+        const isMagnet = /^magnet:/i.test(rawStr);
+        const target = isEd2k ? normalizeEd2kLink(rawStr) : (isMagnet ? normalizeMagnetLink(rawStr) : rawStr);
         if (isEd2k && !target) { finish(false, '❌ ed2k 链接格式不正确'); return; }
+        if (isMagnet && !target) { finish(false, '❌ 磁力链接格式不正确'); return; }
         if (!target) { finish(false, '❌ 链接为空'); return; }
         GM_xmlhttpRequest({
           method: 'GET', url: 'https://115.com/?ct=offline&ac=space&_=' + Date.now(), anonymous: false,
@@ -29428,7 +29800,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     }
     async function query115Status(link) {
       const name = push115Name(link);
-      if (!name) return '';
+      const btihMatch = String(link || '').match(/xt=urn:btih:([a-f0-9]{40})/i);
+      const btih = btihMatch ? btihMatch[1].toLowerCase() : '';
+      if (!name && !btih) return '';
       try {
         const r = await gmReq({
           url: 'https://115.com/web/lixian/?ct=lixian&ac=task_lists&page=1',
@@ -29436,7 +29810,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         });
         const j = JSON.parse(r.responseText || '{}');
         const tasks = j.tasks || j.data || [];
-        const hit = tasks.find(function (t) { return t && String(t.name || '') === name; });
+        const hit = tasks.find(function (t) {
+          if (!t) return false;
+          if (name && String(t.name || '') === name) return true;
+          if (btih && t.info_hash && String(t.info_hash).toLowerCase() === btih) return true;
+          return false;
+        });
         if (!hit) return '';
         const st = Number(hit.status);
         if (st === 2) return '已完成';
@@ -29503,7 +29882,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     function showWhatslinkModal(payload, magnet) {
       const old = document.querySelector('.jf-whatslink-overlay');
       if (old) old.remove();
-      const shots = Array.isArray(payload && payload.screenshots) ? payload.screenshots.map(function (i) { return i && i.screenshot; }).filter(Boolean) : [];
+      const shots = Array.isArray(payload && payload.screenshots)
+        ? payload.screenshots.map(function (i) { return i && safeHref(i.screenshot, ''); }).filter(function (u) { return u && u !== '#'; })
+        : [];
       let index = 0;
       const resourceName = (payload && payload.name) || '未知资源';
       const resourceCount = (payload && payload.count) != null ? payload.count : '-';
@@ -29908,12 +30289,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           '<button type="button" class="jf-magtool-btn" id="jfMagOpenSite" title="在源站打开搜索页">源站搜↗</button>' +
         '</div>' +
         '<div class="jf-magpanel-list" id="jfMagList"><div class="jf-magpanel-status">搜索中…</div></div>';
-      // 注入时机可能晚于页签切换：若当前已在「磁力聚合」页签，必须直接挂到该面板，
-      // 否则面板会落在隐藏的 #magnets-content 里（用户看到空页签，误以为面板「卡住」）。
-      var activeTabEl = document.querySelector('.emby-dtab.active');
-      var activeKey = activeTabEl && activeTabEl.dataset ? activeTabEl.dataset.dtab : '';
+      // 若独立的「磁力聚合」页签已启用（未被 inlineMagnet 隐藏），直接挂载进 #emby-dtab-agg，
+      // 保持「磁力」页签纯粹展示原站磁链列表，互不抢占首屏高度。
+      var aggTabBtn = document.querySelector('.emby-dtab[data-dtab="agg"]');
       var aggPaneEl = document.getElementById('emby-dtab-agg');
-      var magMount = (activeKey === 'agg' && aggPaneEl) ? aggPaneEl : (document.querySelector('#magnets-content') || bodyEl);
+      var useDedicatedAgg = !!(aggPaneEl && aggTabBtn && !aggTabBtn.hidden);
+      var magMount = useDedicatedAgg ? aggPaneEl : (document.querySelector('#magnets-content') || bodyEl);
       magMount.insertBefore(panel, magMount.firstChild);
 
       let lastRows = [];
@@ -31196,147 +31577,288 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         '.jf-magrow-title{font-size:13px;line-height:1.5;}',
         '.jf-magrow-meta{font-size:11.5px;color:rgba(230,234,242,.66);}',
         '.jf-magchip{font-size:11px;}',
-        /* ===== Apple TV 简约主题（默认） ===== */
-        'html.emby-skin.emby-style-appletv{--e-bg:#0b0b0f;--e-card:#1c1c1e;--e-hover:#2c2c2e;--e-text:#f5f5f7;--e-text2:#c7c7cc;--e-text3:#8e8e93;--e-accent:#0a84ff;--e-accent-d:#0a84ffdd;--e-accent-l:#0a84ff26;--e-r:12px;--e-blur:0px;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,"PingFang SC","Noto Sans SC",sans-serif!important;}',
-        'html.emby-skin.emby-style-appletv body{background:#0b0b0f!important;color:#f5f5f7!important;}',
-        'html.emby-skin.emby-style-appletv #emby-topbar{background:#0b0b0f!important;background-image:none!important;border-bottom:1px solid rgba(255,255,255,.08)!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}',
-        'html.emby-skin.emby-style-appletv #emby-topbar .hb{color:#c7c7cc;}',
-        'html.emby-skin.emby-style-appletv #emby-topbar .hb:hover{background:#2c2c2e!important;color:#fff;}',
-        'html.emby-skin.emby-style-appletv .emby-home-tab{background:transparent!important;border:1px solid transparent!important;color:#c7c7cc!important;box-shadow:none!important;backdrop-filter:none!important;}',
-        'html.emby-skin.emby-style-appletv .emby-home-tab:hover{background:#1c1c1e!important;color:#fff!important;}',
-        'html.emby-skin.emby-style-appletv .emby-home-tab.active{background:#f5f5f7!important;border-color:#f5f5f7!important;color:#0b0b0f!important;box-shadow:none!important;}',
-        'html.emby-skin.emby-style-appletv .emby-dtabbar{background:#0b0b0f!important;border-bottom:1px solid rgba(255,255,255,.08)!important;box-shadow:none!important;backdrop-filter:none!important;}',
-        'html.emby-skin.emby-style-appletv .emby-dtab{background:transparent!important;border:1px solid transparent!important;color:#c7c7cc!important;box-shadow:none!important;}',
-        'html.emby-skin.emby-style-appletv .emby-dtab:hover{background:#1c1c1e!important;color:#fff!important;}',
-        'html.emby-skin.emby-style-appletv .emby-dtab.active{background:#f5f5f7!important;border-color:#f5f5f7!important;color:#0b0b0f!important;box-shadow:none!important;}',
-        'html.emby-skin.emby-style-appletv .emby-anchor{background:#1c1c1e!important;border:1px solid rgba(255,255,255,.08)!important;box-shadow:none!important;backdrop-filter:none!important;}',
-        'html.emby-skin.emby-style-appletv .emby-anchor a{color:#c7c7cc!important;}',
-        'html.emby-skin.emby-style-appletv .emby-anchor a.current{background:#f5f5f7!important;color:#0b0b0f!important;border-left-color:#f5f5f7!important;}',
-        'html.emby-skin.emby-style-appletv .item .box{background:#1c1c1e!important;background-image:none!important;border:1px solid rgba(255,255,255,.06)!important;border-radius:12px!important;box-shadow:none!important;transform:none!important;transition:background-color .18s ease!important;}',
-        'html.emby-skin.emby-style-appletv .item:hover .box{background:#2c2c2e!important;border-color:rgba(255,255,255,.16)!important;box-shadow:none!important;transform:none!important;}',
-        'html.emby-skin.emby-style-appletv .item .box .cover{border-radius:11px 11px 0 0!important;background:#111!important;}',
-        'html.emby-skin.emby-style-appletv .item .box .cover img{transition:none!important;transform:none!important;}',
-        'html.emby-skin.emby-style-appletv .item:hover .box .cover img{transform:none!important;}',
+        /* =====================================================================
+         * Apple TV+ / tvOS 18 影院级设计系统 (emby-style-appletv)
+         * 核心规范：
+         *  1. 悬浮分段胶囊顶栏 (tvOS 18 Floating Vibrancy Segmented Bar)：居中常驻透光毛玻璃胶囊，收起冗余双导航；
+         *  2. 纯粹无框海报画布 (Artwork-First Unboxed Cards)：剥离灰盒边框，圆角海报独立承载多层景深阴影与 0.5px 光学内边，文字直接呼吸于暗场画布；
+         *  3. 影院流光详情舞台 (Cinematic Ambient Stage)：高饱和大半径海报氛围染光自然融于 OLED 黑底，纯白胶囊主播放键 + UltraThinMaterial 次级圆钮；
+         *  4. 全域 Vibrancy 玻璃板材：抽屉、Spotlight 搜索、设置、预告片、磁力面板统一采用 macOS Sequoia / tvOS 高透毛玻璃与微高光倒角。
+         * =================================================================== */
+        'html.emby-skin.emby-style-appletv{--e-bg:#060609;--e-card:rgba(28,28,33,.72);--e-hover:rgba(44,44,52,.78);--e-text:#f5f5f7;--e-text2:rgba(235,235,245,.72);--e-text3:rgba(235,235,245,.46);--e-accent:#0a84ff;--e-accent-d:#409cff;--e-accent-l:rgba(10,132,255,.16);--e-r:14px;--e-header-h:4.5em;--atv-glass:rgba(30,30,36,.66);--atv-glass-heavy:rgba(24,24,29,.78);--atv-rim:rgba(255,255,255,.15);--atv-rim-soft:rgba(255,255,255,.08);--atv-shadow:0 24px 60px rgba(0,0,0,.65);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","PingFang SC","Hiragino Sans GB","Noto Sans SC",system-ui,sans-serif!important;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}',
+        'html.emby-skin.emby-style-appletv body{background-color:#060609!important;background-image:radial-gradient(ellipse 90% 42% at 50% -8%,rgba(58,66,96,.18),transparent 72%)!important;background-attachment:fixed;color:#f5f5f7!important;letter-spacing:-.011em;}',
+
+        /* 1. tvOS 18 悬浮分段胶囊顶栏（顶栏本体仅做羽化遮罩，不挂 backdrop-filter 以允许子胶囊穿透背景模糊） */
+        'html.emby-skin.emby-style-appletv #emby-topbar{height:var(--e-header-h)!important;padding:0 28px!important;display:flex!important;align-items:center!important;flex-wrap:nowrap!important;background:linear-gradient(180deg,rgba(6,6,9,.82) 0%,rgba(6,6,9,.42) 64%,rgba(6,6,9,0) 100%)!important;border-bottom:none!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}',
+        'html.emby-skin.emby-style-appletv #emby-topbar .logo-nav-wrap{position:static!important;display:flex!important;align-items:center!important;}',
+        'html.emby-skin.emby-style-appletv #emby-topbar .logo-javdb{margin:0!important;padding:5px 10px;border-radius:999px;transition:opacity .2s ease,background-color .2s ease;}',
+        'html.emby-skin.emby-style-appletv #emby-topbar .logo-javdb:hover{background:rgba(255,255,255,.08);}',
+        'html.emby-skin.emby-style-appletv #emby-topbar .logo-javdb svg{height:24px!important;opacity:.94;}',
+        'html.emby-skin.emby-style-appletv #emby-topbar .hb,html.emby-skin.emby-style-appletv #emby-settings-btn{width:38px!important;height:38px!important;padding:0!important;margin:0 0 0 6px!important;border-radius:50%!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;background:rgba(36,36,42,.62)!important;backdrop-filter:saturate(190%) blur(26px)!important;-webkit-backdrop-filter:saturate(190%) blur(26px)!important;border:.5px solid rgba(255,255,255,.14)!important;box-shadow:0 6px 20px rgba(0,0,0,.32),inset 0 .5px 0 rgba(255,255,255,.18)!important;color:rgba(245,245,247,.84)!important;transition:transform .2s cubic-bezier(.22,1,.36,1),background-color .2s ease,color .2s ease!important;}',
+        'html.emby-skin.emby-style-appletv #emby-topbar #emby-menu-btn{margin:0 10px 0 0!important;}',
+        'html.emby-skin.emby-style-appletv #emby-topbar #jf-ltx-btn{width:auto!important;padding:0 13px!important;border-radius:999px!important;font-size:11.5px!important;font-weight:700!important;letter-spacing:.03em;}',
+        'html.emby-skin.emby-style-appletv #emby-topbar #jf-ltx-btn.active{background:#f5f5f7!important;color:#09090b!important;border-color:transparent!important;}',
+        'html.emby-skin.emby-style-appletv #emby-topbar .hb:hover,html.emby-skin.emby-style-appletv #emby-settings-btn:hover{background:rgba(62,62,72,.78)!important;color:#fff!important;transform:scale(1.05);}',
+        'html.emby-skin.emby-style-appletv #emby-topbar .hb .material-symbols-outlined,html.emby-skin.emby-style-appletv #emby-settings-btn .material-symbols-outlined{font-size:19px!important;}',
+
+        /* 桌面端居中常驻 tvOS 分段胶囊轨道，自动收起下方重复的第二排 .emby-home-tabs */
+        '@media (min-width:981px){' +
+          'html.emby-skin.emby-style-appletv #emby-topbar .emby-topnav{position:absolute!important;left:50%!important;top:50%!important;transform:translate(-50%,-50%)!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important;padding:4px!important;gap:2px!important;border-radius:999px!important;background:rgba(32,32,38,.68)!important;backdrop-filter:saturate(190%) blur(32px)!important;-webkit-backdrop-filter:saturate(190%) blur(32px)!important;border:.5px solid rgba(255,255,255,.14)!important;box-shadow:0 12px 34px rgba(0,0,0,.46),inset 0 .5px 0 rgba(255,255,255,.2)!important;max-width:calc(100vw - 360px);white-space:nowrap;}' +
+          'html.emby-skin.emby-style-appletv .emby-home-tabs{display:none!important;}' +
+          'html.emby-skin.emby-style-appletv #emby-favorites-panel.show.has-ui{padding-top:calc(var(--e-header-h) + .9em)!important;}' +
+          'html.emby-skin.emby-style-appletv #emby-gallery-panel{padding-top:calc(var(--e-header-h) + .9em)!important;}' +
+          'html.emby-skin.emby-style-appletv #emby-top250-panel{padding-top:calc(var(--e-header-h) + .9em)!important;}' +
+        '}',
+        '@media (max-width:980px){' +
+          'html.emby-skin.emby-style-appletv #emby-topbar{padding:0 14px!important;}' +
+          'html.emby-skin.emby-style-appletv #emby-topbar .emby-topnav{display:none!important;}' +
+          'html.emby-skin.emby-style-appletv .emby-home-tabs{width:fit-content;max-width:calc(100vw - 24px);overflow-x:auto;margin:4px auto 14px!important;padding:4px!important;gap:2px!important;border-radius:999px!important;background:rgba(32,32,38,.72)!important;backdrop-filter:saturate(190%) blur(28px)!important;-webkit-backdrop-filter:saturate(190%) blur(28px)!important;border:.5px solid rgba(255,255,255,.14)!important;}' +
+        '}',
+
+        /* 统一分段胶囊按钮（覆盖收藏夹红/TOP250黄旧规则及 #emby-topbar ID 权重，保持纯正 Apple 单色高反差滑块） */
+        'html.emby-skin.emby-style-appletv .emby-home-tab,html.emby-skin.emby-style-appletv #emby-topbar .emby-topnav .emby-home-tab{padding:6px 14px!important;font-size:13px!important;font-weight:560!important;letter-spacing:-.01em!important;border-radius:999px!important;background:transparent!important;border:none!important;color:rgba(235,235,245,.66)!important;box-shadow:none!important;transition:background-color .22s cubic-bezier(.22,1,.36,1),color .18s ease,box-shadow .22s ease!important;white-space:nowrap;}',
+        'html.emby-skin.emby-style-appletv .emby-home-tab .material-symbols-outlined,html.emby-skin.emby-style-appletv #emby-topbar .emby-topnav .emby-home-tab .material-symbols-outlined,html.emby-skin.emby-style-appletv .emby-home-tab[data-tab="favorites"]:not(.active) .material-symbols-outlined,html.emby-skin.emby-style-appletv .emby-home-tab[data-tab="top250"]:not(.active) .material-symbols-outlined{color:currentColor!important;opacity:.82;font-size:1.05em!important;}',
+        'html.emby-skin.emby-style-appletv .emby-home-tab:not(.active):hover,html.emby-skin.emby-style-appletv #emby-topbar .emby-topnav .emby-home-tab:not(.active):hover,html.emby-skin.emby-style-appletv .emby-home-tab[data-tab="favorites"]:not(.active):hover,html.emby-skin.emby-style-appletv .emby-home-tab[data-tab="top250"]:not(.active):hover{background:rgba(255,255,255,.08)!important;color:#fff!important;border-color:transparent!important;}',
+        'html.emby-skin.emby-style-appletv .emby-home-tab:not(.active):hover .material-symbols-outlined,html.emby-skin.emby-style-appletv #emby-topbar .emby-topnav .emby-home-tab:not(.active):hover .material-symbols-outlined,html.emby-skin.emby-style-appletv .emby-home-tab[data-tab="favorites"]:not(.active):hover .material-symbols-outlined,html.emby-skin.emby-style-appletv .emby-home-tab[data-tab="top250"]:not(.active):hover .material-symbols-outlined{color:#fff!important;opacity:1;}',
+        'html.emby-skin.emby-style-appletv .emby-home-tab.active,html.emby-skin.emby-style-appletv #emby-topbar .emby-topnav .emby-home-tab.active,html.emby-skin.emby-style-appletv .emby-home-tab[data-tab="favorites"].active,html.emby-skin.emby-style-appletv .emby-home-tab[data-tab="top250"].active{background:rgba(255,255,255,.95)!important;color:#09090b!important;border:none!important;font-weight:660!important;box-shadow:0 2px 10px rgba(0,0,0,.32),inset 0 .5px 0 #fff!important;}',
+        'html.emby-skin.emby-style-appletv .emby-home-tab.active .material-symbols-outlined,html.emby-skin.emby-style-appletv #emby-topbar .emby-topnav .emby-home-tab.active .material-symbols-outlined,html.emby-skin.emby-style-appletv .emby-home-tab[data-tab="favorites"].active .material-symbols-outlined,html.emby-skin.emby-style-appletv .emby-home-tab[data-tab="top250"].active .material-symbols-outlined{color:#09090b!important;opacity:1;}',
+
+        /* 2. Apple TV+ 无框悬浮海报卡片（海报为主角，剥离灰底卡片盒，保留动态聚焦宫格例外） */
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus){gap:1.85em 1.35em!important;padding:1.1em 2em 3.6em!important;max-width:1680px!important;}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box,html.emby-skin.emby-style-appletv .emby-row .item .box{background:transparent!important;background-image:none!important;border:none!important;border-radius:0!important;box-shadow:none!important;overflow:visible!important;}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item:hover .box,html.emby-skin.emby-style-appletv .emby-row .item:hover .box{background:transparent!important;border:none!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box .cover,html.emby-skin.emby-style-appletv .emby-row .item .box .cover{border-radius:14px!important;background:#111116!important;overflow:hidden!important;box-shadow:0 14px 32px -8px rgba(0,0,0,.72),0 3px 8px rgba(0,0,0,.42)!important;transition:transform .38s cubic-bezier(.22,1,.36,1),box-shadow .38s cubic-bezier(.22,1,.36,1)!important;will-change:transform;}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box .cover::before,html.emby-skin.emby-style-appletv .emby-row .item .box .cover::before{content:"";position:absolute;inset:0;z-index:4;border-radius:inherit;pointer-events:none;box-shadow:inset 0 0 0 .5px rgba(255,255,255,.16),inset 0 1px 0 rgba(255,255,255,.22);transition:box-shadow .32s ease;}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item:hover .box .cover,html.emby-skin.emby-style-appletv .emby-row .item:hover .box .cover{transform:translateY(-5px) scale(1.032);box-shadow:0 26px 54px -10px rgba(0,0,0,.86),0 8px 20px rgba(0,0,0,.52)!important;}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item:hover .box .cover::before,html.emby-skin.emby-style-appletv .emby-row .item:hover .box .cover::before{box-shadow:inset 0 0 0 1px rgba(255,255,255,.32),inset 0 1px 0 rgba(255,255,255,.42);}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box .cover img{transition:transform .48s cubic-bezier(.22,1,.36,1)!important;}',
         'html.emby-skin.emby-style-appletv .emby-card-shine{display:none!important;}',
-        'html.emby-skin.emby-style-appletv .item .box .video-title{color:#f5f5f7!important;font-size:.92em!important;padding:.72em .78em .24em!important;}',
-        'html.emby-skin.emby-style-appletv .item .box .video-title strong{color:#fff!important;font-weight:700!important;}',
-        'html.emby-skin.emby-style-appletv .item .box .score{color:#c7c7cc!important;}',
-        'html.emby-skin.emby-style-appletv .item .box .meta{color:#8e8e93!important;}',
-        'html.emby-skin.emby-style-appletv .item .box .tags .tag{background:#2c2c2e!important;border-color:transparent!important;color:#c7c7cc!important;}',
-        'html.emby-skin.emby-style-appletv .item a.box:visited .video-title,html.emby-skin.emby-style-appletv .item a.box:visited .video-title strong{color:rgba(245,245,247,.48)!important;}',
-        'html.emby-skin.emby-style-appletv #emby-detail-bg{filter:brightness(.36) saturate(1.05)!important;}',
-        'html.emby-skin.emby-style-appletv .emby-detail-scrim{background:linear-gradient(180deg,#0b0b0f 0%,rgba(11,11,15,.86) 55%,#0b0b0f 100%)!important;}',
-        'html.emby-skin.emby-style-appletv .emby-sec,html.emby-skin.emby-style-appletv .emby-dpane-native,html.emby-skin.emby-style-appletv .jf-magnet-panel,html.emby-skin.emby-style-appletv .jf-review-sec,html.emby-skin.emby-style-appletv .jf-inline-magnet{background:#1c1c1e!important;background-image:none!important;border:1px solid rgba(255,255,255,.06)!important;border-radius:12px!important;box-shadow:none!important;backdrop-filter:none!important;}',
-        'html.emby-skin.emby-style-appletv .emby-detail-hero .poster-wrap img{border:1px solid rgba(255,255,255,.08)!important;border-radius:12px!important;box-shadow:none!important;}',
-        'html.emby-skin.emby-style-appletv .emby-btn,html.emby-skin.emby-style-appletv .emby-play-btn,html.emby-skin.emby-style-appletv .jf-lib-play-main{background:#f5f5f7!important;color:#0b0b0f!important;border:none!important;box-shadow:none!important;border-radius:999px!important;}',
-        'html.emby-skin.emby-style-appletv .emby-btn:hover,html.emby-skin.emby-style-appletv .emby-play-btn:hover{filter:none!important;background:#fff!important;}',
-        'html.emby-skin.emby-style-appletv .emby-tag-chip,html.emby-skin.emby-style-appletv .em-cat{background:#2c2c2e!important;border-color:transparent!important;color:#c7c7cc!important;}',
-        'html.emby-skin.emby-style-appletv #emby-drawer,html.emby-skin.emby-style-appletv #emby-search-modal,html.emby-skin.emby-style-appletv .jhs-settings-dialog,html.emby-skin.emby-style-appletv .emby-compact-bar{background:#1c1c1e!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;border-color:rgba(255,255,255,.08)!important;box-shadow:0 24px 64px rgba(0,0,0,.6)!important;}',
-        'html.emby-skin.emby-style-appletv .jf-trailer-card,html.emby-skin.emby-style-appletv .jf-whatslink-modal{background:#1c1c1e!important;backdrop-filter:none!important;box-shadow:0 24px 64px rgba(0,0,0,.7)!important;}',
-        'html.emby-skin.emby-style-appletv .jf-trailer-overlay,html.emby-skin.emby-style-appletv .jf-whatslink-overlay{backdrop-filter:none!important;background:rgba(0,0,0,.82)!important;}',
-        'html.emby-skin.emby-style-appletv .jf-review-sorts button.active{background:#f5f5f7!important;color:#0b0b0f!important;}',
-        'html.emby-skin.emby-style-appletv .jf-review-sorts button{color:#c7c7cc!important;}',
-        'html.emby-skin.emby-style-appletv .jf-review-115{background:#0a84ff!important;border-color:#0a84ff!important;color:#fff!important;}',
-        'html.emby-skin.emby-style-appletv .jf-ltx-badge{background:#0a84ff!important;}',
-        'html.emby-skin.emby-style-appletv .item.jf-ltx-hit .box{outline:2px solid #0a84ff!important;outline-offset:2px;}',
-        'html.emby-skin.emby-style-appletv .toolbar .button{background:#1c1c1e!important;border-color:rgba(255,255,255,.08)!important;color:#c7c7cc!important;box-shadow:none!important;}',
-        'html.emby-skin.emby-style-appletv .toolbar .button:hover{background:#2c2c2e!important;color:#fff!important;}',
-        'html.emby-skin.emby-style-appletv .toolbar .button.is-info.is-selected,html.emby-skin.emby-style-appletv .toolbar .button.is-selected{background:#f5f5f7!important;border-color:#f5f5f7!important;color:#0b0b0f!important;}',
-        'html.emby-skin.emby-style-appletv .tabs li a{background:transparent!important;color:#c7c7cc!important;border:none!important;}',
-        'html.emby-skin.emby-style-appletv .tabs li.is-active a{background:#f5f5f7!important;color:#0b0b0f!important;border-radius:8px!important;}',
-        'html.emby-skin.emby-style-appletv .tabs.no-bottom{border-bottom-color:rgba(255,255,255,.08)!important;}',
-        /* ===== Apple TV 浅色模式 ===== */
-        'html.emby-skin.emby-style-appletv.emby-light{--e-bg:#f5f5f7;--e-card:#ffffff;--e-hover:#ececf0;--e-text:#1d1d1f;--e-text2:#515154;--e-text3:#86868b;--e-accent:#0071e3;--e-accent-l:rgba(0,113,227,.12);--e-r:12px;}',
-        'html.emby-skin.emby-style-appletv.emby-light body{background:#f5f5f7!important;color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light #emby-topbar{background:#e5e5ea!important;background-image:none!important;border-bottom:1px solid #d2d2d7!important;box-shadow:none!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light #emby-topbar .hb{color:#515154!important;}',
+
+        /* 海报下方排版：左对齐海报光学边缘，SF 紧凑字距与层次灰阶 */
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box .video-title{padding:10px 2px 2px!important;font-size:13.8px!important;font-weight:500!important;line-height:1.36!important;letter-spacing:-.014em!important;color:rgba(245,245,247,.88)!important;}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box .video-title strong{color:#ffffff!important;font-weight:680!important;letter-spacing:-.02em!important;margin-right:3px;}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box .score{padding:1px 2px 1px!important;font-size:12px!important;color:rgba(235,235,245,.56)!important;}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box .meta{padding:0 2px 3px!important;font-size:11.5px!important;color:rgba(235,235,245,.42)!important;font-variant-numeric:tabular-nums;}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box .tags{padding:3px 2px 2px!important;}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box .tags .tag{background:rgba(255,255,255,.075)!important;border:.5px solid rgba(255,255,255,.1)!important;color:rgba(235,235,245,.74)!important;border-radius:6px!important;font-size:10.5px!important;font-weight:560!important;padding:2px 7px!important;}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box .tags .tag.is-success{background:rgba(48,209,88,.14)!important;border-color:rgba(48,209,88,.26)!important;color:#7ee787!important;}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box .tags .tag.is-info{background:rgba(10,132,255,.15)!important;border-color:rgba(10,132,255,.28)!important;color:#82cfff!important;}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box .efav-card-meta{padding:3px 2px 4px!important;}',
+        'html.emby-skin.emby-style-appletv .movie-list .box .efav-card-meta .efav-actor-badge{background:rgba(255,255,255,.065)!important;border:.5px solid rgba(255,255,255,.11)!important;color:rgba(245,245,247,.84)!important;}',
+        'html.emby-skin.emby-style-appletv .movie-list .box .efav-card-meta .efav-actor-badge:hover{background:rgba(255,255,255,.14)!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv .item a.box:visited .video-title,html.emby-skin.emby-style-appletv .item a.box:visited .video-title strong{color:rgba(245,245,247,.42)!important;}',
+
+        /* 封面悬浮快捷胶囊（预览片 / 媒体库播放）：深色烟熏毛玻璃胶囊，不再用突兀白底压暗海报 */
+        'html.emby-skin.emby-style-appletv .jf-rank-action{min-height:27px!important;padding:4px 10px!important;border-radius:999px!important;border:.5px solid rgba(255,255,255,.24)!important;background:rgba(18,18,22,.72)!important;color:#f5f5f7!important;backdrop-filter:saturate(180%) blur(16px)!important;-webkit-backdrop-filter:saturate(180%) blur(16px)!important;box-shadow:0 4px 14px rgba(0,0,0,.45),inset 0 .5px 0 rgba(255,255,255,.2)!important;font-size:11px!important;font-weight:600!important;}',
+        'html.emby-skin.emby-style-appletv .jf-rank-action:hover{background:rgba(255,255,255,.94)!important;color:#09090b!important;border-color:transparent!important;filter:none!important;}',
+        'html.emby-skin.emby-style-appletv .jf-rank-action.jf-rank-play.jf-lib-play-emby{background:rgba(20,46,30,.78)!important;border-color:rgba(48,209,88,.45)!important;color:#86efac!important;}',
+        'html.emby-skin.emby-style-appletv .jf-rank-action.jf-rank-play.jf-lib-play-jellyfin{background:rgba(36,24,62,.78)!important;border-color:rgba(167,139,250,.45)!important;color:#ddd6fe!important;}',
+        'html.emby-skin.emby-style-appletv .item.jf-ltx-hit .box{outline:none!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv .item.jf-ltx-hit .box .cover{box-shadow:0 0 0 2px #0a84ff,0 16px 36px rgba(10,132,255,.28)!important;}',
+        'html.emby-skin.emby-style-appletv .jf-ltx-badge{background:rgba(10,132,255,.9)!important;backdrop-filter:blur(8px);}',
+
+        /* 原站分类 Tabs 与筛选工具栏：融入 Apple 分段胶囊语言（抹平外层 .tabs/.main-tabs 蓝线） */
+        'html.emby-skin.emby-style-appletv .tabs,html.emby-skin.emby-style-appletv .tabs ul,html.emby-skin.emby-style-appletv .main-tabs,html.emby-skin.emby-style-appletv .main-tabs-wrap,html.emby-skin.emby-style-appletv .tabs.no-bottom{border-bottom-color:rgba(255,255,255,.08)!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv .tabs ul{gap:4px;}',
+        'html.emby-skin.emby-style-appletv .tabs li a{background:transparent!important;color:rgba(235,235,245,.62)!important;border:none!important;border-radius:999px!important;padding:.42em 1em!important;font-size:13px!important;font-weight:560!important;transition:background-color .18s ease,color .18s ease;}',
+        'html.emby-skin.emby-style-appletv .tabs li a:hover{background:rgba(255,255,255,.07)!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv .tabs li.is-active a{background:rgba(255,255,255,.14)!important;color:#fff!important;font-weight:650!important;border-radius:999px!important;}',
+        'html.emby-skin.emby-style-appletv .columns[data-controller="movie-tab"] a[href*="jav.app"],html.emby-skin.emby-style-appletv .columns[data-controller="movie-tab"] a[href*="t.me/"]{display:none!important;}',
+        'html.emby-skin.emby-style-appletv .toolbar .button{background:rgba(255,255,255,.07)!important;border:.5px solid rgba(255,255,255,.12)!important;border-radius:999px!important;color:rgba(235,235,245,.76)!important;font-size:12.5px!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv .toolbar .button:hover{background:rgba(255,255,255,.14)!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv .toolbar .button.is-info.is-selected,html.emby-skin.emby-style-appletv .toolbar .button.is-selected{background:#f5f5f7!important;border-color:#f5f5f7!important;color:#09090b!important;font-weight:650!important;}',
+
+        /* 3. Apple TV+ 详情页影院级舞台（海报氛围流光 + 纯白主按钮 + 无框横向片单架） */
+        'html.emby-skin.emby-style-appletv #emby-detail-bg{filter:blur(max(var(--e-blur,56px),52px)) saturate(1.85) brightness(.44)!important;transform:scale(1.18)!important;opacity:.92!important;}',
+        'html.emby-skin.emby-style-appletv #emby-detail-scrim{background:radial-gradient(110% 72% at 28% 16%,rgba(6,6,9,.16) 0%,rgba(6,6,9,.72) 60%,#060609 100%),linear-gradient(180deg,rgba(6,6,9,.2) 0%,rgba(6,6,9,.58) 46%,rgba(6,6,9,.92) 80%,#060609 100%)!important;}',
+        'html.emby-skin.emby-style-appletv .emby-detail-hero .poster-wrap{border-radius:18px!important;border:none!important;box-shadow:0 30px 70px -12px rgba(0,0,0,.82),0 0 0 .5px rgba(255,255,255,.18)!important;}',
+        'html.emby-skin.emby-style-appletv .emby-detail-hero .poster-wrap img{border:none!important;border-radius:18px!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv .emby-detail-hero .info h1{font-size:clamp(1.65rem,2.3vw,2.25rem)!important;font-weight:700!important;letter-spacing:-.026em!important;line-height:1.18!important;color:#ffffff!important;text-shadow:0 2px 20px rgba(0,0,0,.45)!important;}',
+        'html.emby-skin.emby-style-appletv .emby-tag-chip,html.emby-skin.emby-style-appletv .em-meta-chip,html.emby-skin.emby-style-appletv .em-cat{background:rgba(255,255,255,.085)!important;backdrop-filter:saturate(160%) blur(14px);-webkit-backdrop-filter:saturate(160%) blur(14px);border:.5px solid rgba(255,255,255,.13)!important;color:rgba(245,245,247,.86)!important;border-radius:999px!important;font-weight:520;}',
+        'html.emby-skin.emby-style-appletv .emby-tag-chip:hover,html.emby-skin.emby-style-appletv .em-meta-chip:hover,html.emby-skin.emby-style-appletv .em-cat:hover{background:rgba(255,255,255,.18)!important;border-color:rgba(255,255,255,.28)!important;color:#fff!important;}',
+
+        /* 主播放按钮（含分体式多源播放键）统一为 Apple TV 纯白高对比胶囊，次级按钮采用 UltraThinMaterial 圆钮 */
+        'html.emby-skin.emby-style-appletv .emby-btn,html.emby-skin.emby-style-appletv .emby-play-btn,html.emby-skin.emby-style-appletv .emby-play-native-btn,html.emby-skin.emby-style-appletv .emby-play-split-btn{height:46px!important;background:#f5f5f7!important;color:#09090b!important;border:none!important;border-radius:999px!important;box-shadow:0 10px 28px rgba(0,0,0,.4),inset 0 1px 0 #ffffff!important;transition:transform .2s cubic-bezier(.22,1,.36,1),background-color .18s ease,box-shadow .2s ease!important;}',
+        'html.emby-skin.emby-style-appletv .emby-play-main-action,html.emby-skin.emby-style-appletv .emby-play-arrow-action{color:#09090b!important;font-weight:700!important;}',
+        'html.emby-skin.emby-style-appletv .emby-play-main-action:hover,html.emby-skin.emby-style-appletv .emby-play-arrow-action:hover{background:rgba(0,0,0,.06)!important;}',
+        'html.emby-skin.emby-style-appletv .emby-play-split-divider{background:rgba(0,0,0,.15)!important;}',
+        'html.emby-skin.emby-style-appletv .emby-play-btn-logo .emby-site-logo-wrap,html.emby-skin.emby-style-appletv .emby-play-split-btn .emby-site-logo-wrap{background:rgba(0,0,0,.08)!important;border-color:rgba(0,0,0,.12)!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv .emby-play-btn-logo .emby-site-logo-fallback{color:#09090b!important;}',
+        'html.emby-skin.emby-style-appletv .emby-btn:hover,html.emby-skin.emby-style-appletv .emby-play-btn:hover,html.emby-skin.emby-style-appletv .emby-play-split-btn:hover{background:#ffffff!important;filter:none!important;transform:scale(1.025)!important;box-shadow:0 14px 34px rgba(0,0,0,.5)!important;}',
+        'html.emby-skin.emby-style-appletv .jf-lib-play-split{height:46px!important;box-shadow:0 10px 28px rgba(0,0,0,.38);}',
+        'html.emby-skin.emby-style-appletv .jf-lib-play-main{background:rgba(255,255,255,.14)!important;backdrop-filter:saturate(180%) blur(24px);-webkit-backdrop-filter:saturate(180%) blur(24px);color:#f5f5f7!important;border:.5px solid rgba(255,255,255,.2)!important;box-shadow:inset 0 .5px 0 rgba(255,255,255,.24)!important;}',
+        'html.emby-skin.emby-style-appletv .jf-lib-play-main.jf-lib-play-emby{background:rgba(48,209,88,.2)!important;border-color:rgba(48,209,88,.42)!important;color:#bbf7d0!important;}',
+        'html.emby-skin.emby-style-appletv .jf-lib-play-main.jf-lib-play-jellyfin{background:rgba(139,92,246,.22)!important;border-color:rgba(167,139,250,.45)!important;color:#ede9fe!important;}',
+        'html.emby-skin.emby-style-appletv .emby-circle-btn,html.emby-skin.emby-style-appletv .jf-circle-btn{width:46px!important;height:46px!important;background:rgba(255,255,255,.1)!important;backdrop-filter:saturate(180%) blur(24px)!important;-webkit-backdrop-filter:saturate(180%) blur(24px)!important;border:.5px solid rgba(255,255,255,.18)!important;color:rgba(245,245,247,.88)!important;box-shadow:0 8px 22px rgba(0,0,0,.3),inset 0 .5px 0 rgba(255,255,255,.2)!important;}',
+        'html.emby-skin.emby-style-appletv .emby-circle-btn:hover,html.emby-skin.emby-style-appletv .jf-circle-btn:hover{background:rgba(255,255,255,.2)!important;border-color:rgba(255,255,255,.32)!important;color:#fff!important;transform:scale(1.06)!important;box-shadow:0 10px 26px rgba(0,0,0,.4)!important;}',
+
+        /* 详情页吸顶分段胶囊导航 (.emby-dtabbar) 与无框片单货架 (.emby-sec) */
+        'html.emby-skin.emby-style-appletv .emby-dtabbar{width:fit-content!important;max-width:100%!important;margin:0 0 1.4em!important;padding:4px!important;gap:2px!important;border-radius:999px!important;background:rgba(30,30,36,.68)!important;backdrop-filter:saturate(190%) blur(30px)!important;-webkit-backdrop-filter:saturate(190%) blur(30px)!important;border:.5px solid rgba(255,255,255,.14)!important;box-shadow:0 12px 32px rgba(0,0,0,.42),inset 0 .5px 0 rgba(255,255,255,.18)!important;}',
+        'html.emby-skin.emby-style-appletv .emby-dtab{min-height:34px!important;padding:5px 16px!important;font-size:13px!important;font-weight:560!important;border-radius:999px!important;background:transparent!important;border:none!important;color:rgba(235,235,245,.68)!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv .emby-dtab:hover{background:rgba(255,255,255,.08)!important;color:#fff!important;transform:none!important;}',
+        'html.emby-skin.emby-style-appletv .emby-dtab.active{background:rgba(255,255,255,.95)!important;color:#09090b!important;font-weight:660!important;box-shadow:0 2px 9px rgba(0,0,0,.3)!important;}',
+        'html.emby-skin.emby-style-appletv #emby-detail-root > .emby-sec,html.emby-skin.emby-style-appletv .emby-sec{background:transparent!important;border:none!important;box-shadow:none!important;backdrop-filter:none!important;padding-left:0!important;padding-right:0!important;}',
+        'html.emby-skin.emby-style-appletv .emby-sec > h2,html.emby-skin.emby-style-appletv .emby-native-preview > h2,html.emby-skin.emby-style-appletv .emby-preview-title-row > h2{border-left:none!important;padding-left:0!important;font-size:1.18rem!important;font-weight:700!important;letter-spacing:-.022em!important;color:#f5f5f7!important;margin-bottom:.85em!important;}',
+        'html.emby-skin.emby-style-appletv .emby-native-preview .preview-images .tile-item{border-radius:12px!important;border:none!important;box-shadow:0 12px 28px rgba(0,0,0,.55),inset 0 0 0 .5px rgba(255,255,255,.15)!important;}',
+        'html.emby-skin.emby-style-appletv .emby-actor-chip .ava{border:none!important;box-shadow:0 10px 24px rgba(0,0,0,.55),inset 0 0 0 1px rgba(255,255,255,.18)!important;}',
+        'html.emby-skin.emby-style-appletv .emby-dpane-native,html.emby-skin.emby-style-appletv .jf-magnet-panel,html.emby-skin.emby-style-appletv .jf-review-sec,html.emby-skin.emby-style-appletv .jf-inline-magnet,html.emby-skin.emby-style-appletv .emby-sub-block{background:rgba(24,24,29,.68)!important;backdrop-filter:saturate(185%) blur(30px)!important;-webkit-backdrop-filter:saturate(185%) blur(30px)!important;border:.5px solid rgba(255,255,255,.12)!important;border-radius:18px!important;box-shadow:0 18px 44px rgba(0,0,0,.4),inset 0 .5px 0 rgba(255,255,255,.14)!important;}',
+        'html.emby-skin.emby-style-appletv .emby-anchor{background:rgba(28,28,34,.68)!important;backdrop-filter:saturate(190%) blur(28px)!important;-webkit-backdrop-filter:saturate(190%) blur(28px)!important;border:.5px solid rgba(255,255,255,.14)!important;border-radius:16px!important;box-shadow:0 12px 32px rgba(0,0,0,.48)!important;}',
+        'html.emby-skin.emby-style-appletv .emby-anchor.is-collapsed{border-radius:12px 0 0 12px!important;}',
+        'html.emby-skin.emby-style-appletv .emby-anchor-title{color:rgba(235,235,245,.66)!important;border-bottom-color:rgba(255,255,255,.1)!important;}',
+        'html.emby-skin.emby-style-appletv .emby-anchor-title:hover{color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv .emby-anchor a{color:rgba(235,235,245,.66)!important;border-left:none!important;border-radius:10px!important;}',
+        'html.emby-skin.emby-style-appletv .emby-anchor a.current{background:rgba(255,255,255,.94)!important;color:#09090b!important;font-weight:700!important;}',
+
+        /* 4. 全域弹窗 / 抽屉 / 播放器 / 快捷浮窗 Vibrancy 材质统一 */
+        'html.emby-skin.emby-style-appletv #emby-drawer{background:rgba(22,22,27,.78)!important;backdrop-filter:saturate(195%) blur(42px)!important;-webkit-backdrop-filter:saturate(195%) blur(42px)!important;border-right:.5px solid rgba(255,255,255,.14)!important;box-shadow:24px 0 64px rgba(0,0,0,.6)!important;}',
+        'html.emby-skin.emby-style-appletv #emby-drawer .nav a,html.emby-skin.emby-style-appletv #emby-drawer .drawer-group-header,html.emby-skin.emby-style-appletv #emby-drawer .drawer-sub-link,html.emby-skin.emby-style-appletv #emby-drawer .acct-item{margin:2px 10px!important;padding:.68em 1em!important;border-left:none!important;border-radius:11px!important;width:calc(100% - 20px)!important;box-sizing:border-box!important;}',
+        'html.emby-skin.emby-style-appletv #emby-drawer .drawer-sub-link{padding-left:2.65em!important;}',
+        'html.emby-skin.emby-style-appletv #emby-drawer .drawer-subnav{background:transparent!important;}',
+        'html.emby-skin.emby-style-appletv #emby-drawer .nav a.sel,html.emby-skin.emby-style-appletv #emby-drawer .drawer-sub-link.sel{background:rgba(255,255,255,.14)!important;color:#fff!important;font-weight:650!important;}',
+        'html.emby-skin.emby-style-appletv #emby-search-modal{background:rgba(0,0,0,.46)!important;backdrop-filter:blur(16px)!important;-webkit-backdrop-filter:blur(16px)!important;}',
+        'html.emby-skin.emby-style-appletv #emby-search-modal .search-panel,html.emby-skin.emby-style-appletv #emby-search-modal .search-bar-wrap,html.emby-skin.emby-style-appletv .jhs-settings-dialog,html.emby-skin.emby-style-appletv .jhs-qs-popover,html.emby-skin.emby-style-appletv .efav-modal,html.emby-skin.emby-style-appletv .efav-scope-menu,html.emby-skin.emby-style-appletv .efav-lists-menu,html.emby-skin.emby-style-appletv .jf-set-dialog,html.emby-skin.emby-style-appletv .emby-play-menu,html.emby-skin.emby-style-appletv .emby-compact-bar,html.emby-skin.emby-style-appletv .emby-note-tip,html.emby-skin.emby-style-appletv #emby-df-preview .emby-df-preview-inner{background:rgba(28,28,34,.78)!important;backdrop-filter:saturate(195%) blur(40px)!important;-webkit-backdrop-filter:saturate(195%) blur(40px)!important;border:.5px solid rgba(255,255,255,.16)!important;border-radius:20px!important;box-shadow:0 32px 80px rgba(0,0,0,.68),inset 0 .5px 0 rgba(255,255,255,.2)!important;}',
+        'html.emby-skin.emby-style-appletv .jhs-sidebar{background:rgba(0,0,0,.22)!important;border-right:.5px solid rgba(255,255,255,.1)!important;padding:18px 8px!important;}',
+        'html.emby-skin.emby-style-appletv .jhs-side-title{padding:2px 12px 12px!important;color:#f5f5f7!important;font-weight:700!important;letter-spacing:-.01em!important;}',
+        'html.emby-skin.emby-style-appletv .jhs-side-item{margin:2px 0!important;padding:9px 12px!important;border-left:none!important;border-radius:10px!important;color:rgba(235,235,245,.68)!important;font-weight:520!important;}',
+        'html.emby-skin.emby-style-appletv .jhs-side-item:hover{background:rgba(255,255,255,.07)!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv .jhs-side-item.active{background:rgba(255,255,255,.16)!important;color:#fff!important;font-weight:660!important;}',
+        'html.emby-skin.emby-style-appletv .jhs-settings-close{width:30px!important;height:30px!important;border-radius:50%!important;background:rgba(255,255,255,.08)!important;color:rgba(245,245,247,.75)!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;font-size:18px!important;}',
+        'html.emby-skin.emby-style-appletv .jhs-settings-close:hover{background:rgba(255,255,255,.18)!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv #emby-df-preview .emby-df-preview-info{background:rgba(22,22,27,.86)!important;border-top:.5px solid rgba(255,255,255,.12)!important;}',
+        'html.emby-skin.emby-style-appletv .jf-trailer-overlay,html.emby-skin.emby-style-appletv .jf-whatslink-overlay,html.emby-skin.emby-style-appletv .jf-set-mask{background:rgba(0,0,0,.62)!important;backdrop-filter:blur(22px) saturate(1.4)!important;-webkit-backdrop-filter:blur(22px) saturate(1.4)!important;}',
+        'html.emby-skin.emby-style-appletv .jf-trailer-card,html.emby-skin.emby-style-appletv .jf-whatslink-modal{background:rgba(22,22,27,.86)!important;backdrop-filter:saturate(190%) blur(38px)!important;-webkit-backdrop-filter:saturate(190%) blur(38px)!important;border:.5px solid rgba(255,255,255,.16)!important;border-radius:20px!important;box-shadow:0 32px 90px rgba(0,0,0,.78),inset 0 .5px 0 rgba(255,255,255,.18)!important;}',
+        'html.emby-skin.emby-style-appletv #emby-favorites-panel.show.has-ui,html.emby-skin.emby-style-appletv #emby-gallery-panel,html.emby-skin.emby-style-appletv #emby-top250-panel{background-color:#060609!important;}',
+        'html.emby-skin.emby-style-appletv .efav-btn,html.emby-skin.emby-style-appletv .efav-toolbar select,html.emby-skin.emby-style-appletv .efav-toolbar input[type=text],html.emby-skin.emby-style-appletv .top250-pill,html.emby-skin.emby-style-appletv .top250-sync-btn{border-radius:999px!important;background:rgba(255,255,255,.08)!important;border:.5px solid rgba(255,255,255,.13)!important;color:rgba(245,245,247,.86)!important;}',
+        'html.emby-skin.emby-style-appletv .efav-btn.accent,html.emby-skin.emby-style-appletv .top250-pill.active,html.emby-skin.emby-style-appletv .top250-subnav-btn.active,html.emby-skin.emby-style-appletv .jf-set-tab.active{background:#f5f5f7!important;border-color:#f5f5f7!important;color:#09090b!important;font-weight:660!important;box-shadow:0 2px 10px rgba(0,0,0,.28)!important;}',
+        'html.emby-skin.emby-style-appletv .top250-subnav-group{border-radius:999px!important;padding:4px!important;background:rgba(255,255,255,.07)!important;border:.5px solid rgba(255,255,255,.12)!important;}',
+        'html.emby-skin.emby-style-appletv .top250-subnav-btn{border-radius:999px!important;}',
+        'html.emby-skin.emby-style-appletv .top250-filter-box,html.emby-skin.emby-style-appletv .jf-rating-tools{background:rgba(28,28,34,.58)!important;backdrop-filter:saturate(180%) blur(24px)!important;-webkit-backdrop-filter:saturate(180%) blur(24px)!important;border:.5px solid rgba(255,255,255,.11)!important;border-radius:16px!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv .jf-rating-tools select,html.emby-skin.emby-style-appletv .jf-rating-tools button{background:rgba(255,255,255,.09)!important;border:.5px solid rgba(255,255,255,.14)!important;border-radius:999px!important;color:#f5f5f7!important;padding:5px 12px!important;}',
+        'html.emby-skin.emby-style-appletv .jf-review-sorts button.active{background:#f5f5f7!important;color:#09090b!important;}',
+        'html.emby-skin.emby-style-appletv .jf-review-sorts button{color:rgba(235,235,245,.72)!important;}',
+        'html.emby-skin.emby-style-appletv .jf-review-115{background:#0a84ff!important;border-color:#0a84ff!important;color:#fff!important;border-radius:999px!important;padding:2px 10px!important;}',
+        'html.emby-skin.emby-style-appletv #emby-backtop,html.emby-skin.emby-style-appletv #javdb-emby-toggle{background:rgba(34,34,40,.74)!important;backdrop-filter:saturate(190%) blur(28px)!important;-webkit-backdrop-filter:saturate(190%) blur(28px)!important;border:.5px solid rgba(255,255,255,.2)!important;color:#f5f5f7!important;box-shadow:0 12px 32px rgba(0,0,0,.5),inset 0 .5px 0 rgba(255,255,255,.24)!important;}',
+
+        /* ===== Apple TV+ 日间浅色模式 (emby-light) ===== */
+        'html.emby-skin.emby-style-appletv.emby-light{--e-bg:#f5f5f7;--e-card:rgba(255,255,255,.78);--e-hover:rgba(240,240,245,.9);--e-text:#1d1d1f;--e-text2:#515154;--e-text3:#86868b;--e-accent:#0071e3;--e-accent-l:rgba(0,113,227,.12);--e-r:14px;}',
+        'html.emby-skin.emby-style-appletv.emby-light body{background-color:#f5f5f7!important;background-image:radial-gradient(ellipse 90% 40% at 50% -10%,rgba(0,113,227,.06),transparent 70%)!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-topbar{background:linear-gradient(180deg,rgba(245,245,247,.86) 0%,rgba(245,245,247,.42) 66%,rgba(245,245,247,0) 100%)!important;border-bottom:none!important;box-shadow:none!important;}',
         'html.emby-skin.emby-style-appletv.emby-light #emby-topbar .logo-javdb svg path[fill="white"],html.emby-skin.emby-style-appletv.emby-light #emby-drawer .brand path[fill="white"]{fill:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light #emby-topbar .hb:hover{background:#e5e5ea!important;color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-home-tab{color:#6e6e73!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-home-tab:hover{background:#e5e5ea!important;color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-home-tab.active{background:#1d1d1f!important;border-color:#1d1d1f!important;color:#fff!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-dtabbar{background:#e5e5ea!important;border-bottom-color:#d2d2d7!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-topbar .hb,html.emby-skin.emby-style-appletv.emby-light #emby-settings-btn{background:rgba(255,255,255,.74)!important;border:.5px solid rgba(0,0,0,.08)!important;color:#1d1d1f!important;box-shadow:0 4px 16px rgba(0,0,0,.07),inset 0 .5px 0 #fff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-topbar .hb:hover,html.emby-skin.emby-style-appletv.emby-light #emby-settings-btn:hover{background:rgba(255,255,255,.95)!important;color:#000!important;}',
+        '@media (min-width:981px){html.emby-skin.emby-style-appletv.emby-light #emby-topbar .emby-topnav{background:rgba(255,255,255,.74)!important;border:.5px solid rgba(0,0,0,.08)!important;box-shadow:0 10px 30px rgba(0,0,0,.08),inset 0 .5px 0 #fff!important;}}',
+        '@media (max-width:980px){html.emby-skin.emby-style-appletv.emby-light .emby-home-tabs{background:rgba(255,255,255,.78)!important;border:.5px solid rgba(0,0,0,.08)!important;}}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-home-tab,html.emby-skin.emby-style-appletv.emby-light #emby-topbar .emby-topnav .emby-home-tab{color:#6e6e73!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-home-tab:not(.active):hover,html.emby-skin.emby-style-appletv.emby-light #emby-topbar .emby-topnav .emby-home-tab:not(.active):hover{background:rgba(0,0,0,.05)!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-home-tab:not(.active):hover .material-symbols-outlined,html.emby-skin.emby-style-appletv.emby-light #emby-topbar .emby-topnav .emby-home-tab:not(.active):hover .material-symbols-outlined{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-home-tab.active,html.emby-skin.emby-style-appletv.emby-light #emby-topbar .emby-topnav .emby-home-tab.active,html.emby-skin.emby-style-appletv.emby-light .emby-home-tab[data-tab="favorites"].active,html.emby-skin.emby-style-appletv.emby-light .emby-home-tab[data-tab="top250"].active{background:#1d1d1f!important;color:#ffffff!important;box-shadow:0 3px 10px rgba(0,0,0,.16)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-home-tab.active .material-symbols-outlined,html.emby-skin.emby-style-appletv.emby-light #emby-topbar .emby-topnav .emby-home-tab.active .material-symbols-outlined,html.emby-skin.emby-style-appletv.emby-light .emby-home-tab[data-tab="favorites"].active .material-symbols-outlined,html.emby-skin.emby-style-appletv.emby-light .emby-home-tab[data-tab="top250"].active .material-symbols-outlined{color:#ffffff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .movie-list:not(.emby-dynamic-focus) .item .box .cover,html.emby-skin.emby-style-appletv.emby-light .emby-row .item .box .cover{background:#e8e8ed!important;box-shadow:0 12px 28px -6px rgba(0,0,0,.16),0 2px 6px rgba(0,0,0,.08)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .movie-list:not(.emby-dynamic-focus) .item .box .cover::before,html.emby-skin.emby-style-appletv.emby-light .emby-row .item .box .cover::before{box-shadow:inset 0 0 0 .5px rgba(0,0,0,.1);}',
+        'html.emby-skin.emby-style-appletv.emby-light .movie-list:not(.emby-dynamic-focus) .item:hover .box .cover,html.emby-skin.emby-style-appletv.emby-light .emby-row .item:hover .box .cover{box-shadow:0 24px 48px -10px rgba(0,0,0,.26),0 6px 16px rgba(0,0,0,.1)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .movie-list:not(.emby-dynamic-focus) .item .box .video-title{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .movie-list:not(.emby-dynamic-focus) .item .box .video-title strong{color:#000000!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .movie-list:not(.emby-dynamic-focus) .item .box .score{color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .movie-list:not(.emby-dynamic-focus) .item .box .meta{color:#86868b!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .movie-list:not(.emby-dynamic-focus) .item .box .tags .tag{background:rgba(0,0,0,.05)!important;border-color:rgba(0,0,0,.07)!important;color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .movie-list .box .efav-card-meta .efav-actor-badge{background:rgba(0,0,0,.045)!important;border-color:rgba(0,0,0,.08)!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .item a.box:visited .video-title,html.emby-skin.emby-style-appletv.emby-light .item a.box:visited .video-title strong{color:rgba(29,29,31,.42)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-detail-bg{filter:blur(64px) saturate(1.4) brightness(1.08)!important;opacity:.26!important;background-color:#e8e8ed!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-detail-scrim{background:linear-gradient(180deg,rgba(245,245,247,.55) 0%,rgba(245,245,247,.88) 54%,#f5f5f7 100%)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info h1,html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info,html.emby-skin.emby-style-appletv.emby-light .emby-sec > h2,html.emby-skin.emby-style-appletv.emby-light .emby-native-preview > h2,html.emby-skin.emby-style-appletv.emby-light .emby-preview-title-row > h2{color:#1d1d1f!important;text-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info .meta,html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info .sub{color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-btn,html.emby-skin.emby-style-appletv.emby-light .emby-play-btn,html.emby-skin.emby-style-appletv.emby-light .emby-play-native-btn,html.emby-skin.emby-style-appletv.emby-light .emby-play-split-btn{background:#1d1d1f!important;color:#ffffff!important;box-shadow:0 10px 26px rgba(0,0,0,.18)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-play-main-action,html.emby-skin.emby-style-appletv.emby-light .emby-play-arrow-action{color:#ffffff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-play-split-divider{background:rgba(255,255,255,.2)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-circle-btn,html.emby-skin.emby-style-appletv.emby-light .jf-circle-btn{background:rgba(255,255,255,.78)!important;border:.5px solid rgba(0,0,0,.1)!important;color:#1d1d1f!important;box-shadow:0 6px 18px rgba(0,0,0,.08)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-tag-chip,html.emby-skin.emby-style-appletv.emby-light .em-meta-chip,html.emby-skin.emby-style-appletv.emby-light .em-cat{background:rgba(0,0,0,.05)!important;border-color:rgba(0,0,0,.08)!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-dtabbar{background:rgba(255,255,255,.76)!important;border:.5px solid rgba(0,0,0,.08)!important;box-shadow:0 10px 28px rgba(0,0,0,.08),inset 0 .5px 0 #fff!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .emby-dtab{color:#6e6e73!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-dtab:hover{background:#e5e5ea!important;color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-dtab.active{background:#1d1d1f!important;border-color:#1d1d1f!important;color:#fff!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-anchor{background:#fff!important;border-color:#d2d2d7!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-anchor a{color:#515154!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-anchor a:hover{background:#f5f5f7!important;color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-anchor a.current{background:#1d1d1f!important;color:#fff!important;border-left-color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .item .box{background:#fff!important;border-color:#e5e5ea!important;box-shadow:0 1px 2px rgba(0,0,0,.04)!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .item:hover .box{background:#fff!important;border-color:#c7c7cc!important;box-shadow:0 8px 24px rgba(0,0,0,.08)!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .item .box .cover{background:#f0f0f2!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .item .box .video-title{color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .item .box .video-title strong{color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .item .box .score{color:#6e6e73!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .item .box .meta{color:#86868b!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .item .box .tags .tag{background:#f0f0f2!important;color:#515154!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .item a.box:visited .video-title,html.emby-skin.emby-style-appletv.emby-light .item a.box:visited .video-title strong{color:rgba(29,29,31,.45)!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light #emby-detail-bg{opacity:.10!important;filter:none!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light #emby-detail-bg{background-color:#e8e8ec!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light #emby-detail-scrim{background:linear-gradient(180deg,#f5f5f7 0%,rgba(245,245,247,.94) 55%,#f5f5f7 100%)!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info h1,html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info{color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info .meta,html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .info .sub{color:#6e6e73!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-sec,html.emby-skin.emby-style-appletv.emby-light .emby-dpane-native,html.emby-skin.emby-style-appletv.emby-light .jf-magnet-panel,html.emby-skin.emby-style-appletv.emby-light .jf-review-sec,html.emby-skin.emby-style-appletv.emby-light .jf-inline-magnet{background:#fff!important;border-color:#e5e5ea!important;box-shadow:none!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-detail-hero .poster-wrap img{border-color:#e5e5ea!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-btn,html.emby-skin.emby-style-appletv.emby-light .jf-lib-play-main{background:#fff!important;color:#1d1d1f!important;border:1px solid #d2d2d7!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-play-btn{background:#0071e3!important;color:#fff!important;border:none!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-btn:hover{background:#f5f5f7!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-play-btn:hover{background:#0077ed!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .emby-tag-chip,html.emby-skin.emby-style-appletv.emby-light .em-cat{background:#f0f0f2!important;color:#515154!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light #emby-drawer,html.emby-skin.emby-style-appletv.emby-light #emby-search-modal,html.emby-skin.emby-style-appletv.emby-light .jhs-settings-dialog,html.emby-skin.emby-style-appletv.emby-light .emby-compact-bar{background:#fff!important;border-color:#d2d2d7!important;box-shadow:0 24px 64px rgba(0,0,0,.18)!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light #emby-search-modal .search-bar-wrap,html.emby-skin.emby-style-appletv.emby-light .jhs-input-text,html.emby-skin.emby-style-appletv.emby-light .jhs-settings-dialog input,html.emby-skin.emby-style-appletv.emby-light .jhs-settings-dialog select{background:#f5f5f7!important;color:#1d1d1f!important;border-color:#d2d2d7!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-dtab:hover{background:rgba(0,0,0,.05)!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-dtab.active{background:#1d1d1f!important;color:#ffffff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-dpane-native,html.emby-skin.emby-style-appletv.emby-light .jf-magnet-panel,html.emby-skin.emby-style-appletv.emby-light .jf-review-sec,html.emby-skin.emby-style-appletv.emby-light .jf-inline-magnet,html.emby-skin.emby-style-appletv.emby-light .emby-sub-block{background:rgba(255,255,255,.78)!important;border:.5px solid rgba(0,0,0,.08)!important;box-shadow:0 12px 34px rgba(0,0,0,.06)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-drawer,html.emby-skin.emby-style-appletv.emby-light #emby-search-modal .search-panel,html.emby-skin.emby-style-appletv.emby-light #emby-search-modal .search-bar-wrap,html.emby-skin.emby-style-appletv.emby-light .jhs-settings-dialog,html.emby-skin.emby-style-appletv.emby-light .jhs-qs-popover,html.emby-skin.emby-style-appletv.emby-light .efav-modal,html.emby-skin.emby-style-appletv.emby-light .jf-set-dialog,html.emby-skin.emby-style-appletv.emby-light .emby-play-menu,html.emby-skin.emby-style-appletv.emby-light .emby-compact-bar,html.emby-skin.emby-style-appletv.emby-light .emby-anchor{background:rgba(255,255,255,.84)!important;border-color:rgba(0,0,0,.09)!important;box-shadow:0 24px 64px rgba(0,0,0,.14),inset 0 .5px 0 #fff!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-anchor-title{color:#515154!important;border-bottom-color:rgba(0,0,0,.08)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-anchor-title:hover{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-anchor a{color:#6e6e73!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-anchor a:hover{background:rgba(0,0,0,.06)!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .emby-anchor a.current{background:#1d1d1f!important;color:#ffffff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jhs-sidebar{background:rgba(0,0,0,.035)!important;border-right:.5px solid rgba(0,0,0,.08)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jhs-side-title{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jhs-side-item{color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jhs-side-item:hover{background:rgba(0,0,0,.05)!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jhs-side-item.active{background:#1d1d1f!important;color:#ffffff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jhs-settings-close{background:rgba(0,0,0,.06)!important;color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jhs-settings-close:hover{background:rgba(0,0,0,.12)!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jhs-item-row{border-bottom-color:rgba(0,0,0,.06)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jhs-btn-secondary{background:rgba(0,0,0,.06)!important;border-color:rgba(0,0,0,.1)!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-favorites-panel.show.has-ui,html.emby-skin.emby-style-appletv.emby-light #emby-gallery-panel,html.emby-skin.emby-style-appletv.emby-light #emby-top250-panel{background-color:#f5f5f7!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-search-modal .search-bar-wrap,html.emby-skin.emby-style-appletv.emby-light .jhs-input-text,html.emby-skin.emby-style-appletv.emby-light .jhs-settings-dialog input,html.emby-skin.emby-style-appletv.emby-light .jhs-settings-dialog select,html.emby-skin.emby-style-appletv.emby-light .efav-btn,html.emby-skin.emby-style-appletv.emby-light .efav-toolbar select,html.emby-skin.emby-style-appletv.emby-light .efav-toolbar input[type=text]{background:rgba(0,0,0,.045)!important;color:#1d1d1f!important;border-color:rgba(0,0,0,.09)!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .efav-btn.accent,html.emby-skin.emby-style-appletv.emby-light .top250-pill.active,html.emby-skin.emby-style-appletv.emby-light .top250-subnav-btn.active{background:#1d1d1f!important;border-color:#1d1d1f!important;color:#fff!important;}',
         'html.emby-skin.emby-style-appletv.emby-light #emby-drawer .nav a,html.emby-skin.emby-style-appletv.emby-light #emby-drawer .drawer-group-header,html.emby-skin.emby-style-appletv.emby-light #emby-drawer .drawer-sub-link,html.emby-skin.emby-style-appletv.emby-light #emby-drawer .acct-item,html.emby-skin.emby-style-appletv.emby-light #emby-drawer .acct-user{color:#515154!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light #emby-drawer .nav a:hover,html.emby-skin.emby-style-appletv.emby-light #emby-drawer .drawer-group-header:hover{background:#f0f0f2!important;color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-review-sorts button{color:#6e6e73!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-review-sorts button.active{background:#1d1d1f!important;color:#fff!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-review-native-btn,html.emby-skin.emby-style-appletv.emby-light .jf-review-expand,html.emby-skin.emby-style-appletv.emby-light .jf-review-more,html.emby-skin.emby-style-appletv.emby-light .jf-review-retry,html.emby-skin.emby-style-appletv.emby-light .jf-review-batch{background:#f5f5f7!important;border-color:#d2d2d7!important;color:#515154!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-review-115{background:#0071e3!important;border-color:#0071e3!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-drawer .nav a:hover,html.emby-skin.emby-style-appletv.emby-light #emby-drawer .drawer-group-header:hover{background:rgba(0,0,0,.05)!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light #emby-drawer .nav a.sel,html.emby-skin.emby-style-appletv.emby-light #emby-drawer .drawer-sub-link.sel{background:rgba(0,0,0,.08)!important;color:#1d1d1f!important;}',
+        /* 磁力聚合与磁链快捷组件浅色模式全量高对比适配（杜绝浅底白字不可读） */
+        'html.emby-skin.emby-light .jf-magpanel-head,html.emby-skin.emby-light .jf-magpanel-tools{border-bottom-color:rgba(0,0,0,.07)!important;}',
+        'html.emby-skin.emby-light .jf-magpanel-title{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-light .jf-magpanel-code{color:#0071e3!important;}',
+        'html.emby-skin.emby-light .jf-magpanel-hbtn{background:rgba(0,0,0,.05)!important;color:#515154!important;}',
+        'html.emby-skin.emby-light .jf-magpanel-hbtn:hover{background:rgba(0,0,0,.1)!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-light .jf-magpanel-sel,html.emby-skin.emby-light .jf-magtool-btn,html.emby-skin.emby-light .jf-mag-textbtn,html.emby-skin.emby-light .jf-mag-morebtn{background:rgba(0,0,0,.045)!important;border-color:rgba(0,0,0,.1)!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-light .jf-magpanel-sel option{background:#fff!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-light .jf-magtool-btn:hover,html.emby-skin.emby-light .jf-mag-textbtn:hover,html.emby-skin.emby-light .jf-mag-morebtn:hover{background:rgba(0,0,0,.09)!important;color:#000!important;}',
+        'html.emby-skin.emby-light .jf-magpanel-status{color:#6e6e73!important;}',
+        'html.emby-skin.emby-light .jf-magpanel-status.err{color:#dc2626!important;}',
+        'html.emby-skin.emby-light .jf-magsrc-chip{background:rgba(0,0,0,.045)!important;border-color:rgba(0,0,0,.1)!important;color:#515154!important;}',
+        'html.emby-skin.emby-light .jf-magsrc-chip.ok{background:rgba(22,163,74,.1)!important;border-color:rgba(22,163,74,.3)!important;color:#15803d!important;}',
+        'html.emby-skin.emby-light .jf-magsrc-chip.err{background:rgba(220,38,38,.09)!important;border-color:rgba(220,38,38,.28)!important;color:#dc2626!important;}',
+        'html.emby-skin.emby-light .jf-mini-spin{border-color:rgba(0,0,0,.15)!important;border-top-color:#0071e3!important;}',
+        'html.emby-skin.emby-light .jf-magrow{background:rgba(0,0,0,.028)!important;border-color:rgba(0,0,0,.07)!important;}',
+        'html.emby-skin.emby-light .jf-magrow:hover{background:rgba(0,0,0,.055)!important;}',
+        'html.emby-skin.emby-light .jf-magrow-title{color:#0066cc!important;}',
+        'html.emby-skin.emby-light .jf-magrow-title:hover{color:#004499!important;}',
+        'html.emby-skin.emby-light .jf-magrow-meta{color:#6e6e73!important;}',
+        'html.emby-skin.emby-light .jf-magchip{background:rgba(0,113,227,.1)!important;border-color:rgba(0,113,227,.26)!important;color:#0066cc!important;}',
+        'html.emby-skin.emby-light .jf-mag-btn-group{background:rgba(0,0,0,.04)!important;border-color:rgba(0,0,0,.1)!important;}',
+        'html.emby-skin.emby-light .jf-mag-btn{background:rgba(255,255,255,.85)!important;border-color:rgba(0,0,0,.12)!important;color:#3a3a3c!important;}',
+        'html.emby-skin.emby-light .jf-mag-btn:hover{background:#fff!important;color:#0071e3!important;}',
+        'html.emby-skin.emby-light .jf-mag-menu{background:rgba(255,255,255,.96)!important;border-color:rgba(0,0,0,.1)!important;box-shadow:0 12px 32px rgba(0,0,0,.14)!important;}',
+        'html.emby-skin.emby-light .jf-mag-menu button{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-light .jf-mag-menu button:hover{background:rgba(0,0,0,.06)!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .jf-review-sec,html.emby-skin.emby-style-appletv.emby-light .jf-review-sec *{--e-text:#1d1d1f;--e-text2:#515154;--e-text3:#86868b;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-review-title{color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-review-count{color:#6e6e73!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-review-item{border-top-color:#e5e5ea!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-review-meta{color:#86868b!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-review-user{color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-review-content{color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-review-date,html.emby-skin.emby-style-appletv.emby-light .jf-review-likes{color:#86868b!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-title,html.emby-skin.emby-style-appletv.emby-light .jf-review-user,html.emby-skin.emby-style-appletv.emby-light .jf-review-content,html.emby-skin.emby-style-appletv.emby-light #reviews .review-item,html.emby-skin.emby-style-appletv.emby-light #reviews .review-item .content,html.emby-skin.emby-style-appletv.emby-light #reviews .review-item .content p,html.emby-skin.emby-style-appletv.emby-light [data-movie-tab-target="reviews"] .review-item .content p{color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-count,html.emby-skin.emby-style-appletv.emby-light .jf-review-meta,html.emby-skin.emby-style-appletv.emby-light .jf-review-date,html.emby-skin.emby-style-appletv.emby-light .jf-review-likes,html.emby-skin.emby-style-appletv.emby-light #reviews .review-item .time{color:#86868b!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-item{border-top-color:rgba(0,0,0,.07)!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .jf-review-link{color:#0071e3!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .jf-review-stars{color:#f5a623!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light #reviews .review-item,html.emby-skin.emby-style-appletv.emby-light [data-movie-tab-target="reviews"] .review-item{color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light #reviews .review-item .content,html.emby-skin.emby-style-appletv.emby-light #reviews .review-item .content p,html.emby-skin.emby-style-appletv.emby-light [data-movie-tab-target="reviews"] .review-item .content,html.emby-skin.emby-style-appletv.emby-light [data-movie-tab-target="reviews"] .review-item .content p{color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light #reviews .review-item .time,html.emby-skin.emby-style-appletv.emby-light [data-movie-tab-target="reviews"] .review-item .time{color:#86868b!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light #reviews .review-item .review-title,html.emby-skin.emby-style-appletv.emby-light [data-movie-tab-target="reviews"] .review-item .review-title{color:#515154!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light #reviews .review-item .user,html.emby-skin.emby-style-appletv.emby-light #reviews .review-item .username,html.emby-skin.emby-style-appletv.emby-light [data-movie-tab-target="reviews"] .review-item .user,html.emby-skin.emby-style-appletv.emby-light [data-movie-tab-target="reviews"] .review-item .username{color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-review-115{color:#fff!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-review-sorts{background:#f5f5f7!important;border-color:#d2d2d7!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-sorts{background:rgba(0,0,0,.05)!important;border-color:rgba(0,0,0,.08)!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .jf-review-sorts button{color:#515154!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .jf-review-sorts button.active{background:#1d1d1f!important;color:#fff!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-review-sorts button:hover{color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .toolbar .button{background:#fff!important;border-color:#d2d2d7!important;color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-native-btn,html.emby-skin.emby-style-appletv.emby-light .jf-review-expand,html.emby-skin.emby-style-appletv.emby-light .jf-review-more,html.emby-skin.emby-style-appletv.emby-light .jf-review-retry,html.emby-skin.emby-style-appletv.emby-light .jf-review-batch{background:rgba(0,0,0,.045)!important;border-color:rgba(0,0,0,.09)!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-review-115{background:#0071e3!important;border-color:#0071e3!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .toolbar .button{background:rgba(255,255,255,.8)!important;border-color:rgba(0,0,0,.09)!important;color:#515154!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .toolbar .button.is-info.is-selected,html.emby-skin.emby-style-appletv.emby-light .toolbar .button.is-selected{background:#1d1d1f!important;border-color:#1d1d1f!important;color:#fff!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .title,html.emby-skin.emby-style-appletv.emby-light h1.title,html.emby-skin.emby-style-appletv.emby-light h2.title,html.emby-skin.emby-style-appletv.emby-light .title.is-4,html.emby-skin.emby-style-appletv.emby-light .section-title,html.emby-skin.emby-style-appletv.emby-light .actor-section-name{color:#1d1d1f!important;opacity:1!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .tabs,html.emby-skin.emby-style-appletv.emby-light .tabs ul,html.emby-skin.emby-style-appletv.emby-light .main-tabs,html.emby-skin.emby-style-appletv.emby-light .main-tabs-wrap,html.emby-skin.emby-style-appletv.emby-light .tabs.no-bottom{border-bottom-color:rgba(0,0,0,.08)!important;box-shadow:none!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .tabs li a{color:#6e6e73!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .tabs li.is-active a{background:#1d1d1f!important;color:#fff!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .tabs.no-bottom{border-bottom-color:#d2d2d7!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .jf-mag-toast{background:#1d1d1f!important;color:#fff!important;}',
-        'html.emby-skin.emby-style-appletv .jf-rating-tools{background:#1c1c1e!important;border-color:rgba(255,255,255,.08)!important;color:#c7c7cc!important;box-shadow:none!important;}',
-        'html.emby-skin.emby-style-appletv .jf-rating-tools select,html.emby-skin.emby-style-appletv .jf-rating-tools button{background:#2c2c2e!important;border-color:#3a3a3c!important;color:#f5f5f7!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-rating-tools{background:#fff!important;border-color:#d2d2d7!important;color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .jf-rating-tools select,html.emby-skin.emby-style-appletv.emby-light .jf-rating-tools button{background:#f5f5f7!important;border-color:#d2d2d7!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .top250-filter-box,html.emby-skin.emby-style-appletv.emby-light .jf-rating-tools{background:rgba(255,255,255,.76)!important;border-color:rgba(0,0,0,.08)!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-rating-tools select,html.emby-skin.emby-style-appletv.emby-light .jf-rating-tools button{background:rgba(0,0,0,.045)!important;border-color:rgba(0,0,0,.09)!important;color:#1d1d1f!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .jf-rating-tools option{background:#fff!important;color:#1d1d1f!important;}',
-        'html.emby-skin.emby-style-appletv.emby-light .top250-filter-box{background:#fff!important;border-color:#e5e5ea!important;color:#515154!important;}',
 
         '.jf-magtool-btn{padding:6px 11px;}',
-        /* ===== 2026-11 视觉统一：更现代的卡片/顶栏 ===== */
-        'html.emby-skin{--e-r:10px;}',
-        'html.emby-skin #emby-topbar{background-image:linear-gradient(to bottom,rgba(11,14,19,.98) 0%,rgba(11,14,19,.9) 72%,rgba(11,14,19,0) 100%) !important;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);}',
-        'html.emby-skin .movie-list{gap:1.35em 1.15em !important;}',
-        'html.emby-skin .item .box{background:linear-gradient(180deg,#20242c 0%,#191c23 100%) !important;border:1px solid rgba(255,255,255,.075) !important;box-shadow:0 10px 26px rgba(0,0,0,.32) !important;}',
-        'html.emby-skin .item .box .cover{border-radius:calc(var(--e-r) - 2px) calc(var(--e-r) - 2px) 0 0 !important;}',
-        'html.emby-skin .item .box .video-title{font-size:.9em !important;padding:.7em .72em .22em !important;letter-spacing:.01em;}',
-        'html.emby-skin .item .box .video-title strong{font-weight:750 !important;letter-spacing:.015em;}',
-        'html.emby-skin .item .box .score{padding:0 .72em .2em !important;}',
-        'html.emby-skin .item .box .meta{padding:0 .72em .55em !important;}',
-        'html.emby-skin .item:hover .box{border-color:rgba(0,164,220,.42) !important;box-shadow:0 18px 40px rgba(0,0,0,.5),0 0 0 1px rgba(0,164,220,.25) !important;}',
+        /* ===== EMBY 经典风格专属现代卡片微调（严格使用 :not 隔离，绝不污染 Apple TV / 毛玻璃 / 液态玻璃） ===== */
+        'html.emby-skin:not(.emby-style-appletv):not(.emby-style-glass):not(.emby-style-liquid){--e-r:10px;}',
+        'html.emby-skin:not(.emby-style-appletv):not(.emby-style-glass):not(.emby-style-liquid) #emby-topbar{background-image:linear-gradient(to bottom,rgba(11,14,19,.98) 0%,rgba(11,14,19,.9) 72%,rgba(11,14,19,0) 100%) !important;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);}',
+        'html.emby-skin:not(.emby-style-appletv) .movie-list{gap:1.35em 1.15em !important;}',
+        'html.emby-skin:not(.emby-style-appletv):not(.emby-style-glass):not(.emby-style-liquid) .item .box{background:linear-gradient(180deg,#20242c 0%,#191c23 100%) !important;border:1px solid rgba(255,255,255,.075) !important;box-shadow:0 10px 26px rgba(0,0,0,.32) !important;}',
+        'html.emby-skin:not(.emby-style-appletv) .item .box .cover{border-radius:calc(var(--e-r) - 2px) calc(var(--e-r) - 2px) 0 0 !important;}',
+        'html.emby-skin:not(.emby-style-appletv) .item .box .video-title{font-size:.9em !important;padding:.7em .72em .22em !important;letter-spacing:.01em;}',
+        'html.emby-skin:not(.emby-style-appletv) .item .box .video-title strong{font-weight:750 !important;letter-spacing:.015em;}',
+        'html.emby-skin:not(.emby-style-appletv) .item .box .score{padding:0 .72em .2em !important;}',
+        'html.emby-skin:not(.emby-style-appletv) .item .box .meta{padding:0 .72em .55em !important;}',
+        'html.emby-skin:not(.emby-style-appletv):not(.emby-style-glass):not(.emby-style-liquid) .item:hover .box{border-color:rgba(0,164,220,.42) !important;box-shadow:0 18px 40px rgba(0,0,0,.5),0 0 0 1px rgba(0,164,220,.25) !important;}',
         '.jf-magrow{padding:8px 8px 7px;border-radius:9px;margin-bottom:5px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.07);transition:background .15s;}',
         '.jf-magrow:hover{background:rgba(255,255,255,.09);}',
         '.jf-magrow-title{display:block;font-size:12.5px;line-height:1.45;color:#9ecbff;text-decoration:none;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-all;cursor:pointer;}',
@@ -31530,13 +32052,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     try { FUSION.init(); } catch (e) { log('FUSION 初始化失败: ' + e.message); }
   }
 
-  // 立即尝试执行一次，避免首屏翻译闪烁
-  try { if (isDetailPage()) autoBlockJavdbTranslate(); } catch (e) {}
-  try { if (isDetailPage()) ReviewListInfiniteManager.init(); } catch (e) {}
-  try { if (isDetailPage()) FAV.passiveCollect(); } catch (e) {}
-  try { Top250ViewManager.hookNativePage(); } catch (e) {}
-
+  // 在 document-start 阶段提前执行一次（仅当 DOM 仍在解析时），避免首屏翻译闪烁且不与下方同步 init() 重复跑两遍
   if (document.readyState === 'loading') {
+    try { if (isDetailPage()) autoBlockJavdbTranslate(); } catch (e) {}
+    try { if (isDetailPage()) ReviewListInfiniteManager.init(); } catch (e) {}
+    try { if (isDetailPage()) FAV.passiveCollect(); } catch (e) {}
+    try { Top250ViewManager.hookNativePage(); } catch (e) {}
     document.addEventListener('DOMContentLoaded', init);
   } else {
     init();

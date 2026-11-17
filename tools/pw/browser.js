@@ -38,4 +38,19 @@ function launchOptions() {
   return p ? { headless: true, executablePath: p, args: ['--no-sandbox'] } : { headless: true, args: ['--no-sandbox'] };
 }
 
-module.exports = { launchOptions };
+function requirePlaywright() {
+  try {
+    return require('playwright');
+  } catch (e) {
+    const fallbacks = [
+      '/opt/homebrew/opt/playwright-cli/libexec/lib/node_modules/@playwright/cli/node_modules/playwright',
+      '/usr/local/opt/playwright-cli/libexec/lib/node_modules/@playwright/cli/node_modules/playwright'
+    ];
+    for (const fb of fallbacks) {
+      try { return require(fb); } catch (_) {}
+    }
+    throw e;
+  }
+}
+
+module.exports = { launchOptions, requirePlaywright };

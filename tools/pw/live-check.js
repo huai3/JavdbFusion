@@ -14,8 +14,8 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { chromium } = require('playwright');
-const { launchOptions } = require('./browser');
+const { launchOptions, requirePlaywright } = require('./browser');
+const { chromium } = requirePlaywright();
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const SCRIPT = fs.readFileSync(path.join(ROOT, 'JavdbFusion.user.js'), 'utf8');
@@ -84,6 +84,26 @@ function contrast(fg, bg) {
     const headers = Object.assign({}, req.headers || {});
     if (!headers['user-agent'] && !headers['User-Agent']) headers['user-agent'] = UA;
     const data = req.data != null ? req.data : undefined;
+    const wantBin = /^(blob|arraybuffer)$/i.test(String(req.responseType || ''));
+    const packResp = async (r) => {
+      const hdrs = r.headers();
+      if (wantBin) {
+        const buf = await r.body();
+        net.push({ url: req.url, status: r.status(), ms: Date.now() - t0, len: buf.length });
+        return {
+          status: r.status(),
+          statusText: r.statusText(),
+          bodyBase64: buf.toString('base64'),
+          contentType: hdrs['content-type'] || 'application/octet-stream',
+          text: '',
+          url: r.url(),
+          headers: hdrs
+        };
+      }
+      const text = await r.text();
+      net.push({ url: req.url, status: r.status(), ms: Date.now() - t0, len: text.length });
+      return { status: r.status(), statusText: r.statusText(), text, url: r.url(), headers: hdrs };
+    };
     try {
       const r = await api.fetch(req.url, {
         method: req.method || 'GET',
@@ -93,18 +113,13 @@ function contrast(fg, bg) {
         timeout: 60000,
         maxRedirects: 20
       });
-      const text = await r.text();
-      const out = { status: r.status(), statusText: r.statusText(), text, url: r.url(), headers: r.headers() };
-      net.push({ url: req.url, status: out.status, ms: Date.now() - t0, len: text.length });
-      return out;
+      return await packResp(r);
     } catch (e) {
       // 某些自定义头（Cookie/Referer/Origin）在 APIRequestContext 下可能被拒绝，降级再试一次
       try {
         const clean = Object.fromEntries(Object.entries(headers).filter(([k]) => !/^(cookie|referer|origin)$/i.test(k)));
         const r = await api.fetch(req.url, { method: req.method || 'GET', headers: clean, data, failOnStatusCode: false, timeout: 60000 });
-        const text = await r.text();
-        net.push({ url: req.url, status: r.status(), ms: Date.now() - t0, len: text.length });
-        return { status: r.status(), statusText: r.statusText(), text, url: r.url(), headers: r.headers() };
+        return await packResp(r);
       } catch (e2) {
         net.push({ url: req.url, status: 0, ms: Date.now() - t0, error: String(e2.message || e2) });
         throw e2;

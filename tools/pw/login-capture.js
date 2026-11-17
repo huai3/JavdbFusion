@@ -14,8 +14,8 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { chromium } = require('playwright');
-const { launchOptions } = require('./browser');
+const { launchOptions, requirePlaywright } = require('./browser');
+const { chromium } = requirePlaywright();
 
 const arg = (name, def) => {
   const hit = process.argv.find((a) => a === '--' + name || a.startsWith('--' + name + '='));

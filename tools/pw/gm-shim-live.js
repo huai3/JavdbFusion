@@ -45,21 +45,57 @@
           url: opt.url,
           headers: opt.headers || {},
           data: opt.data != null ? opt.data : null,
+          responseType: opt.responseType || '',
           anonymous: opt.anonymous === true
         });
       })
       .then(function (r) {
         if (ctl.signal.aborted) return;
         clearTimeout(timer);
+        const hdrStr = typeof r.headers === 'string'
+          ? r.headers
+          : Object.entries(r.headers || {}).map(function (kv) { return kv[0] + ': ' + kv[1]; }).join('\r\n');
+        if (typeof opt.onreadystatechange === 'function') {
+          try {
+            opt.onreadystatechange({
+              readyState: 2,
+              status: r.status,
+              statusText: r.statusText || '',
+              finalUrl: r.url || opt.url,
+              responseHeaders: hdrStr
+            });
+          } catch (e) {}
+        }
+        if (ctl.signal.aborted) return;
+        const wantType = String(opt.responseType || '').toLowerCase();
+        let responseVal = r.text || '';
+        let responseTextVal = r.text || '';
+        if ((wantType === 'blob' || wantType === 'arraybuffer') && r.bodyBase64 != null) {
+          const bin = atob(r.bodyBase64 || '');
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          responseVal = wantType === 'blob'
+            ? new Blob([bytes], { type: r.contentType || 'application/octet-stream' })
+            : bytes.buffer;
+          responseTextVal = '';
+        } else if (wantType === 'json') {
+          try { responseVal = JSON.parse(r.text || 'null'); } catch (e) { responseVal = null; }
+        }
+        const payload = {
+          readyState: 4,
+          status: r.status,
+          statusText: r.statusText || '',
+          responseText: responseTextVal,
+          response: responseVal,
+          finalUrl: r.url || opt.url,
+          responseHeaders: hdrStr
+        };
+        if (typeof opt.onreadystatechange === 'function') {
+          try { opt.onreadystatechange(payload); } catch (e) {}
+        }
+        if (ctl.signal.aborted) return;
         try {
-          opt.onload && opt.onload({
-            status: r.status,
-            statusText: r.statusText || '',
-            responseText: r.text || '',
-            response: r.text || '',
-            finalUrl: r.url || opt.url,
-            responseHeaders: r.headers || ''
-          });
+          opt.onload && opt.onload(payload);
         } catch (e) { console.error('[shim] onload threw', e); }
       })
       .catch(function (e) {
