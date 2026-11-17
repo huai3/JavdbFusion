@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         115Fusion - Apple TV+ 海报墙 · 悬停多图剧照 · 智能番号归档
 // @namespace    com.local.javdbemby.115fusion
-// @version      1.0.0-appletv-pro
-// @description  专为 115 网盘打造的 Apple TV+ 影院级伴侣脚本（与 JavdbFusion 双端联动）：无限容量 IndexedDB 缓存 + DMM 确定性直链零搜索预测 + 视口懒加载防风控海报墙（千部大目录永不失效）、光标滑动预览多张剧照与高清灯箱、免 Cookie 签名原画串流直调 IINA/PotPlayer/mpv/Infuse、存量番号视频与外挂字幕批量自动整理归档。
+// @version      1.1.0-appletv-pro
+// @description  专为 115 网盘打造的 Apple TV+ 影院级伴侣脚本（与 JavdbFusion 双端联动）：无限容量 IndexedDB 缓存 + DMM 确定性直链零搜索预测 + 视口懒加载防风控海报墙（千部大目录永不失效）、光标滑动预览多张剧照与高清灯箱、libmpv 签名对齐原画串流直调 IINA/PotPlayer/mpv/Infuse、JAVDB+JavBus+AV-Wiki 三源女优识别与纯番号智能归档。
 // @author       hy3 + fusion
 // @homepageURL  https://github.com/huai3/JavdbFusion
 // @supportURL   https://github.com/huai3/JavdbFusion/issues
@@ -22,6 +22,7 @@
 // @connect      awsimgsrc.dmm.co.jp
 // @connect      pics.dmm.co.jp
 // @connect      www.javbus.com
+// @connect      av-wiki.net
 // @connect      *
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
@@ -48,10 +49,24 @@
     dirTpl: 'f115_dir_tpl',
     folderTpl: 'f115_folder_tpl',
     fileTpl: 'f115_file_tpl',
+    noActorPolicy: 'f115_no_actor_policy',
     cleanJunk: 'f115_clean_junk',
     theme: 'f115_theme',
-    enrichDetail: 'f115_enrich_detail'
+    enrichDetail: 'f115_enrich_detail',
+    useBrowserUA: 'f115_use_browser_ua',
+    playerUA: 'f115_player_ua'
   };
+
+  // 一次性平滑迁移旧版冗长默认文件名模板（${code}${cnsub}${suffix} ${title} → 极简纯番号 ${code}）
+  try {
+    if (!GM_getValue('f115_tpl_migrated_v110', false)) {
+      const oldFileTpl = GM_getValue(CONF_KEYS.fileTpl, '');
+      if (!oldFileTpl || oldFileTpl === '${code}${cnsub}${suffix} ${title}' || oldFileTpl === '${code} ${title}') {
+        GM_setValue(CONF_KEYS.fileTpl, '${code}');
+      }
+      GM_setValue('f115_tpl_migrated_v110', true);
+    }
+  } catch (e) {}
 
   function getConf() {
     return {
@@ -59,10 +74,13 @@
       defaultPlayer: GM_getValue(CONF_KEYS.defaultPlayer, 'iina') || 'iina',
       dirTpl: GM_getValue(CONF_KEYS.dirTpl, '云下载/${actor}') || '',
       folderTpl: GM_getValue(CONF_KEYS.folderTpl, '${code}') || '',
-      fileTpl: GM_getValue(CONF_KEYS.fileTpl, '${code}${cnsub}${suffix} ${title}') || '${code}',
+      fileTpl: GM_getValue(CONF_KEYS.fileTpl, '${code}') || '${code}',
+      noActorPolicy: GM_getValue(CONF_KEYS.noActorPolicy, 'maker_or_skip') || 'maker_or_skip',
       cleanJunk: GM_getValue(CONF_KEYS.cleanJunk, true) !== false,
       theme: GM_getValue(CONF_KEYS.theme, 'dark') || 'dark',
-      enrichDetail: GM_getValue(CONF_KEYS.enrichDetail, true) !== false
+      enrichDetail: GM_getValue(CONF_KEYS.enrichDetail, true) !== false,
+      useBrowserUA: GM_getValue(CONF_KEYS.useBrowserUA, false) === true,
+      playerUA: String(GM_getValue(CONF_KEYS.playerUA, '') || '').trim()
     };
   }
   function setConf(k, v) { GM_setValue(k, v); }
@@ -117,7 +135,7 @@
         headers: opts.headers || {},
         data: opts.data,
         timeout: opts.timeout || 15000,
-        anonymous: false,
+        anonymous: Boolean(opts.anonymous),
         onload: function (res) { resolve(res); },
         onerror: function (err) { reject(new Error((err && err.error) || '网络请求失败')); },
         ontimeout: function () { reject(new Error('请求超时')); }
@@ -395,23 +413,19 @@
             if (bigCover && bigCover.getAttribute('src')) {
               out.cover = resolveImgUrl(bigCover.getAttribute('src'), host);
             }
+            // 2026 版 JAVDB 女优链接带有 class="actor-female"，而男优仅为普通 <a href="/actors/...">（无 actor-female）！
+            // 严格只采信女优，杜绝把西島雄介/今井勇太/鮫島等男优误识别为归档女优
             const femaleActors = [];
-            const unknownActors = [];
             ddoc.querySelectorAll('.movie-panel-info .panel-block a[href*="/actors/"]').forEach(function (a) {
               const sym = a.nextElementSibling;
               const nextTxt = (sym ? sym.textContent : '') + ((a.nextSibling && a.nextSibling.textContent) || '');
-              const isMale = Boolean((sym && sym.classList && sym.classList.contains('male')) || /♂/.test(nextTxt));
-              const isFemale = Boolean((sym && sym.classList && sym.classList.contains('female')) || /♀/.test(nextTxt));
-              if (isMale) return;
+              const isMale = Boolean((a.classList && a.classList.contains('actor-male')) || (sym && sym.classList && sym.classList.contains('male')) || /♂/.test(nextTxt));
+              const isFemale = Boolean((a.classList && a.classList.contains('actor-female')) || (sym && sym.classList && sym.classList.contains('female')) || /♀/.test(nextTxt));
+              if (isMale || !isFemale) return;
               const nm = (a.textContent || '').replace(/[\u2640\u2642]/g, '').trim();
-              if (!nm) return;
-              if (isFemale) {
-                if (femaleActors.indexOf(nm) < 0) femaleActors.push(nm);
-              } else if (unknownActors.indexOf(nm) < 0) {
-                unknownActors.push(nm);
-              }
+              if (nm && femaleActors.indexOf(nm) < 0) femaleActors.push(nm);
             });
-            out.actors = femaleActors.length ? femaleActors : unknownActors;
+            out.actors = femaleActors;
             const mk = ddoc.querySelector('.movie-panel-info .panel-block a[href*="/makers/"]');
             if (mk) out.maker = (mk.textContent || '').trim();
             const sr = ddoc.querySelector('.movie-panel-info .panel-block a[href*="/series/"]');
@@ -428,14 +442,82 @@
       return out;
     }
 
+    // 第二源兜底：JavBus 按番号直达页（无需搜索接口，不吃搜索限流，直接拿正规片女优与片商）
+    async function fetchFromJavBus(code) {
+      try {
+        const r = await gmReq({
+          url: 'https://www.javbus.com/' + encodeURIComponent(code),
+          timeout: 9000,
+          anonymous: true,
+          headers: { 'Accept': 'text/html,application/xhtml+xml', 'Accept-Language': 'zh-CN,zh;q=0.9,ja;q=0.8', 'Cookie': 'existmag=all' }
+        });
+        if (r.status !== 200 || !r.responseText) return null;
+        const doc = new DOMParser().parseFromString(r.responseText, 'text/html');
+        const stars = [];
+        doc.querySelectorAll('.star-name a').forEach(function (a) {
+          const nm = (a.textContent || '').trim();
+          if (nm && stars.indexOf(nm) < 0) stars.push(nm);
+        });
+        let title = '';
+        const h3 = doc.querySelector('.container h3');
+        if (h3) {
+          title = (h3.textContent || '').replace(new RegExp('^' + code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*', 'i'), '').trim();
+        }
+        let maker = '';
+        doc.querySelectorAll('.movie .info p').forEach(function (p) {
+          const t = (p.textContent || '').trim();
+          if (/^(?:製作商|廠商|メーカー):/i.test(t)) {
+            const a = p.querySelector('a');
+            if (a) maker = (a.textContent || '').trim();
+          }
+        });
+        return { actors: stars, title: title, maker: maker };
+      } catch (e) { return null; }
+    }
+
+    // 第三源兜底：AV-Wiki 素人女优真名百科（专破 HAWA / SIRO / LUXU / ARA / GANA / MAAN 等 JAVDB 不标女优的素人企划片！）
+    async function fetchFromAvWiki(code) {
+      try {
+        const r = await gmReq({
+          url: 'https://av-wiki.net/?s=' + encodeURIComponent(code) + '&post_type=product',
+          timeout: 9500,
+          anonymous: true,
+          headers: { 'Accept': 'text/html,application/xhtml+xml', 'User-Agent': navigator.userAgent }
+        });
+        if (r.status !== 200 || !r.responseText) return null;
+        const doc = new DOMParser().parseFromString(r.responseText, 'text/html');
+        const articles = doc.querySelectorAll('article.archive-list, article');
+        const parts = code.toLowerCase().split('-');
+        const compact = parts.join('');
+        const numOnly = (parts[1] || '').replace(/^0+(?=\d)/, '');
+        for (let i = 0; i < articles.length; i++) {
+          const art = articles[i];
+          const rawHtml = (art.innerHTML || '').toLowerCase();
+          if (rawHtml.indexOf(code.toLowerCase()) < 0 && rawHtml.indexOf(compact) < 0 && !(parts[0] && numOnly && new RegExp(parts[0] + '0*' + numOnly).test(rawHtml))) {
+            continue;
+          }
+          const actors = [];
+          art.querySelectorAll('li.actress-name a, a[href*="/av-actress/"]').forEach(function (a) {
+            const nm = (a.textContent || '').trim();
+            if (nm && !/一覧|まとめ|ランキング/.test(nm) && actors.indexOf(nm) < 0) actors.push(nm);
+          });
+          let dmmCid = '';
+          const cidMatch = rawHtml.match(/\/pics_dig\/digital\/video\/([a-z0-9_]+)\//i);
+          if (cidMatch) dmmCid = cidMatch[1];
+          if (actors.length || dmmCid) return { actors: actors, dmmCid: dmmCid };
+        }
+      } catch (e) {}
+      return null;
+    }
+
     async function resolveMeta(code, opts) {
       opts = opts || {};
       const norm = normalizeCode(code);
       if (!norm) return null;
 
-      // 1. 先查无限容量 IndexedDB 永久缓存
+      // 1. 先查无限容量 IndexedDB 永久缓存（若强制要求女优名且旧缓存无女优或未走过 v1.1 三源识别，则自动穿透补全）
       const cached = await MetaDB.get(norm);
-      if (cached && cached.cover && (!opts.forceActors || (cached.actors && cached.actors.length) || cached._detailFetched)) {
+      if (cached && cached.cover && (!opts.forceActors || (cached._v110Actors && ((cached.actors && cached.actors.length) || cached._allSourcesTried)))) {
         return cached;
       }
 
@@ -456,11 +538,40 @@
           }
         }
 
-        // 若只需快速渲染海报且未强制要求演员详情，先用 DMM 秒级渲染，再按配置决定是否补全标题与演员
+        const wantActors = Boolean(getConf().enrichDetail || opts.forceActors);
         let javMeta = null;
-        if (!dmmCover || getConf().enrichDetail || opts.forceActors) {
-          javMeta = await fetchFromJavdb(norm, Boolean(getConf().enrichDetail || opts.forceActors));
-          await sleep(360 + Math.floor(Math.random() * 200));
+        if (!dmmCover || wantActors) {
+          javMeta = await fetchFromJavdb(norm, wantActors);
+          await sleep(280 + Math.floor(Math.random() * 160));
+        }
+
+        let actors = (javMeta && javMeta.actors && javMeta.actors.length) ? javMeta.actors.slice() : [];
+        let maker = (javMeta && javMeta.maker) || (cached && cached.maker) || '';
+        let title = (javMeta && javMeta.title) || (cached && cached.title) || '';
+
+        // 若 JAVDB 未标出女优（例如无码条目、限流或素人企划片如 HAWA-389），依次穿透 JavBus 与 AV-Wiki 素人百科！
+        let allTried = false;
+        if (wantActors && !actors.length) {
+          const jb = await fetchFromJavBus(norm);
+          if (jb) {
+            if (jb.actors && jb.actors.length) actors = jb.actors;
+            if (!maker && jb.maker) maker = jb.maker;
+            if (!title && jb.title) title = jb.title;
+          }
+          if (!actors.length) {
+            const aw = await fetchFromAvWiki(norm);
+            if (aw) {
+              if (aw.actors && aw.actors.length) actors = aw.actors;
+              if (!dmmCover && aw.dmmCid) {
+                const u2 = dmmCoverUrl(aw.dmmCid);
+                if (await probeImageValid(u2)) {
+                  dmmCover = u2;
+                  dmmThumbs = dmmSampleUrls(aw.dmmCid, 10);
+                }
+              }
+            }
+          }
+          allTried = true;
         }
 
         // DMM CDN (awsimgsrc.dmm.co.jp) 在 115.com 跨域环境下零防盗链、零 403，优先采用其 800px 封面与剧照；无 DMM 时再用 JAVDB 图床兜底
@@ -468,17 +579,19 @@
           code: norm,
           cover: dmmCover || (javMeta && javMeta.cover) || (cached && cached.cover) || '',
           thumbs: dmmThumbs.length ? dmmThumbs : ((javMeta && javMeta.thumbs && javMeta.thumbs.length) ? javMeta.thumbs : ((cached && cached.thumbs) || [])),
-          title: (javMeta && javMeta.title) || (cached && cached.title) || '',
+          title: title,
           score: (javMeta && javMeta.score) || (cached && cached.score) || '',
           date: (javMeta && javMeta.date) || (cached && cached.date) || '',
-          actors: (javMeta && javMeta.actors && javMeta.actors.length) ? javMeta.actors : ((cached && cached.actors) || []),
-          maker: (javMeta && javMeta.maker) || (cached && cached.maker) || '',
+          actors: actors,
+          maker: maker,
           series: (javMeta && javMeta.series) || (cached && cached.series) || '',
           detailUrl: (javMeta && javMeta.detailUrl) || (cached && cached.detailUrl) || (getConf().javdbHost + '/search?q=' + encodeURIComponent(norm)),
-          _detailFetched: Boolean(javMeta && (getConf().enrichDetail || opts.forceActors))
+          _detailFetched: wantActors,
+          _v110Actors: wantActors,
+          _allSourcesTried: allTried
         };
 
-        if (merged.cover || merged.title) {
+        if (merged.cover || merged.title || merged.actors.length) {
           await MetaDB.put(merged);
         }
         return merged;
@@ -626,21 +739,80 @@
       return vids[0] || null;
     }
 
-    async function resolveSignedM3u8(pickcode) {
+    // 115 视频流 CDN (cpats01.115.com) 带 se=u,ua 参数：流签名强绑定发起 m3u8 请求时的 User-Agent！
+    // 原生 IINA / mpv 默认发送 User-Agent: libmpv；因此请求 m3u8 时必须用 GM_xmlhttpRequest 携带同款 User-Agent 签名
+    function targetUaForPlayer(playerMode) {
+      const conf = getConf();
+      if (conf.playerUA) return conf.playerUA;
+      if (conf.useBrowserUA) return navigator.userAgent;
+      const m = String(playerMode || 'iina').toLowerCase();
+      if (m === 'iina' || m === 'mpv') return 'libmpv';
+      if (m === 'vlc') return 'VLC/3.0.21 LibVLC/3.0.21';
+      if (m === 'potplayer') return 'Lavf/60.16.100';
+      return navigator.userAgent;
+    }
+
+    function showIinaUaSetupModal(streamUrl) {
+      const old = document.getElementById('f115-ua-helper');
+      if (old) old.remove();
+      const ua = navigator.userAgent.replace(/"/g, '\\"');
+      const cmd = 'mkdir -p "$HOME/Library/Application Support/com.colliderli.iina" && grep -q "^user-agent=" "$HOME/Library/Application Support/com.colliderli.iina/mpv.conf" 2>/dev/null && sed -i "" \'s|^user-agent=.*|user-agent="' + ua + '"|\' "$HOME/Library/Application Support/com.colliderli.iina/mpv.conf" || printf \'\\nuser-agent="' + ua + '"\\n\' >> "$HOME/Library/Application Support/com.colliderli.iina/mpv.conf"';
+      const mask = document.createElement('div');
+      mask.id = 'f115-ua-helper';
+      mask.className = 'f115-modal-mask';
+      mask.innerHTML =
+        '<div class="f115-modal" style="width:min(620px,94vw);">' +
+          '<div class="f115-modal-head">' +
+            '<div style="font-size:15px;font-weight:750;">⚠️ 检测到浏览器扩展拦截了自定义 UA（IINA 首次配对指引）</div>' +
+            '<button type="button" class="f115-btn" data-ua-close>✕</button>' +
+          '</div>' +
+          '<div class="f115-modal-body" style="display:flex;flex-direction:column;gap:12px;font-size:13px;line-height:1.6;">' +
+            '<div>115 视频流带有 <code>se=u,ua</code> 校验（要求播放器 UA 与签名时一致）。当前浏览器扩展未放行 <code>libmpv</code> 请求头重写，导致直链被绑定到了你的浏览器 UA。</div>' +
+            '<div style="padding:10px 12px;border-radius:10px;background:rgba(10,132,255,.12);border:1px solid rgba(10,132,255,.3);">只需打开 macOS「终端 (Terminal)」粘贴运行下方一行命令（一劳永逸将 IINA 默认 UA 同步为当前浏览器 UA，重启一次 IINA 即可永久秒播）：</div>' +
+            '<textarea class="f115-inp" readonly style="width:100%;height:74px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:11.5px;">' + escHtml(cmd) + '</textarea>' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">' +
+              '<button type="button" class="f115-btn" data-ua-vod>改用 115 网页云播</button>' +
+              '<button type="button" class="f115-btn f115-btn-primary" data-ua-copy>📋 一键复制终端命令并标记已完成</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(mask);
+      mask.querySelector('[data-ua-close]').addEventListener('click', function () { mask.remove(); });
+      mask.querySelector('[data-ua-vod]').addEventListener('click', function () {
+        mask.remove();
+        if (streamUrl && streamUrl._pickcode) {
+          window.open('https://115vod.com/?pickcode=' + encodeURIComponent(streamUrl._pickcode) + '&share_id=0', '_blank', 'noopener');
+        }
+      });
+      mask.querySelector('[data-ua-copy]').addEventListener('click', function () {
+        GM_setClipboard(cmd);
+        setConf(CONF_KEYS.useBrowserUA, true);
+        mask.remove();
+        toast('✅ 已复制终端命令！在终端粘贴回车并重启一次 IINA 后即可永久秒播', true);
+      });
+    }
+
+    async function resolveSignedM3u8(pickcode, playerMode) {
       const pc = String(pickcode || '').trim();
       if (!pc) throw new Error('缺少 pickcode');
-      if (streamCache.has(pc)) {
-        const hit = streamCache.get(pc);
-        if (Date.now() - hit.ts < 8 * 60 * 1000) return hit.url;
+      const ua = targetUaForPlayer(playerMode);
+      const cacheKey = pc + '|' + ua;
+      if (streamCache.has(cacheKey)) {
+        const hit = streamCache.get(cacheKey);
+        if (Date.now() - hit.ts < 4 * 60 * 1000) return hit;
       }
       const r = await gmReq({
         url: 'https://115.com/api/video/m3u8/' + encodeURIComponent(pc) + '.m3u8',
         timeout: 12000,
-        headers: { 'Accept': '*/*', 'Referer': 'https://115vod.com/' }
+        headers: {
+          'Accept': '*/*',
+          'Referer': 'https://115vod.com/',
+          'User-Agent': ua
+        }
       });
       const txt = String(r.responseText || '').trim();
       if (txt.indexOf('#EXTM3U') < 0) {
-        throw new Error('115 暂未返回视频流（可能尚未完成转码或登录态失效）');
+        throw new Error('115 暂未返回视频流（请确认已在当前浏览器登录 115 且视频已完成云端转码）');
       }
       const lines = txt.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
       let bestUrl = '';
@@ -659,8 +831,25 @@
         }
       }
       if (!bestUrl) throw new Error('未能解析签名串流地址');
-      streamCache.set(pc, { ts: Date.now(), url: bestUrl });
-      return bestUrl;
+
+      // 差分自检：当目标为 libmpv 时，用故意不匹配的 UA 匿名探测 cpats01；
+      // 若返回 403 则 100% 证明 Tampermonkey 已成功将流签名为 libmpv；若仍返回 200 说明扩展未重写 UA（被签成了浏览器 UA）
+      let uaOverrideFailed = false;
+      if (ua === 'libmpv' && /se=[^&]*ua/i.test(bestUrl)) {
+        try {
+          const probe = await gmReq({
+            url: bestUrl,
+            timeout: 5000,
+            anonymous: true,
+            headers: { 'User-Agent': 'F115UaDifferentialProbe/1.0' }
+          });
+          if (probe.status === 200) uaOverrideFailed = true;
+        } catch (e) {}
+      }
+
+      const entry = { ts: Date.now(), url: bestUrl, ua: ua, uaOverrideFailed: uaOverrideFailed };
+      streamCache.set(cacheKey, entry);
+      return entry;
     }
 
     async function playItem(item, playerMode) {
@@ -683,11 +872,17 @@
         return;
       }
       try {
-        toast('⏳ 正在获取 115 最高码率签名原画串流…', true);
-        const streamUrl = await resolveSignedM3u8(target.pickcode);
+        const streamMode = mode === 'copy' ? (getConf().defaultPlayer || 'iina') : mode;
+        toast('⏳ 正在获取与 ' + streamMode.toUpperCase() + ' 签名绑定的原画串流…', true);
+        const resolved = await resolveSignedM3u8(target.pickcode, streamMode);
+        const streamUrl = resolved.url;
         if (mode === 'copy') {
           GM_setClipboard(streamUrl);
-          toast('✅ 已复制 115 签名 M3U8 串流直链', true);
+          toast('✅ 已复制 115 签名 M3U8 直链（已绑定 UA: ' + resolved.ua + '）', true);
+          return;
+        }
+        if ((mode === 'iina' || mode === 'mpv') && resolved.uaOverrideFailed && !getConf().useBrowserUA) {
+          showIinaUaSetupModal({ _pickcode: target.pickcode });
           return;
         }
         let href = streamUrl;
@@ -722,7 +917,11 @@
         data: dataStr
       });
       const j = JSON.parse(r.responseText || '{}');
-      if (j.state === false) throw new Error((label || '操作') + '失败: ' + (j.error_msg || j.error || j.msg || '未知错误'));
+      if (j.state === false) {
+        const err = new Error((label || '操作') + '失败: ' + (j.error_msg || j.error || j.msg || '未知错误'));
+        err.errNo = j.errno || j.errNo || 0;
+        throw err;
+      }
       return j.data !== undefined ? j.data : j;
     }
 
@@ -742,16 +941,25 @@
           curCid = cache.get(key);
           continue;
         }
-        const listing = await listDirAll(curCid, 500);
-        const found = listing.items.find(function (x) { return x.dir && x.name === seg; });
+        let listing = await listDirAll(curCid, 600);
+        let found = listing.items.find(function (x) { return x.dir && x.name === seg; });
         if (found && found.cid) {
           curCid = found.cid;
           cache.set(key, curCid);
         } else {
           await sleep(240);
-          const mk = await mkdir(curCid, seg);
-          const nextCid = String((mk && (mk.cid || mk.file_id || mk.category_id || mk.id)) || '');
-          if (!nextCid) throw new Error('无法创建目录：' + seg);
+          let nextCid = '';
+          try {
+            const mk = await mkdir(curCid, seg);
+            nextCid = String((mk && (mk.cid || mk.file_id || mk.category_id || mk.id)) || '');
+          } catch (e) {
+            // 若目录并发已存在（errNo 20004），重新列目录定位其真实 cid
+            listing = await listDirAll(curCid, 600);
+            found = listing.items.find(function (x) { return x.dir && x.name === seg; });
+            if (found && found.cid) nextCid = found.cid;
+            else throw e;
+          }
+          if (!nextCid || nextCid === '0') throw new Error('无法获取新建目录 CID：' + seg);
           curCid = nextCid;
           cache.set(key, curCid);
         }
@@ -761,11 +969,16 @@
     async function rename(fid, newName) {
       return postForm('https://webapi.115.com/files/edit', 'fid=' + encodeURIComponent(fid) + '&file_name=' + encodeURIComponent(newName), '改名');
     }
-    async function move(fids, toCid) {
+    // 关键修复：115 webapi.115.com/files/move 目标目录参数名必须为 pid（旧写 to_cid 会被 115 当作 pid=0 移进根目录！）
+    async function move(fids, destCid) {
       const list = (fids || []).filter(Boolean);
       if (!list.length) return null;
+      const targetPid = String(destCid || '').trim();
+      if (!targetPid || targetPid === '0' || !/^\d+$/.test(targetPid)) {
+        throw new Error('安全拦截：目标目录 CID 无效 (' + targetPid + ')，已阻止移动到根目录');
+      }
       const body = list.map(function (id, i) { return encodeURIComponent('fid[' + i + ']') + '=' + encodeURIComponent(id); })
-        .concat(['to_cid=' + encodeURIComponent(toCid)]).join('&');
+        .concat(['pid=' + encodeURIComponent(targetPid)]).join('&');
       return postForm('https://webapi.115.com/files/move', body, '移动');
     }
     async function removeJunk(fids, parentCid) {
@@ -817,21 +1030,59 @@
     }).replace(/[\\:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
+  function extractPartTag(name) {
+    const m = String(name || '').match(/(?:[-_.]|\b)(cd\s*[1-9]|part\s*[1-9]|disc\s*[1-9]|[1-9]of[1-9])(?=\.[a-z0-9]{2,5}$|[-_.]|$)/i);
+    return m ? ('-' + m[1].replace(/\s+/g, '').toUpperCase()) : '';
+  }
+
   function buildArchivePlanForItem(fileObj, meta, conf) {
     const code = fileObj.code || (meta && meta.code) || extractCode(fileObj.name);
     const rawBase = String(fileObj.name || '')
-      .replace(/^[a-z0-9.-]+\.(?:com|net|org|me|cc|tv|xyz|info|vip|la|pw|top)@/i, '')
+      .replace(/^[a-z0-9.-]+\.(?:com|net|org|me|cc|tv|xyz|info|vip|la|pw|top|club|site)@/i, '')
       .replace(/\.[a-z0-9]{2,5}$/i, '');
     const hasCnsub = /(?:[-_.]c|[-_.]ch|ch|cnsub|中字|中文字幕)(?:[-_.]|$)/i.test(rawBase);
-    const actor = (meta && meta.actors && meta.actors[0]) ? meta.actors[0] : '佚名';
-    const actors = (meta && meta.actors && meta.actors.length) ? meta.actors.slice(0, 4).join(' ') : actor;
-    const cleanTitle = (meta && meta.title) ? meta.title.slice(0, 85) : rawBase;
+    const realActor = (meta && meta.actors && meta.actors[0]) ? meta.actors[0] : '';
+    const maker = (meta && meta.maker) ? meta.maker : '';
+    const policy = (conf && conf.noActorPolicy) || 'maker_or_skip';
+
+    // 彻底告别乱建「佚名」目录：按策略优雅处理极少数全网均无女优署名的素人作品
+    let actorFolderToken = realActor;
+    let skipMove = false;
+    let actorStatus = realActor ? ('👩 ' + realActor) : '';
+    const tplUsesActor = /\$\{actors?\}/.test((conf.dirTpl || '') + '/' + (conf.folderTpl || ''));
+
+    if (!realActor && tplUsesActor) {
+      if (policy === 'maker_or_skip') {
+        if (maker) {
+          actorFolderToken = maker;
+          actorStatus = '🏢 片商兜底: ' + maker;
+        } else {
+          skipMove = true;
+          actorStatus = '⚠️ 未识别女优（已自动跳过防建佚名）';
+        }
+      } else if (policy === 'skip') {
+        skipMove = true;
+        actorStatus = '⚠️ 未识别女优（暂不移动）';
+      } else if (policy === 'flatten') {
+        actorFolderToken = '';
+        actorStatus = '📂 省略女优层';
+      } else {
+        actorFolderToken = '未分类女优';
+        actorStatus = '📁 未分类女优';
+      }
+    }
+
+    const actors = (meta && meta.actors && meta.actors.length) ? meta.actors.slice(0, 4).join(' ') : actorFolderToken;
+    // 铁律：${title} 只使用真实抓取到的影片标题，绝不退回带 _restored_LTX 等杂质的原文件名！
+    const cleanTitle = (meta && meta.title) ? meta.title.slice(0, 85) : '';
     const year = (meta && meta.date) ? meta.date.slice(0, 4) : '';
+    const partTag = extractPartTag(fileObj.name);
+
     const vars = {
       code: code,
-      actor: actor,
+      actor: actorFolderToken,
       actors: actors,
-      maker: (meta && meta.maker) || '',
+      maker: maker,
       series: (meta && meta.series) || '',
       date: (meta && meta.date) || '',
       year: year,
@@ -846,21 +1097,43 @@
     const extMatch = fileObj.name.match(/(\.(?:zh|chs|cht|jpn|ja|en|sc|tc|big5|gb))?\.([a-z0-9]{2,5})$/i);
     const subLang = (extMatch && fileObj.isSub && extMatch[1]) ? extMatch[1] : '';
     const ext = extMatch ? extMatch[2].toLowerCase() : fileObj.ext;
-    let baseName = fillTemplate(conf.fileTpl, vars).replace(/\//g, ' ').trim() || code || rawBase;
+    let baseName = fillTemplate(conf.fileTpl || '${code}', vars).replace(/\//g, ' ').trim() || code || rawBase;
     if (ext && baseName.toLowerCase().endsWith('.' + ext)) {
       baseName = baseName.slice(0, -(ext.length + 1));
     }
+    if (partTag && baseName.toUpperCase().indexOf(partTag) < 0) {
+      baseName += partTag;
+    }
     const newFileName = ext ? (baseName + subLang + '.' + ext) : baseName;
-    const dirPart = fillTemplate(conf.dirTpl, vars);
-    const folderPart = fillTemplate(conf.folderTpl, vars);
-    const targetRelPath = [dirPart, folderPart].filter(Boolean).join('/');
+    const dirPart = fillTemplate(conf.dirTpl, vars).replace(/^\/+|\/+$/g, '').replace(/\/{2,}/g, '/');
+    const folderPart = fillTemplate(conf.folderTpl, vars).replace(/^\/+|\/+$/g, '');
+    const targetRelPath = skipMove ? '' : [dirPart, folderPart].filter(Boolean).join('/');
 
     return {
       code: code,
-      actor: actor,
+      actor: realActor,
+      actorStatus: actorStatus,
+      skipMove: skipMove,
       newFileName: newFileName,
       targetRelPath: targetRelPath
     };
+  }
+
+  // 同批次同目标目录重名防冲突消歧（例如同时存在 HAWA-389-LTX.mp4 与 HAWA-389-ltx.mp4 时，自动命名为 HAWA-389.mp4 与 HAWA-389-2.mp4）
+  function disambiguateBatchPlans(rows) {
+    const used = new Map();
+    rows.forEach(function (r) {
+      if (!r || !r.plan || !r.plan.newFileName) return;
+      const scope = (r.plan.targetRelPath || '__CUR__').toLowerCase();
+      const lowerName = r.plan.newFileName.toLowerCase();
+      const key = scope + '::' + lowerName;
+      const count = used.get(key) || 0;
+      if (count > 0) {
+        const nextIdx = count + 1;
+        r.plan.newFileName = r.plan.newFileName.replace(/(\.[a-z0-9]{2,5})$/i, '-' + nextIdx + '$1');
+      }
+      used.set(key, count + 1);
+    });
   }
 
   /* =========================================================================
@@ -1379,7 +1652,7 @@
   })();
 
   /* =========================================================================
-   * 十、存量番号视频批量自动整理归档面板（Dry-Run 预览对比表 + 外挂字幕同步 + 防滑块节流）
+   * 十、存量番号视频批量自动整理归档面板（三源女优识别 + 纯番号规范改名 + 防移根目录保护）
    * ======================================================================= */
   async function openBatchArchiveModal(cid, preloadedItems) {
     const old = document.querySelector('.f115-modal-mask');
@@ -1390,30 +1663,49 @@
     const mask = document.createElement('div');
     mask.className = 'f115-modal-mask';
     mask.innerHTML =
-      '<div class="f115-modal">' +
+      '<div class="f115-modal" style="width:min(1060px,96vw);">' +
         '<div class="f115-modal-head">' +
-          '<div style="font-size:15.5px;font-weight:750;">🧹 115 存量番号视频批量自动归档器 <span style="font-size:12px;opacity:.55;font-weight:500;">CID ' + escHtml(targetCid) + '</span></div>' +
+          '<div style="font-size:15.5px;font-weight:750;">🧹 115 智能番号整理与归档器 <span style="font-size:12px;opacity:.55;font-weight:500;">当前源 CID ' + escHtml(targetCid) + '</span></div>' +
           '<button type="button" class="f115-btn" data-m-close>✕ 关闭</button>' +
         '</div>' +
         '<div class="f115-modal-body">' +
-          '<div style="display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:10px;margin-bottom:12px;">' +
-            '<div><div style="font-size:11.5px;opacity:.65;margin-bottom:4px;">归档主目录模板</div><input class="f115-inp" data-tpl-dir value="' + escAttr(conf.dirTpl) + '" style="width:100%;" placeholder="云下载/${actor}"></div>' +
-            '<div><div style="font-size:11.5px;opacity:.65;margin-bottom:4px;">子文件夹模板（留空不建子目录）</div><input class="f115-inp" data-tpl-folder value="' + escAttr(conf.folderTpl) + '" style="width:100%;" placeholder="${code}"></div>' +
-            '<div><div style="font-size:11.5px;opacity:.65;margin-bottom:4px;">文件名模板（自动保留扩展名与同名字幕）</div><input class="f115-inp" data-tpl-file value="' + escAttr(conf.fileTpl) + '" style="width:100%;" placeholder="${code}${cnsub}${suffix} ${title}"></div>' +
+          '<div style="display:grid;grid-template-columns:1fr .85fr 1.15fr;gap:10px;margin-bottom:10px;">' +
+            '<div><div style="font-size:11.5px;opacity:.68;margin-bottom:4px;">归档主目录模板</div><input class="f115-inp" data-tpl-dir value="' + escAttr(conf.dirTpl) + '" style="width:100%;" placeholder="云下载/${actor}"></div>' +
+            '<div><div style="font-size:11.5px;opacity:.68;margin-bottom:4px;">影片子目录模板（留空不建子目录）</div><input class="f115-inp" data-tpl-folder value="' + escAttr(conf.folderTpl) + '" style="width:100%;" placeholder="${code}"></div>' +
+            '<div>' +
+              '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">' +
+                '<span style="font-size:11.5px;opacity:.68;">视频/字幕改名模板（默认纯番号）</span>' +
+                '<span style="display:inline-flex;gap:4px;">' +
+                  '<button type="button" class="f115-btn" data-preset="${code}" style="padding:1px 7px;font-size:10.5px;">纯番号</button>' +
+                  '<button type="button" class="f115-btn" data-preset="${code}${cnsub}" style="padding:1px 7px;font-size:10.5px;">+中字</button>' +
+                  '<button type="button" class="f115-btn" data-preset="${code} ${actor}" style="padding:1px 7px;font-size:10.5px;">+女优</button>' +
+                '</span>' +
+              '</div>' +
+              '<input class="f115-inp" data-tpl-file value="' + escAttr(conf.fileTpl) + '" style="width:100%;" placeholder="${code}">' +
+            '</div>' +
           '</div>' +
           '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">' +
-            '<label style="font-size:12.5px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" data-chk-junk ' + (conf.cleanJunk ? 'checked' : '') + '> 顺带清理 <50MB 广告/样片垃圾文件</label>' +
-            '<button type="button" class="f115-btn" data-btn-enrich>🔍 补全缺失女优/标题元数据</button>' +
-            '<button type="button" class="f115-btn" data-btn-preview>🔄 重新生成预览</button>' +
+            '<label style="font-size:12.5px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" data-chk-junk ' + (conf.cleanJunk ? 'checked' : '') + '> 顺带清理 <50MB 广告/垃圾</label>' +
+            '<label style="font-size:12.5px;display:inline-flex;align-items:center;gap:6px;"><span>无女优片处理：</span>' +
+              '<select class="f115-inp" data-no-actor style="padding:4px 8px;font-size:12px;">' +
+                '<option value="maker_or_skip"' + (conf.noActorPolicy === 'maker_or_skip' ? ' selected' : '') + '>片商名兜底，无片商则跳过（绝不建佚名）</option>' +
+                '<option value="skip"' + (conf.noActorPolicy === 'skip' ? ' selected' : '') + '>暂不移动（留在原目录）</option>' +
+                '<option value="flatten"' + (conf.noActorPolicy === 'flatten' ? ' selected' : '') + '>省略女优层（如 云下载/HAWA-389）</option>' +
+                '<option value="unclassified"' + (conf.noActorPolicy === 'unclassified' ? ' selected' : '') + '>归入「未分类女优」目录</option>' +
+              '</select>' +
+            '</label>' +
+            '<button type="button" class="f115-btn" data-btn-enrich title="强制穿透 JAVDB + JavBus + AV-Wiki 素人库重查女优">🔍 重新穿透识别女优</button>' +
+            '<button type="button" class="f115-btn" data-btn-preview>🔄 刷新预览</button>' +
             '<button type="button" class="f115-btn f115-btn-primary" data-btn-exec style="margin-left:auto;">⚡ 开始安全节流归档</button>' +
           '</div>' +
-          '<div data-arc-log style="font-size:12.5px;padding:8px 12px;border-radius:9px;background:rgba(255,255,255,.05);margin-bottom:10px;">正在扫描目录文件并生成归档预览…</div>' +
-          '<div style="max-height:46vh;overflow:auto;border:1px solid rgba(255,255,255,.08);border-radius:10px;" data-arc-table-wrap></div>' +
+          '<div data-arc-log style="font-size:12.5px;padding:8px 12px;border-radius:9px;background:rgba(255,255,255,.05);margin-bottom:10px;">正在扫描目录并自动识别番号与女优…</div>' +
+          '<div style="max-height:47vh;overflow:auto;border:1px solid rgba(255,255,255,.08);border-radius:10px;" data-arc-table-wrap></div>' +
         '</div>' +
       '</div>';
     document.body.appendChild(mask);
 
-    const close = function () { mask.remove(); };
+    let closed = false;
+    const close = function () { closed = true; mask.remove(); };
     mask.querySelector('[data-m-close]').addEventListener('click', close);
     mask.addEventListener('click', function (e) { if (e.target === mask) close(); });
 
@@ -1421,6 +1713,14 @@
     const tableWrap = mask.querySelector('[data-arc-table-wrap]');
     let items = preloadedItems && preloadedItems.length ? preloadedItems.slice() : [];
     let rows = [];
+
+    mask.querySelectorAll('[data-preset]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        mask.querySelector('[data-tpl-file]').value = btn.getAttribute('data-preset') || '${code}';
+        buildPreview(false);
+      });
+    });
+    mask.querySelector('[data-no-actor]').addEventListener('change', function () { buildPreview(false); });
 
     if (!items.length) {
       try {
@@ -1432,17 +1732,47 @@
       }
     }
 
-    async function buildPreview() {
+    async function enrichMissingCodes(forceRefresh) {
+      const codes = [];
+      items.forEach(function (f) {
+        if (f.isFile && !isJunkFile(f) && (f.isVideo || f.isSub) && f.code && codes.indexOf(f.code) < 0) {
+          codes.push(f.code);
+        }
+      });
+      for (let i = 0; i < codes.length; i++) {
+        if (closed) return;
+        const c = codes[i];
+        const cached = await MetaDB.get(c);
+        if (!forceRefresh && cached && cached._v110Actors && ((cached.actors && cached.actors.length) || cached._allSourcesTried)) {
+          continue;
+        }
+        logEl.textContent = '🔍 正在三源联查女优元数据 (' + (i + 1) + '/' + codes.length + ')：' + c + '（JAVDB → JavBus → AV-Wiki 素人库）…';
+        const resolved = await ArtworkEngine.resolveMeta(c, { forceActors: true });
+        if (resolved && resolved.actors && resolved.actors.length) {
+          logEl.textContent = '✅ 已识别 ' + c + ' → ' + resolved.actors[0];
+        }
+      }
+    }
+
+    async function buildPreview(autoFetchMissing) {
       const curConf = {
         dirTpl: mask.querySelector('[data-tpl-dir]').value.trim(),
         folderTpl: mask.querySelector('[data-tpl-folder]').value.trim(),
-        fileTpl: mask.querySelector('[data-tpl-file]').value.trim(),
+        fileTpl: mask.querySelector('[data-tpl-file]').value.trim() || '${code}',
+        noActorPolicy: mask.querySelector('[data-no-actor]').value,
         cleanJunk: mask.querySelector('[data-chk-junk]').checked
       };
       setConf(CONF_KEYS.dirTpl, curConf.dirTpl);
       setConf(CONF_KEYS.folderTpl, curConf.folderTpl);
       setConf(CONF_KEYS.fileTpl, curConf.fileTpl);
+      setConf(CONF_KEYS.noActorPolicy, curConf.noActorPolicy);
       setConf(CONF_KEYS.cleanJunk, curConf.cleanJunk);
+
+      const needMeta = /\$\{(?:actors?|maker|series|title|year|date)\}/.test(curConf.dirTpl + ' ' + curConf.folderTpl + ' ' + curConf.fileTpl);
+      if (autoFetchMissing && needMeta) {
+        await enrichMissingCodes(false);
+      }
+      if (closed) return;
 
       rows = [];
       const junkList = items.filter(isJunkFile);
@@ -1452,27 +1782,35 @@
         const f = candidates[i];
         const meta = await MetaDB.get(f.code);
         const plan = buildArchivePlanForItem(f, meta, curConf);
-        rows.push({ file: f, meta: meta, plan: plan, checked: true });
+        rows.push({ file: f, meta: meta, plan: plan, checked: !plan.skipMove });
       }
+      disambiguateBatchPlans(rows);
 
-      logEl.textContent = '共识别可归档正片/字幕 ' + rows.length + ' 项' + (curConf.cleanJunk ? (' · 待清理垃圾文件 ' + junkList.length + ' 项') : '') + '（预览无误后点击右上角「开始安全节流归档」）';
+      const readyCount = rows.filter(function (r) { return r.checked; }).length;
+      const skippedCount = rows.length - readyCount;
+      logEl.textContent = '共扫描带番号视频/字幕 ' + rows.length + ' 项：已就绪 ' + readyCount + ' 项' +
+        (skippedCount ? (' · 未识别女优自动暂缓 ' + skippedCount + ' 项（可在下方表格直接手填目标目录后勾选）') : '') +
+        (curConf.cleanJunk ? (' · 待清垃圾 ' + junkList.length + ' 项') : '');
 
       if (!rows.length && (!curConf.cleanJunk || !junkList.length)) {
-        tableWrap.innerHTML = '<div style="padding:36px;text-align:center;opacity:.5;">当前目录下没有带番号的散落视频文件（若视频已在子文件夹内，可先进入子文件夹再整理）</div>';
+        tableWrap.innerHTML = '<div style="padding:36px;text-align:center;opacity:.5;">当前目录下没有散落的番号视频文件（若视频已在子文件夹内，可进入对应目录再整理）</div>';
         return;
       }
 
       tableWrap.innerHTML =
         '<table class="f115-table">' +
-          '<thead><tr><th style="width:36px;"><input type="checkbox" data-chk-all checked></th><th>番号</th><th>原文件名</th><th>拟改名后文件名</th><th>目标归档目录</th></tr></thead>' +
+          '<thead><tr><th style="width:34px;"><input type="checkbox" data-chk-all checked></th><th>番号 / 识别女优</th><th>原文件名</th><th>改名后文件名（可直接微调）</th><th>目标归档目录（可直接手填修正）</th></tr></thead>' +
           '<tbody>' +
             rows.map(function (r, idx) {
               return '<tr>' +
-                '<td><input type="checkbox" data-row-idx="' + idx + '" checked></td>' +
-                '<td style="font-weight:700;color:#64b5ff;white-space:nowrap;">' + escHtml(r.plan.code) + '</td>' +
-                '<td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escAttr(r.file.name) + '">' + escHtml(r.file.name) + '</td>' +
-                '<td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#86efac;" title="' + escAttr(r.plan.newFileName) + '">' + escHtml(r.plan.newFileName) + '</td>' +
-                '<td style="color:#fcd34d;white-space:nowrap;">' + escHtml(r.plan.targetRelPath || '（留在当前目录）') + '</td>' +
+                '<td><input type="checkbox" data-row-idx="' + idx + '"' + (r.checked ? ' checked' : '') + '></td>' +
+                '<td style="white-space:nowrap;">' +
+                  '<div style="font-weight:700;color:#64b5ff;">' + escHtml(r.plan.code) + '</div>' +
+                  '<div style="font-size:11px;opacity:.75;">' + escHtml(r.plan.actorStatus || '—') + '</div>' +
+                '</td>' +
+                '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escAttr(r.file.name) + '">' + escHtml(r.file.name) + '</td>' +
+                '<td><input class="f115-inp" data-edit-name="' + idx + '" value="' + escAttr(r.plan.newFileName) + '" style="width:100%;padding:4px 8px;font-size:12px;color:#86efac;"></td>' +
+                '<td><input class="f115-inp" data-edit-path="' + idx + '" value="' + escAttr(r.plan.targetRelPath) + '" placeholder="留空=仅改名不移动" style="width:100%;padding:4px 8px;font-size:12px;color:#fcd34d;"></td>' +
               '</tr>';
             }).join('') +
           '</tbody>' +
@@ -1492,22 +1830,31 @@
           rows[parseInt(cb.getAttribute('data-row-idx'), 10)].checked = cb.checked;
         });
       });
+      tableWrap.querySelectorAll('[data-edit-name]').forEach(function (inp) {
+        inp.addEventListener('input', function () {
+          rows[parseInt(inp.getAttribute('data-edit-name'), 10)].plan.newFileName = inp.value.trim();
+        });
+      });
+      tableWrap.querySelectorAll('[data-edit-path]').forEach(function (inp) {
+        inp.addEventListener('input', function () {
+          const i = parseInt(inp.getAttribute('data-edit-path'), 10);
+          rows[i].plan.targetRelPath = inp.value.trim().replace(/^\/+|\/+$/g, '');
+          if (rows[i].plan.targetRelPath && !rows[i].checked) {
+            rows[i].checked = true;
+            const cb = tableWrap.querySelector('[data-row-idx="' + i + '"]');
+            if (cb) cb.checked = true;
+          }
+        });
+      });
     }
 
-    mask.querySelector('[data-btn-preview]').addEventListener('click', buildPreview);
+    mask.querySelector('[data-btn-preview]').addEventListener('click', function () { buildPreview(false); });
     mask.querySelector('[data-btn-enrich]').addEventListener('click', async function () {
       const btn = mask.querySelector('[data-btn-enrich]');
       btn.disabled = true;
-      const codes = [];
-      items.forEach(function (f) {
-        if (f.isFile && !isJunkFile(f) && f.code && codes.indexOf(f.code) < 0) codes.push(f.code);
-      });
-      for (let i = 0; i < codes.length; i++) {
-        logEl.textContent = '🔍 正在节流拉取元数据 (' + (i + 1) + '/' + codes.length + ')：' + codes[i] + '…';
-        await ArtworkEngine.resolveMeta(codes[i], { forceActors: true });
-      }
+      await enrichMissingCodes(true);
       btn.disabled = false;
-      await buildPreview();
+      await buildPreview(false);
     });
 
     mask.querySelector('[data-btn-exec]').addEventListener('click', async function () {
@@ -1518,6 +1865,7 @@
       const selected = rows.filter(function (r) { return r.checked; });
       const dirCache = new Map();
       let cleaned = 0, renamed = 0, moved = 0, failed = 0;
+      let lastErr = '';
 
       try {
         if (doClean && junkList.length) {
@@ -1527,41 +1875,50 @@
           await sleep(280);
         }
 
-        // 按目标目录分组批量移动，大幅减少 115 API 调用次数，避免触发滑块验证
+        // 按目标目录分组批量移动（使用修复后的 pid 参数，绝不误移至根目录）
         const moveGroups = new Map();
         for (let i = 0; i < selected.length; i++) {
           const r = selected[i];
-          logEl.textContent = '✏️ 正在整理 (' + (i + 1) + '/' + selected.length + ')：' + r.plan.code + '…';
+          logEl.textContent = '✏️ 正在规范改名 (' + (i + 1) + '/' + selected.length + ')：' + r.file.name + ' → ' + r.plan.newFileName + '…';
           if (r.plan.newFileName && r.plan.newFileName !== r.file.name) {
             try {
               await Api115.rename(r.file.fid, r.plan.newFileName);
+              r.file.name = r.plan.newFileName;
               renamed++;
               await sleep(260);
-            } catch (e) { failed++; }
+            } catch (e) {
+              failed++;
+              lastErr = e.message;
+            }
           }
-          if (r.plan.targetRelPath) {
-            if (!moveGroups.has(r.plan.targetRelPath)) moveGroups.set(r.plan.targetRelPath, []);
-            moveGroups.get(r.plan.targetRelPath).push(r.file.fid);
+          const rel = String(r.plan.targetRelPath || '').trim().replace(/^\/+|\/+$/g, '');
+          if (rel) {
+            if (!moveGroups.has(rel)) moveGroups.set(rel, []);
+            moveGroups.get(rel).push(r.file.fid);
           }
         }
 
         for (const entry of moveGroups.entries()) {
           const relPath = entry[0];
           const fids = entry[1];
-          logEl.textContent = '📂 正在创建/定位目录并移入：' + relPath + ' (' + fids.length + ' 项)…';
+          logEl.textContent = '📂 正在定位目标目录并移入：' + relPath + ' (' + fids.length + ' 项)…';
           const rootBase = (relPath.indexOf('/') >= 0 || relPath.indexOf('云下载') === 0) ? '0' : targetCid;
           try {
             const destCid = await Api115.ensureDirPath(rootBase, relPath, dirCache);
-            if (destCid && destCid !== targetCid) {
+            if (destCid && destCid !== '0' && destCid !== targetCid) {
               await sleep(260);
               await Api115.move(fids, destCid);
               moved += fids.length;
             }
-          } catch (e) { failed++; }
+          } catch (e) {
+            failed++;
+            lastErr = e.message;
+          }
         }
 
-        logEl.textContent = '✅ 批量归档完成！清理垃圾 ' + cleaned + ' 项 · 规范改名 ' + renamed + ' 项 · 移动归档 ' + moved + ' 项' + (failed ? (' · 失败 ' + failed + ' 项') : '');
-        toast('✨ 115 批量归档完成！', true);
+        logEl.textContent = '✅ 批量归档完成！清理垃圾 ' + cleaned + ' 项 · 规范改名 ' + renamed + ' 项 · 成功移入目标目录 ' + moved + ' 项' +
+          (failed ? (' · 失败 ' + failed + ' 项 (' + lastErr + ')') : '');
+        toast('✨ 115 批量归档完成！', failed === 0);
         PosterWall.reload();
       } catch (e) {
         logEl.textContent = '❌ 归档中断：' + e.message;
@@ -1570,7 +1927,7 @@
       }
     });
 
-    await buildPreview();
+    await buildPreview(true);
   }
 
   /* =========================================================================
@@ -1583,7 +1940,7 @@
     const mask = document.createElement('div');
     mask.className = 'f115-modal-mask';
     mask.innerHTML =
-      '<div class="f115-modal" style="width:min(560px,94vw);">' +
+      '<div class="f115-modal" style="width:min(580px,94vw);">' +
         '<div class="f115-modal-head">' +
           '<div style="font-size:15.5px;font-weight:750;">⚙️ 115Fusion 偏好设置</div>' +
           '<button type="button" class="f115-btn" data-s-close>✕ 关闭</button>' +
@@ -1594,21 +1951,29 @@
             '<input class="f115-inp" data-s-host value="' + escAttr(conf.javdbHost) + '" style="width:100%;" placeholder="https://javdb580.com">' +
           '</div>' +
           '<div>' +
-            '<div style="font-size:12.5px;font-weight:650;margin-bottom:5px;">海报点击主播放方式（本地播放器通过签名原画 M3U8 免 Cookie 直连）</div>' +
+            '<div style="font-size:12.5px;font-weight:650;margin-bottom:5px;">海报点击主播放方式（自动签名对应播放器的 User-Agent 过 se=u,ua 校验）</div>' +
             '<select class="f115-inp" data-s-player style="width:100%;">' +
-              '<option value="iina"' + (conf.defaultPlayer === 'iina' ? ' selected' : '') + '>IINA 原画串流 (macOS 推荐)</option>' +
+              '<option value="iina"' + (conf.defaultPlayer === 'iina' ? ' selected' : '') + '>IINA 原画串流 (macOS 默认 · 自动签 libmpv UA)</option>' +
               '<option value="potplayer"' + (conf.defaultPlayer === 'potplayer' ? ' selected' : '') + '>PotPlayer 原画串流 (Windows)</option>' +
               '<option value="mpv"' + (conf.defaultPlayer === 'mpv' ? ' selected' : '') + '>mpv 原画串流</option>' +
               '<option value="infuse"' + (conf.defaultPlayer === 'infuse' ? ' selected' : '') + '>Infuse 原画串流</option>' +
               '<option value="115vod"' + (conf.defaultPlayer === '115vod' ? ' selected' : '') + '>115 官方网页云播 (115vod.com)</option>' +
             '</select>' +
           '</div>' +
+          '<div>' +
+            '<div style="font-size:12.5px;font-weight:650;margin-bottom:5px;">自定义外部播放器 User-Agent（留空则对 IINA/mpv 自动使用 <code>libmpv</code>）</div>' +
+            '<input class="f115-inp" data-s-ua value="' + escAttr(conf.playerUA) + '" style="width:100%;" placeholder="留空自动匹配；若修改过 IINA mpv.conf 的 user-agent 可填于此">' +
+          '</div>' +
+          '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">' +
+            '<input type="checkbox" data-s-bua ' + (conf.useBrowserUA ? 'checked' : '') + '>' +
+            '<span>IINA 已配置与当前浏览器一致的 User-Agent（不重写 libmpv 请求头）</span>' +
+          '</label>' +
           '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">' +
             '<input type="checkbox" data-s-detail ' + (conf.enrichDetail ? 'checked' : '') + '>' +
-            '<span>后台节流补全 JAVDB 标题、评分、女优与瀑布流剧照（关闭则仅使用 DMM 零搜索秒开封面与剧照）</span>' +
+            '<span>后台节流补全 JAVDB/JavBus/AV-Wiki 标题、评分与女优（关闭则仅使用 DMM 零搜索秒开封面与剧照）</span>' +
           '</label>' +
           '<div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid rgba(255,255,255,.08);">' +
-            '<button type="button" class="f115-btn" data-s-clear>🗑️ 清空本地封面剧照缓存</button>' +
+            '<button type="button" class="f115-btn" data-s-clear>🗑️ 清空本地元数据与剧照缓存</button>' +
             '<button type="button" class="f115-btn f115-btn-primary" data-s-save>保存设置</button>' +
           '</div>' +
         '</div>' +
@@ -1619,12 +1984,14 @@
     mask.addEventListener('click', function (e) { if (e.target === mask) mask.remove(); });
     mask.querySelector('[data-s-clear]').addEventListener('click', async function () {
       await MetaDB.clearAll();
-      toast('✅ 已清空 IndexedDB 封面与剧照缓存', true);
+      toast('✅ 已清空 IndexedDB 缓存（下次打开归档将重新三源识别女优）', true);
     });
     mask.querySelector('[data-s-save]').addEventListener('click', function () {
       const h = mask.querySelector('[data-s-host]').value.trim().replace(/\/+$/, '') || 'https://javdb580.com';
       setConf(CONF_KEYS.javdbHost, h);
       setConf(CONF_KEYS.defaultPlayer, mask.querySelector('[data-s-player]').value);
+      setConf(CONF_KEYS.playerUA, mask.querySelector('[data-s-ua]').value.trim());
+      setConf(CONF_KEYS.useBrowserUA, mask.querySelector('[data-s-bua]').checked);
       setConf(CONF_KEYS.enrichDetail, mask.querySelector('[data-s-detail]').checked);
       mask.remove();
       toast('✅ 设置已保存', true);

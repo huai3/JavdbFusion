@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.400-appletv-pro
+// @version      7.410-appletv-pro
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -62,6 +62,7 @@
 // @connect      cn.xsz-av.com
 // @connect      javhd.today
 // @connect      www.javbus.com
+// @connect      av-wiki.net
 // @connect      www.javlibrary.com
 // @connect      www.dmm.co.jp
 // @connect      p.dmm.co.jp
@@ -29521,11 +29522,21 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       };
       const HIT_CODES_KEY = 'jf_115_hit_codes_v1';
       const DEF_DIR_TPL = '云下载/${actor}';
-      const DEF_FILE_TPL = '${code}${cnsub}${suffix} ${title}';
+      const DEF_FILE_TPL = '${code}';
       const DEF_FOLDER_TPL = '${code}';
       const videoHitMem = new Map();
       const streamUrlMem = new Map();
       let hitCodeSetCache = null;
+
+      try {
+        if (!GM_getValue('jf_115_tpl_migrated_v741', false)) {
+          const oldFt = GM_getValue(CONF.fileTpl, '');
+          if (!oldFt || oldFt === '${code}${cnsub}${suffix} ${title}' || oldFt === '${code} ${title}') {
+            GM_setValue(CONF.fileTpl, '${code}');
+          }
+          GM_setValue('jf_115_tpl_migrated_v741', true);
+        }
+      } catch (e) {}
 
       function getHitCodeSet() {
         if (hitCodeSetCache) return hitCodeSetCache;
@@ -29666,14 +29677,22 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         }).filter(Boolean);
         let curCid = String(baseCid || '0').trim() || '0';
         for (const seg of segs) {
-          const children = await listDir(curCid);
-          const existing = children.find(function (c) { return c.dir && c.name === seg; });
+          let children = await listDir(curCid);
+          let existing = children.find(function (c) { return c.dir && c.name === seg; });
           if (existing && existing.cid) {
             curCid = existing.cid;
           } else {
-            const mk = await mkdir(curCid, seg);
-            const nextCid = String((mk && (mk.cid || mk.file_id || mk.category_id || mk.id)) || '');
-            if (!nextCid) throw new Error('无法创建目录：' + seg);
+            let nextCid = '';
+            try {
+              const mk = await mkdir(curCid, seg);
+              nextCid = String((mk && (mk.cid || mk.file_id || mk.category_id || mk.id)) || '');
+            } catch (e) {
+              children = await listDir(curCid);
+              existing = children.find(function (c) { return c.dir && c.name === seg; });
+              if (existing && existing.cid) nextCid = existing.cid;
+              else throw e;
+            }
+            if (!nextCid || nextCid === '0') throw new Error('无法创建目录：' + seg);
             curCid = nextCid;
           }
         }
@@ -29683,13 +29702,17 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       async function rename(fid, name) {
         return postForm('https://webapi.115.com/files/edit', { fid: fid, file_name: name }, '改名');
       }
-      // 移动（兼容多文件 fid 数组）
+      // 移动（修复 115 接口目标目录参数名必须为 pid，旧写 to_cid 会被 115 默认移入 pid=0 根目录！）
       async function move(fids, cid) {
         const list = (fids || []).filter(Boolean);
         if (!list.length) return null;
+        const targetPid = String(cid || '').trim();
+        if (!targetPid || targetPid === '0' || !/^\d+$/.test(targetPid)) {
+          throw new Error('安全拦截：目标目录 CID 无效，已拒绝移动到根目录');
+        }
         const body = list.map(function (id, idx) {
           return encodeURIComponent('fid[' + idx + ']') + '=' + encodeURIComponent(id);
-        }).concat(['to_cid=' + encodeURIComponent(cid)]).join('&');
+        }).concat(['pid=' + encodeURIComponent(targetPid)]).join('&');
         const r = await gmReq({
           url: 'https://webapi.115.com/files/move', method: 'POST', timeout: 15000,
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Origin': 'https://115.com', 'Referer': 'https://115.com/' },
@@ -29788,18 +29811,29 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         return videos;
       }
 
-      // 解析 115 签名原画 M3U8 直链（免 Cookie / 免自定义 UA 直喂 IINA / PotPlayer / mpv / Infuse）
-      async function resolveStreamUrl(pickcode) {
+      function uaForPlayer(player) {
+        if (GM_getValue('jf_115_use_browser_ua', false) === true) return navigator.userAgent;
+        const p = String(player || 'iina').toLowerCase();
+        if (p === 'iina' || p === 'mpv') return 'libmpv';
+        if (p === 'vlc') return 'VLC/3.0.21 LibVLC/3.0.21';
+        if (p === 'potplayer') return 'Lavf/60.16.100';
+        return navigator.userAgent;
+      }
+
+      // 解析 115 签名原画 M3U8 直链（携带目标播放器同款 User-Agent 过 cpats01.115.com 的 se=u,ua 校验！）
+      async function resolveStreamUrl(pickcode, player) {
         const pc = String(pickcode || '').trim();
         if (!pc) throw new Error('缺少 pickcode');
-        if (streamUrlMem.has(pc)) {
-          const hit = streamUrlMem.get(pc);
-          if (Date.now() - hit.ts < 8 * 60 * 1000) return hit.url;
+        const ua = uaForPlayer(player);
+        const cacheKey = pc + '|' + ua;
+        if (streamUrlMem.has(cacheKey)) {
+          const hit = streamUrlMem.get(cacheKey);
+          if (Date.now() - hit.ts < 4 * 60 * 1000) return hit.url;
         }
         const r = await gmReq({
           url: 'https://115.com/api/video/m3u8/' + encodeURIComponent(pc) + '.m3u8',
           timeout: 12000,
-          headers: { 'Accept': '*/*', 'Referer': 'https://115vod.com/' }
+          headers: { 'Accept': '*/*', 'Referer': 'https://115vod.com/', 'User-Agent': ua }
         });
         const txt = String(r.responseText || '').trim();
         if (txt.indexOf('#EXTM3U') < 0) {
@@ -29827,7 +29861,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           }
         }
         if (!bestUrl) throw new Error('未能从 M3U8 清单提取有效串流地址');
-        streamUrlMem.set(pc, { ts: Date.now(), url: bestUrl });
+        streamUrlMem.set(cacheKey, { ts: Date.now(), url: bestUrl });
         return bestUrl;
       }
 
@@ -29843,11 +29877,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
 
       async function launchExternalPlayer(player, pickcode, label) {
         try {
-          magToast('⏳ 正在向 115 请求最高码率签名串流…', true);
-          const streamUrl = await resolveStreamUrl(pickcode);
+          const targetMode = player === 'copy' ? (conf().defaultPlayer || 'iina') : player;
+          magToast('⏳ 正在向 115 请求绑定 ' + targetMode.toUpperCase() + ' 签名的原画串流…', true);
+          const streamUrl = await resolveStreamUrl(pickcode, targetMode);
           if (player === 'copy') {
             GM_setClipboard(streamUrl);
-            magToast('✅ 已复制 115 签名原画 M3U8 串流直链', true);
+            magToast('✅ 已复制绑定 ' + uaForPlayer(targetMode) + ' 的 115 M3U8 直链', true);
             return;
           }
           const href = buildExternalPlayerHref(player, streamUrl);
@@ -29863,13 +29898,21 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         }
       }
 
-      // 提取当前 JAVDB 详情页真实元数据（演员 / 片商 / 系列 / 导演 / 年份 / 标题 / 中字）
+      // 提取当前 JAVDB 详情页真实元数据（严格过滤男优，无女优时自动退回片商或留空，绝不生成「佚名」垃圾目录）
       function extractPageMeta() {
         const meta = { code: '', actor: '', actors: '', maker: '', series: '', director: '', date: '', year: '', cleanTitle: '', cnsub: '' };
         try {
           if (typeof isDetailPage === 'function' && !isDetailPage()) return meta;
           const code = (typeof currentPageCode === 'function' ? currentPageCode() : '') || '';
           meta.code = code;
+          const pickFirstLink = function (sel) {
+            const el = document.querySelector('#emby-detail-root ' + sel) || document.querySelector('.movie-panel-info ' + sel);
+            return el ? (el.textContent || '').trim() : '';
+          };
+          meta.maker = pickFirstLink('a[href*="/makers/"]');
+          meta.series = pickFirstLink('a[href*="/series/"]');
+          meta.director = pickFirstLink('a[href*="/directors/"]');
+
           const actorList = [];
           document.querySelectorAll('#emby-detail-root .emby-actor-chip:not(.is-male)').forEach(function (chip) {
             const nm = (chip.getAttribute('data-actor-name') || (chip.querySelector('.nm') ? chip.querySelector('.nm').textContent : '') || '').replace(/[\u2640\u2642]/g, '').trim();
@@ -29878,21 +29921,17 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           if (!actorList.length) {
             document.querySelectorAll('.movie-panel-info .panel-block a[href*="/actors/"]').forEach(function (a) {
               const nextSym = a.nextElementSibling;
-              if (nextSym && nextSym.classList && nextSym.classList.contains('male')) return;
+              const nextTxt = (nextSym ? nextSym.textContent : '') + ((a.nextSibling && a.nextSibling.textContent) || '');
+              const isMale = Boolean((a.classList && a.classList.contains('actor-male')) || (nextSym && nextSym.classList && nextSym.classList.contains('male')) || /♂/.test(nextTxt));
+              const isFemale = Boolean((a.classList && a.classList.contains('actor-female')) || (nextSym && nextSym.classList && nextSym.classList.contains('female')) || /♀/.test(nextTxt));
+              if (isMale || !isFemale) return;
               const nm = (a.textContent || '').replace(/[\u2640\u2642]/g, '').trim();
               if (nm && actorList.indexOf(nm) < 0) actorList.push(nm);
             });
           }
-          meta.actor = actorList[0] || '佚名';
-          meta.actors = actorList.slice(0, 4).join(' ') || meta.actor;
-
-          const pickFirstLink = function (sel) {
-            const el = document.querySelector('#emby-detail-root ' + sel) || document.querySelector('.movie-panel-info ' + sel);
-            return el ? (el.textContent || '').trim() : '';
-          };
-          meta.maker = pickFirstLink('a[href*="/makers/"]');
-          meta.series = pickFirstLink('a[href*="/series/"]');
-          meta.director = pickFirstLink('a[href*="/directors/"]');
+          meta.hasFemaleActor = actorList.length > 0;
+          meta.actor = actorList[0] || meta.maker || '';
+          meta.actors = actorList.length ? actorList.slice(0, 4).join(' ') : meta.actor;
 
           const bodyTxt = ((document.querySelector('.movie-panel-info') || document.querySelector('#emby-detail-root') || {}).textContent) || '';
           const dm = bodyTxt.match(/\b(20\d{2}|19\d{2})-(\d{2})-(\d{2})\b/);
@@ -29911,12 +29950,58 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         return meta;
       }
 
+      const avWikiActorMem = new Map();
+      async function enrichMetaWithAvWiki(code, meta) {
+        const m = Object.assign({}, meta || {});
+        const realCode = normalizeCode(code || m.code || '');
+        if (!realCode || m.hasFemaleActor) return m;
+        if (avWikiActorMem.has(realCode)) {
+          const cached = avWikiActorMem.get(realCode);
+          if (cached.length) {
+            m.actor = cached[0];
+            m.actors = cached.slice(0, 4).join(' ');
+            m.hasFemaleActor = true;
+          }
+          return m;
+        }
+        try {
+          const r = await gmReq({
+            url: 'https://av-wiki.net/?s=' + encodeURIComponent(realCode) + '&post_type=product',
+            headers: { 'Accept': 'text/html' },
+            timeout: 8000
+          });
+          if (r.status === 200 && r.responseText) {
+            const doc = new DOMParser().parseFromString(r.responseText, 'text/html');
+            const articles = doc.querySelectorAll('article.archive-list');
+            const codeAlpha = realCode.replace(/[^A-Z0-9]/g, '');
+            const found = [];
+            for (let i = 0; i < articles.length; i++) {
+              const art = articles[i];
+              const txt = ((art.textContent || '') + ' ' + ((art.querySelector('a[href]') || {}).href || '')).toUpperCase().replace(/[^A-Z0-9]/g, '');
+              if (txt.indexOf(codeAlpha) < 0) continue;
+              art.querySelectorAll('.actress-name a, dd.actress a').forEach(function (a) {
+                const nm = (a.textContent || '').trim();
+                if (nm && !/不明|素人|一覧/.test(nm) && found.indexOf(nm) < 0) found.push(nm);
+              });
+              if (found.length) break;
+            }
+            avWikiActorMem.set(realCode, found);
+            if (found.length) {
+              m.actor = found[0];
+              m.actors = found.slice(0, 4).join(' ');
+              m.hasFemaleActor = true;
+            }
+          }
+        } catch (e) {}
+        return m;
+      }
+
       /* ---- 模板引擎 ---- */
       function pickTpl(tpl, vars) {
         return String(tpl || '').replace(/\$\{(\w+)\}/g, function (all, k) {
           const v = vars[k];
           return (v === undefined || v === null || v === '') ? '' : String(v);
-        }).replace(/[\\:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+        }).replace(/[\\:*?"<>|]/g, ' ').replace(/\/{2,}/g, '/').replace(/^\/+|\/+$/g, '').replace(/\s+/g, ' ').trim();
       }
       function suffixOf(name) {
         const m = String(name || '').match(/((?:-|_)(?:LTX|U|UC|UW|4K|2K|HEVC|X264|X265|FHD|HD|1080P?|720P?)[A-Za-z0-9]*)/i);
@@ -29932,14 +30017,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         const hasCnsubInName = /(?:[-_.]c|[-_.]ch|ch|cnsub|中字|中文字幕)(?:[-_.]|$)/i.test(rawBase);
         const v = {
           code: realCode,
-          actor: usePage ? pageMeta.actor : '佚名',
-          actors: usePage ? pageMeta.actors : '佚名',
+          actor: usePage ? pageMeta.actor : '',
+          actors: usePage ? pageMeta.actors : '',
           maker: usePage ? pageMeta.maker : '',
           series: usePage ? pageMeta.series : '',
           director: usePage ? pageMeta.director : '',
           date: usePage ? pageMeta.date : '',
           year: usePage ? pageMeta.year : '',
-          title: (usePage && pageMeta.cleanTitle) ? pageMeta.cleanTitle : rawBase,
+          title: (usePage && pageMeta.cleanTitle) ? pageMeta.cleanTitle : '',
           raw_name: rawBase,
           cnsub: hasCnsubInName ? '-C' : (usePage ? pageMeta.cnsub : ''),
           suffix: suffixOf(name),
@@ -30020,14 +30105,23 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
 
         const mainVideo = targets.filter(function (f) { return f.isVideo; }).sort(function (a, b) { return b.size - a.size; })[0] || targets[0];
         const finalCode = code || codeOf(mainVideo.name);
-        // 多分段视频（CD1/CD2）自动附加序号，避免重名冲突
-        const videoTargets = targets.filter(function (f) { return f.isVideo; });
+        const enrichedMeta = await enrichMetaWithAvWiki(finalCode, extraMeta);
+        // 同名目标自动附加序号（如 HAWA-389.mp4 / HAWA-389-2.mp4），避免重名覆盖或失败
+        const usedNames = new Set();
         for (let idx = 0; idx < targets.length; idx++) {
           const f = targets[idx];
-          let nv = buildTargetFileName(c.fileTpl, finalCode, f, extraMeta);
-          if (f.isVideo && videoTargets.length > 1) {
-            const vIdx = videoTargets.indexOf(f) + 1;
-            nv = nv.replace(/(\.[a-z0-9]{2,5})$/i, '-CD' + vIdx + '$1');
+          const itemCode = code || codeOf(f.name) || finalCode;
+          let nv = buildTargetFileName(c.fileTpl, itemCode, f, enrichedMeta);
+          if (nv) {
+            let candidate = nv;
+            let seq = 2;
+            while (usedNames.has(candidate.toLowerCase())) {
+              candidate = nv.replace(/(\.[a-z0-9]{2,5})$/i, '-' + seq + '$1');
+              if (candidate === nv) candidate = nv + '-' + seq;
+              seq++;
+            }
+            nv = candidate;
+            usedNames.add(nv.toLowerCase());
           }
           if (nv && nv !== f.name) {
             step('改名：' + nv);
@@ -30039,7 +30133,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           }
         }
 
-        const vars = varsFor(finalCode, mainVideo.name, extraMeta);
+        const vars = varsFor(finalCode, mainVideo.name, enrichedMeta);
         const dirPath = pickTpl(c.dirTpl, vars);
         const subFolder = pickTpl(c.folderTpl, vars);
         const fullRelPath = [dirPath, subFolder].filter(Boolean).join('/');
@@ -30107,7 +30201,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       function openOrganizePanel(code, targetCid) {
         const old = document.getElementById('jf-pan115-panel');
         if (old) old.remove();
-        const pageMeta = extractPageMeta();
+        let pageMeta = extractPageMeta();
         const cid = (targetCid || (MagConf.u115Cid || '').trim() || '0');
         const c = conf();
         const previewVars = varsFor(code || pageMeta.code, (code || 'VIDEO') + '.mp4', pageMeta);
@@ -30120,7 +30214,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
           '<span class="material-symbols-outlined" style="color:#0a84ff;font-size:22px;">drive_file_move</span>' +
           '<b style="font-size:15.5px;letter-spacing:-.01em;">115 智能归档与整理中心</b>' +
-          '<span style="font-size:12px;padding:2px 9px;border-radius:999px;background:rgba(10,132,255,.16);color:#7cc4ff;">目标路径预览：' + escapeHtml(previewPath || '当前目录') + '</span>' +
+          '<span data-pan-preview-pill style="font-size:12px;padding:2px 9px;border-radius:999px;background:rgba(10,132,255,.16);color:#7cc4ff;">目标路径预览：' + escapeHtml(previewPath || '当前目录') + '</span>' +
           '<button type="button" class="jf-magtool-btn" data-pan-close style="margin-left:auto;border-radius:999px;padding:5px 14px;">关闭</button></div>' +
           '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center;">' +
           '<input class="jhs-input-text" data-pan-cid placeholder="源目录 CID（0 = 根目录）" value="' + escapeAttr(cid) + '" style="flex:1;min-width:180px;">' +
@@ -30218,9 +30312,21 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           if (!targets.length) { say('没有可改名的视频或字幕文件'); return; }
           say('正在按模板规范改名 ' + targets.length + ' 个文件…');
           let ok = 0, fail = 0;
+          const usedNames = new Set();
           for (const f of targets) {
             const code2 = code || codeOf(f.name);
-            const nv = buildTargetFileName(tpl, code2, f, pageMeta);
+            let nv = buildTargetFileName(tpl, code2, f, pageMeta);
+            if (nv) {
+              let candidate = nv;
+              let seq = 2;
+              while (usedNames.has(candidate.toLowerCase())) {
+                candidate = nv.replace(/(\.[a-z0-9]{2,5})$/i, '-' + seq + '$1');
+                if (candidate === nv) candidate = nv + '-' + seq;
+                seq++;
+              }
+              nv = candidate;
+              usedNames.add(nv.toLowerCase());
+            }
             if (!nv || nv === f.name) continue;
             try { await rename(f.fid, nv); ok++; f.name = nv; } catch (e) { fail++; }
           }
@@ -30234,7 +30340,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           const targets = files.filter(function (f) { return f.isFile && !f.isJunk && f.fid && (f.isVideo || f.isSub); });
           if (!targets.length) { say('没有可归集的文件'); return; }
           const finalCode = code || codeOf(targets[0].name);
-          const vars = varsFor(finalCode, targets[0].name, pageMeta);
+          const enriched = await enrichMetaWithAvWiki(finalCode, pageMeta);
+          const vars = varsFor(finalCode, targets[0].name, enriched);
           const fullRelPath = [pickTpl(c2.dirTpl, vars), pickTpl(c2.folderTpl, vars)].filter(Boolean).join('/') || (finalCode || 'JAVDB');
           say('正在创建/定位目录「' + fullRelPath + '」…');
           try {
@@ -30246,6 +30353,20 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             await load();
           } catch (e) { say('归集失败: ' + e.message, true); }
         });
+
+        // 若详情页无显式女优（如素人妻作品 HAWA-389），后台异步从 AV-Wiki 补齐女优真名并刷新路径预览
+        if (!pageMeta.hasFemaleActor && (code || pageMeta.code)) {
+          enrichMetaWithAvWiki(code || pageMeta.code, pageMeta).then(function (enriched) {
+            if (enriched && enriched.hasFemaleActor && document.body.contains(mask)) {
+              pageMeta = enriched;
+              const pv = varsFor(code || pageMeta.code, (code || 'VIDEO') + '.mp4', pageMeta);
+              const pp = [pickTpl(conf().dirTpl, pv), pickTpl(conf().folderTpl, pv)].filter(Boolean).join('/');
+              const pill = mask.querySelector('[data-pan-preview-pill]');
+              if (pill) pill.textContent = '目标路径预览：' + (pp || '当前目录');
+              draw();
+            }
+          });
+        }
 
         load();
       }

@@ -2,8 +2,8 @@
 
 面向 **JAVDB** 与 **115 网盘** 的 Apple TV+ / tvOS 18 影院级双端联动 Tampermonkey 用户脚本套件：
 
-- **`JavdbFusion.user.js`（当前版本：`7.400-appletv-pro`）**：运行于 JAVDB 及镜像站，融合 Apple TV+ 影院级 UI、Emby/Jellyfin 媒体库联动、115 云盘命中检测与 **IINA / PotPlayer / mpv / Infuse** 免 Cookie 签名原画直调、离线秒传自动归档、列表海报悬停内嵌直播预告片、多维净化黑名单与五源磁力聚合。
-- **`115Fusion.user.js`（当前版本：`1.0.0-appletv-pro`）**：独立运行于 `115.com`，提供 **Apple TV+ 海报墙**、光标横向滑动实时预览 10+ 张高清剧照与灯箱、本地播放器原画直连，以及存量番号视频与外挂字幕批量自动整理归档（采用无限容量 `IndexedDB` + DMM 确定性直链零搜索预测 + 视口懒加载防风控队列，千部大目录永不失效）。
+- **`JavdbFusion.user.js`（当前版本：`7.410-appletv-pro`）**：运行于 JAVDB 及镜像站，融合 Apple TV+ 影院级 UI、Emby/Jellyfin 媒体库联动、115 云盘命中检测与 **IINA / PotPlayer / mpv / Infuse** 免 Cookie 专属 UA 签名原画直调（适配 `se=u,ua` 防盗链校验）、离线秒传自动归档（默认纯番号 `${code}` 洁净改名 + AV-Wiki 素人女优真名补全）、列表海报悬停内嵌直播预告片、多维净化黑名单与五源磁力聚合。
+- **`115Fusion.user.js`（当前版本：`1.1.0-appletv-pro`）**：独立运行于 `115.com`，提供 **Apple TV+ 海报墙**、光标横向滑动实时预览 10+ 张高清剧照与灯箱、本地播放器 `libmpv` / `Lavf` 专属 UA 签名原画直连（内置差分 UA 探测与 IINA `mpv.conf` 一键同步引导），以及存量番号视频与外挂字幕批量智能整理归档（**JAVDB + JavBus + AV-Wiki 三源女优识别**、拒绝生成「佚名」垃圾目录、纯番号洁净改名与同目录重名自动消歧，采用无限容量 `IndexedDB` + DMM 确定性直链零搜索预测 + 视口懒加载防风控队列，千部大目录永不失效）。
 
 ## 功能
 
