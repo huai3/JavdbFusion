@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.410-appletv-pro
+// @version      7.420-appletv-pro
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -28360,8 +28360,11 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         : '⌕ 媒体库搜索';
       button.title = hit ? ('已入库：' + server.name + ' · 点击播放') : ('在 ' + server.name + ' 搜索此番号');
       button.dataset.href = url;
+      button.onpointerdown = function (e) { e.stopPropagation(); };
+      button.onmousedown = function (e) { e.stopPropagation(); };
       button.onclick = function (e) {
         e.preventDefault(); e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
         try { window.open(button.dataset.href || url, '_blank', 'noopener'); } catch (err) {}
       };
     }
@@ -31799,13 +31802,42 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         const cover = it.querySelector('.cover');
         if (!cover) return;
         cover.style.position = 'relative';
-        let actions = cover.querySelector(':scope > .jf-rank-actions');
+        const box = it.querySelector('a.box') || it.querySelector('.box') || it;
+        if (!GM_getValue('jf_rank_btn_pos_migrated_v742', false)) {
+          const prevPos = GM_getValue('jf_rank_btn_pos', '');
+          if (!prevPos || prevPos === 'bottom-left') GM_setValue('jf_rank_btn_pos', 'footer');
+          GM_setValue('jf_rank_btn_pos_migrated_v742', true);
+        }
+        const rawBtnPos = GM_getValue('jf_rank_btn_pos', 'footer');
+        const inDynamicFocus = !!(it.closest && it.closest('.emby-dynamic-focus'));
+        const useFooter = rawBtnPos === 'footer' && !inDynamicFocus && !!box;
+        const effectivePos = useFooter ? 'footer' : (rawBtnPos === 'footer' ? 'bottom-left' : rawBtnPos);
+        let actions = it.querySelector('.jf-rank-actions');
         if ((showPreview || (showLibrary && servers.length)) && !actions) {
           actions = document.createElement('div');
           actions.className = 'jf-rank-actions';
-          cover.appendChild(actions);
         }
-        if (actions) actions.dataset.position = GM_getValue('jf_rank_btn_pos', 'bottom-left');
+        if (actions) {
+          actions.dataset.position = effectivePos;
+          actions.classList.toggle('is-footer', useFooter);
+          if (useFooter) {
+            let tagsEl = box.querySelector(':scope > .tags');
+            if (!tagsEl) {
+              tagsEl = document.createElement('div');
+              tagsEl.className = 'tags has-addons jf-tags-autogen';
+              box.appendChild(tagsEl);
+            }
+            tagsEl.classList.add('jf-has-footer-actions');
+            if (actions.parentElement !== tagsEl) tagsEl.appendChild(actions);
+          } else {
+            const oldTags = box.querySelector(':scope > .tags.jf-has-footer-actions');
+            if (oldTags) {
+              oldTags.classList.remove('jf-has-footer-actions');
+              if (oldTags.classList.contains('jf-tags-autogen') && !oldTags.querySelector('.tag')) oldTags.remove();
+            }
+            if (actions.parentElement !== cover) cover.appendChild(actions);
+          }
+        }
         if (showPreview && actions) {
           if (!actions.querySelector('.jf-rank-trailer')) {
             const preview = document.createElement('button');
@@ -31813,8 +31845,11 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             preview.className = 'jf-rank-action jf-rank-trailer';
             preview.textContent = '▶ 预览片';
             preview.title = code + ' · 解析预告片';
+            preview.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+            preview.addEventListener('mousedown', function (e) { e.stopPropagation(); });
             preview.addEventListener('click', function (e) {
               e.preventDefault(); e.stopPropagation();
+              if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
               openTrailerPlayer(code);
             });
             prefetchTrailerOnHover(preview, code);
@@ -31844,7 +31879,6 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           }
         }
         if (!showLibraryBadge || !hits.length) return;
-        const box = it.querySelector('a.box') || it.querySelector('.box') || it;
         if (!box || box.querySelector('.jf-lib-badge')) return;
         const badge = document.createElement('a');
         badge.className = 'jf-lib-badge';
@@ -32177,14 +32211,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             '<label class="jf-set-row"><input type="checkbox" id="jfUiMagnetExpanded" ' + (GM_getValue('jf_inline_magnet_expanded', true) ? 'checked' : '') + '> 磁力区块默认展开</label>' +
           '</div>' +
           '<label class="jf-set-row" style="justify-content:space-between;gap:14px;margin-top:10px;">' +
-            '<span>列表封面按钮位置（预览片 + 媒体库）</span>' +
-            '<select class="jf-inp" id="jfUiRankBtnPos" style="width:180px;max-width:45%;margin:0;">' +
-              '<option value="top-left">左上</option><option value="top-center">上中</option><option value="top-right">右上</option>' +
-              '<option value="center-left">左中</option><option value="center">正中</option><option value="center-right">右中</option>' +
-              '<option value="bottom-left">左下</option><option value="bottom-center">下中</option><option value="bottom-right">右下</option>' +
+            '<span>列表卡片按钮位置（预览片 + 媒体库）</span>' +
+            '<select class="jf-inp" id="jfUiRankBtnPos" style="width:220px;max-width:52%;margin:0;">' +
+              '<option value="footer">底部含磁鏈旁（推荐·不挡封面）</option>' +
+              '<option value="bottom-left">封面左下</option><option value="bottom-center">封面下中</option><option value="bottom-right">封面右下</option>' +
+              '<option value="top-left">封面左上</option><option value="top-center">封面上中</option><option value="top-right">封面右上</option>' +
+              '<option value="center-left">封面左中</option><option value="center">封面正中</option><option value="center-right">封面右中</option>' +
             '</select>' +
           '</label>';
-        body.querySelector('#jfUiRankBtnPos').value = GM_getValue('jf_rank_btn_pos', 'bottom-left');
+        body.querySelector('#jfUiRankBtnPos').value = GM_getValue('jf_rank_btn_pos', 'footer');
         body.querySelector('#jfUiRankBtnPos').addEventListener('change', function (e) {
           GM_setValue('jf_rank_btn_pos', e.target.value);
           fullScan();
@@ -32281,6 +32316,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         '.jf-lib-badge{position:absolute;top:5px;right:5px;z-index:6;width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:rgba(20,30,20,.78);color:#7ee787;border:1px solid rgba(76,175,80,.55);box-shadow:0 2px 6px rgba(0,0,0,.4);backdrop-filter:blur(4px);cursor:pointer;transition:opacity .18s, transform .18s, background-color .18s, color .18s, border-color .18s, border-left-color .18s, box-shadow .18s, border-radius .18s ease;}',
         '.jf-lib-badge:hover{background:rgba(52,206,87,.9);color:#04140a;transform:scale(1.12);}',
         '.jf-rank-actions{position:absolute!important;z-index:8;left:7px!important;right:auto!important;bottom:7px!important;display:inline-flex!important;align-items:flex-end;gap:6px;flex-wrap:wrap;box-sizing:border-box;width:max-content!important;max-width:calc(100% - 14px);padding:0!important;background:none!important;}',
+        '.jf-rank-actions.is-footer,.jf-rank-actions[data-position="footer"]{position:static!important;z-index:2;left:auto!important;right:auto!important;top:auto!important;bottom:auto!important;transform:none!important;display:inline-flex!important;align-items:center;gap:5px;flex-wrap:wrap;width:auto!important;max-width:100%!important;margin:0!important;padding:0!important;}',
+        '.item .box .tags.jf-has-footer-actions{display:flex!important;flex-wrap:wrap!important;align-items:center!important;gap:5px!important;margin-bottom:0!important;}',
+        '.item .box .tags.jf-has-footer-actions .tag{margin:0!important;border-radius:6px!important;}',
+        '.jf-rank-actions.is-footer .jf-rank-action{min-height:22px!important;padding:2px 8px!important;border-radius:6px!important;font-size:10.8px!important;line-height:1.25!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}',
         '.jf-rank-actions[data-position="top-center"]{top:7px!important;bottom:auto!important;left:50%!important;right:auto!important;transform:translateX(-50%);}',
         '.jf-rank-actions[data-position="top-right"]{top:7px!important;bottom:auto!important;left:auto!important;right:7px!important;}',
         '.jf-rank-actions[data-position="center-left"]{top:50%!important;bottom:auto!important;left:7px!important;right:auto!important;transform:translateY(-50%);}',
@@ -32504,7 +32543,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
 
         /* 2. Apple TV+ 无框悬浮海报卡片（海报为主角，剥离灰底卡片盒，保留动态聚焦宫格例外） */
         'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus){gap:1.85em 1.35em!important;padding:1.1em 2em 3.6em!important;max-width:1680px!important;}',
-        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box,html.emby-skin.emby-style-appletv .emby-row .item .box{background:transparent!important;background-image:none!important;border:none!important;border-radius:0!important;box-shadow:none!important;overflow:visible!important;}',
+        'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box,html.emby-skin.emby-style-appletv .emby-row .item .box{background:transparent!important;background-image:none!important;border:none!important;border-radius:0!important;box-shadow:none!important;overflow:visible!important;transform-style:flat!important;}',
         'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item:hover .box,html.emby-skin.emby-style-appletv .emby-row .item:hover .box{background:transparent!important;border:none!important;box-shadow:none!important;}',
         'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box .cover,html.emby-skin.emby-style-appletv .emby-row .item .box .cover{border-radius:14px!important;background:#111116!important;overflow:hidden!important;box-shadow:0 14px 32px -8px rgba(0,0,0,.72),0 3px 8px rgba(0,0,0,.42)!important;transition:transform .38s cubic-bezier(.22,1,.36,1),box-shadow .38s cubic-bezier(.22,1,.36,1)!important;will-change:transform;}',
         'html.emby-skin.emby-style-appletv .movie-list:not(.emby-dynamic-focus) .item .box .cover::before,html.emby-skin.emby-style-appletv .emby-row .item .box .cover::before{content:"";position:absolute;inset:0;z-index:4;border-radius:inherit;pointer-events:none;box-shadow:inset 0 0 0 .5px rgba(255,255,255,.16),inset 0 1px 0 rgba(255,255,255,.22);transition:box-shadow .32s ease;}',
@@ -32532,6 +32571,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         'html.emby-skin.emby-style-appletv .jf-rank-action:hover{background:rgba(255,255,255,.94)!important;color:#09090b!important;border-color:transparent!important;filter:none!important;}',
         'html.emby-skin.emby-style-appletv .jf-rank-action.jf-rank-play.jf-lib-play-emby{background:rgba(20,46,30,.78)!important;border-color:rgba(48,209,88,.45)!important;color:#86efac!important;}',
         'html.emby-skin.emby-style-appletv .jf-rank-action.jf-rank-play.jf-lib-play-jellyfin{background:rgba(36,24,62,.78)!important;border-color:rgba(167,139,250,.45)!important;color:#ddd6fe!important;}',
+        'html.emby-skin.emby-style-appletv .jf-rank-actions.is-footer .jf-rank-action{min-height:22px!important;padding:2px 8px!important;border-radius:6px!important;font-size:10.5px!important;font-weight:600!important;background:rgba(255,255,255,.085)!important;border:.5px solid rgba(255,255,255,.15)!important;color:rgba(245,245,247,.88)!important;box-shadow:none!important;}',
+        'html.emby-skin.emby-style-appletv .jf-rank-actions.is-footer .jf-rank-action:hover{background:#f5f5f7!important;color:#09090b!important;border-color:transparent!important;transform:translateY(-1px)!important;}',
+        'html.emby-skin.emby-style-appletv .jf-rank-actions.is-footer .jf-rank-action.jf-rank-play.jf-lib-play-emby{background:rgba(48,209,88,.14)!important;border-color:rgba(48,209,88,.3)!important;color:#7ee787!important;}',
+        'html.emby-skin.emby-style-appletv .jf-rank-actions.is-footer .jf-rank-action.jf-rank-play.jf-lib-play-jellyfin{background:rgba(139,92,246,.16)!important;border-color:rgba(167,139,250,.32)!important;color:#ddd6fe!important;}',
         'html.emby-skin.emby-style-appletv .item.jf-ltx-hit .box{outline:none!important;box-shadow:none!important;}',
         'html.emby-skin.emby-style-appletv .item.jf-ltx-hit .box .cover{box-shadow:0 0 0 2px #0a84ff,0 16px 36px rgba(10,132,255,.28)!important;}',
         'html.emby-skin.emby-style-appletv .jf-ltx-badge{background:rgba(10,132,255,.9)!important;backdrop-filter:blur(8px);}',
@@ -32640,6 +32683,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         'html.emby-skin.emby-style-appletv.emby-light .movie-list:not(.emby-dynamic-focus) .item .box .score{color:#515154!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .movie-list:not(.emby-dynamic-focus) .item .box .meta{color:#86868b!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .movie-list:not(.emby-dynamic-focus) .item .box .tags .tag{background:rgba(0,0,0,.05)!important;border-color:rgba(0,0,0,.07)!important;color:#515154!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-rank-actions.is-footer .jf-rank-action{background:rgba(0,0,0,.055)!important;border-color:rgba(0,0,0,.1)!important;color:#1d1d1f!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-rank-actions.is-footer .jf-rank-action:hover{background:#1d1d1f!important;color:#ffffff!important;border-color:transparent!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-rank-actions.is-footer .jf-rank-action.jf-rank-play.jf-lib-play-emby{background:rgba(22,163,74,.12)!important;border-color:rgba(22,163,74,.28)!important;color:#15803d!important;}',
+        'html.emby-skin.emby-style-appletv.emby-light .jf-rank-actions.is-footer .jf-rank-action.jf-rank-play.jf-lib-play-jellyfin{background:rgba(124,58,237,.11)!important;border-color:rgba(124,58,237,.26)!important;color:#6d28d9!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .movie-list .box .efav-card-meta .efav-actor-badge{background:rgba(0,0,0,.045)!important;border-color:rgba(0,0,0,.08)!important;color:#1d1d1f!important;}',
         'html.emby-skin.emby-style-appletv.emby-light .item a.box:visited .video-title,html.emby-skin.emby-style-appletv.emby-light .item a.box:visited .video-title strong{color:rgba(29,29,31,.42)!important;}',
         'html.emby-skin.emby-style-appletv.emby-light #emby-detail-bg{filter:blur(64px) saturate(1.4) brightness(1.08)!important;opacity:.26!important;background-color:#e8e8ed!important;}',
