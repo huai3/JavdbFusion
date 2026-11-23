@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         115Fusion - Apple TV+ 海报墙 · 悬停多图剧照 · 智能番号归档
 // @namespace    com.local.javdbemby.115fusion
-// @version      1.1.0-appletv-pro
+// @version      1.1.1-appletv-pro
 // @description  专为 115 网盘打造的 Apple TV+ 影院级伴侣脚本（与 JavdbFusion 双端联动）：无限容量 IndexedDB 缓存 + DMM 确定性直链零搜索预测 + 视口懒加载防风控海报墙（千部大目录永不失效）、光标滑动预览多张剧照与高清灯箱、libmpv 签名对齐原画串流直调 IINA/PotPlayer/mpv/Infuse、JAVDB+JavBus+AV-Wiki 三源女优识别与纯番号智能归档。
 // @author       hy3 + fusion
 // @homepageURL  https://github.com/huai3/JavdbFusion
@@ -148,7 +148,7 @@
    * ======================================================================= */
   function extractCode(rawName) {
     let s = String(rawName || '').trim();
-    // 剥离常见资源站前缀域名（如 489155.com@SSIS-858-LTX.mp4 / hhd800.com@IPZZ-123.mp4）
+    // 剥离常见资源站前缀域名（如 489155.com@SSIS-858-LTX.mp4 / hhd800.com@300MIUM-1024.mp4）
     s = s.replace(/^[a-z0-9.-]+\.(?:com|net|org|me|cc|tv|xyz|info|vip|la|pw|top|club|site)@/i, '');
     s = s.replace(/\.[a-z0-9]{2,5}$/i, '');
     const fc2 = s.match(/FC2[-_ ]?(?:PPV[-_ ]?)?(\d{5,8})/i);
@@ -159,12 +159,19 @@
     if (carib) return 'CARIB-' + carib[1] + '-' + carib[2];
     const pondo = s.match(/(?:1PONDO)[-_ ]?(\d{5,6})[-_](\d{3})/i);
     if (pondo) return '1PONDO-' + pondo[1] + '_' + pondo[2];
-    const std = s.match(/(?:^|[^A-Za-z0-9])([A-Za-z]{2,10}|[0-9]{2}[A-Za-z]{2,6})[-_]?(\d{2,6})(?=[^0-9]|$)/);
-    if (std) {
-      const prefix = std[1].toUpperCase();
-      if (/^(MP4|MKV|AVI|WMV|FHD|UHD|HEVC|X264|X265|AAC|CHS|CHT|PART|CD|DISC)$/i.test(prefix)) return '';
-      return prefix + '-' + std[2];
+    // 全局扫描：支持 2~4 位数字前缀素人番号（300MIUM / 200GANA / 259LUXU / 300MAAN / 261ARA / 390JAC / 420HOI / 1000GIRI）、
+    // 常规字母前缀番号及 T28-555 等形态；命中黑名单噪点词（如 CD-01 / FHD-1080）时跳过继续向后匹配
+    const ignorePrefix = /^(?:MP4|MKV|AVI|WMV|FHD|UHD|HEVC|X264|X265|H264|H265|AAC|CHS|CHT|PART|CD|DISC|10BIT|1080P|720P|4K)$/i;
+    const stdRe = /(?<![A-Za-z0-9])([0-9]{2,4}[A-Za-z]{2,6}|[A-Za-z]{2,10}|[A-Za-z]\d{2}(?=[-_]))[-_]?(\d{2,6})(?=[^0-9]|$)/g;
+    let m;
+    while ((m = stdRe.exec(s)) !== null) {
+      const prefix = m[1].toUpperCase();
+      if (ignorePrefix.test(prefix)) continue;
+      return prefix + '-' + m[2];
     }
+    // 裸 6 位无码日期番号（如 012324-001 / 123456_001）
+    const unc = s.match(/(?<![A-Za-z0-9])(\d{6})([-_])(\d{2,3})(?=[^0-9]|$)/);
+    if (unc) return unc[1] + unc[2] + unc[3];
     return '';
   }
 
@@ -177,9 +184,9 @@
   const DMM_PREFIX_MAP = {
     'STARS': '1stars', 'SDDE': '1sdde', 'SDJS': '1sdjs', 'SDAB': '1sdab', 'SDNM': '1sdnm',
     'SDAM': '1sdam', 'SDMM': '1sdmm', 'SDMU': '1sdmu', 'SDTH': '1sdth', 'SILK': '1silk',
-    'IENF': '1ienf', 'IESP': '1iesp', 'dandy': '1dandy', 'DANDY': '1dandy', 'FSdss': '1fsdss',
+    'IENF': '1ienf', 'IESP': '1iesp', 'DANDY': '1dandy',
     'FSDSS': '1fsdss', 'FALENO': '1fsdss', 'MTALL': '1mtall', 'MOGI': '1mogi', 'NHDTB': '1nhdtb',
-    'RCTD': '1rctd', 'SVDVD': '1svdvd', 'SW': '1sw', ' HABA': '1haba'
+    'RCTD': '1rctd', 'SVDVD': '1svdvd', 'SW': '1sw', 'HABA': '1haba'
   };
 
   function buildDmmCidCandidates(code) {
@@ -259,6 +266,14 @@
       return dbPromise;
     }
 
+    function memSetCapped(k, v) {
+      mem.set(k, v);
+      if (mem.size > 1500) {
+        const oldest = mem.keys().next().value;
+        mem.delete(oldest);
+      }
+    }
+
     async function get(code) {
       const k = normalizeCode(code);
       if (!k) return null;
@@ -270,7 +285,7 @@
           const req = tx.objectStore(STORE).get(k);
           req.onsuccess = function () {
             const val = req.result || null;
-            if (val) mem.set(k, val);
+            if (val) memSetCapped(k, val);
             resolve(val);
           };
           req.onerror = function () { resolve(null); };
@@ -282,7 +297,7 @@
       if (!record || !record.code) return;
       const k = normalizeCode(record.code);
       const data = Object.assign({}, record, { code: k, updatedAt: Date.now() });
-      mem.set(k, data);
+      memSetCapped(k, data);
       try {
         const db = await open();
         await new Promise(function (resolve) {
@@ -490,10 +505,13 @@
         const parts = code.toLowerCase().split('-');
         const compact = parts.join('');
         const numOnly = (parts[1] || '').replace(/^0+(?=\d)/, '');
+        const escapedPrefix = parts[0] ? parts[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+        const escapedNum = numOnly ? numOnly.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+        const fallbackRe = (escapedPrefix && escapedNum) ? new RegExp(escapedPrefix + '0*' + escapedNum) : null;
         for (let i = 0; i < articles.length; i++) {
           const art = articles[i];
           const rawHtml = (art.innerHTML || '').toLowerCase();
-          if (rawHtml.indexOf(code.toLowerCase()) < 0 && rawHtml.indexOf(compact) < 0 && !(parts[0] && numOnly && new RegExp(parts[0] + '0*' + numOnly).test(rawHtml))) {
+          if (rawHtml.indexOf(code.toLowerCase()) < 0 && rawHtml.indexOf(compact) < 0 && !(fallbackRe && fallbackRe.test(rawHtml))) {
             continue;
           }
           const actors = [];
@@ -637,6 +655,19 @@
   const Api115 = (function () {
     const streamCache = new Map();
 
+    function safeJsonParse(rawText, label) {
+      const txt = String(rawText || '').trim();
+      if (!txt) return {};
+      if (txt.charAt(0) === '<') {
+        throw new Error((label || '115 接口') + '返回了非 JSON 页面（请确认已登录 115 且会话未过期）');
+      }
+      try {
+        return JSON.parse(txt);
+      } catch (e) {
+        throw new Error((label || '115 接口') + '响应解析失败');
+      }
+    }
+
     // 穿透顶层 URL 与 iframe[name="wangpan"] 实时感知当前浏览的目录 CID
     function detectActiveCid() {
       try {
@@ -708,13 +739,13 @@
           timeout: 15000,
           headers: { 'Accept': 'application/json', 'Referer': 'https://115.com/' }
         });
-        let j = JSON.parse(r.responseText || '{}');
+        let j = safeJsonParse(r.responseText, '读取目录');
         // 某些排序参数在特殊目录下若触发 errNo=20130827，自动退回默认 file_name 排序
         if (j.state === false && offset === 0) {
           const fallbackUrl = 'https://webapi.115.com/files?aid=1&cid=' + encodeURIComponent(targetCid) +
             '&offset=0&limit=' + limit + '&show_dir=1&o=file_name&asc=1&format=json';
           const r2 = await gmReq({ url: fallbackUrl, timeout: 15000, headers: { 'Accept': 'application/json', 'Referer': 'https://115.com/' } });
-          j = JSON.parse(r2.responseText || '{}');
+          j = safeJsonParse(r2.responseText, '读取目录');
         }
         if (j.state === false && j.errNo !== 0) {
           throw new Error(j.error || j.error_msg || '读取 115 目录失败（请确认已登录 115）');
@@ -752,11 +783,18 @@
       return navigator.userAgent;
     }
 
+    function buildSafeIinaUaCmd(rawUa) {
+      // 转义 mpv.conf 双引号值中的反斜杠与双引号，再以 POSIX 单引号安全转义嵌入 printf '%s'，
+      // 彻底免疫单引号注入、sed 分隔符 (| / &) 损坏与 printf % 格式化注入，并通过临时文件原子替换 mpv.conf
+      const mpvVal = String(rawUa || '').replace(/[\r\n]+/g, ' ').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const shSingle = "'" + mpvVal.replace(/'/g, "'\\''") + "'";
+      return 'd="$HOME/Library/Application Support/com.colliderli.iina"; f="$d/mpv.conf"; mkdir -p "$d" && { [ -f "$f" ] && grep -v "^user-agent=" "$f" || true; printf \'user-agent="%s"\\n\' ' + shSingle + '; } > "$f.tmp" && mv "$f.tmp" "$f"';
+    }
+
     function showIinaUaSetupModal(streamUrl) {
       const old = document.getElementById('f115-ua-helper');
       if (old) old.remove();
-      const ua = navigator.userAgent.replace(/"/g, '\\"');
-      const cmd = 'mkdir -p "$HOME/Library/Application Support/com.colliderli.iina" && grep -q "^user-agent=" "$HOME/Library/Application Support/com.colliderli.iina/mpv.conf" 2>/dev/null && sed -i "" \'s|^user-agent=.*|user-agent="' + ua + '"|\' "$HOME/Library/Application Support/com.colliderli.iina/mpv.conf" || printf \'\\nuser-agent="' + ua + '"\\n\' >> "$HOME/Library/Application Support/com.colliderli.iina/mpv.conf"';
+      const cmd = buildSafeIinaUaCmd(navigator.userAgent);
       const mask = document.createElement('div');
       mask.id = 'f115-ua-helper';
       mask.className = 'f115-modal-mask';
@@ -849,6 +887,10 @@
 
       const entry = { ts: Date.now(), url: bestUrl, ua: ua, uaOverrideFailed: uaOverrideFailed };
       streamCache.set(cacheKey, entry);
+      if (streamCache.size > 200) {
+        const oldest = streamCache.keys().next().value;
+        streamCache.delete(oldest);
+      }
       return entry;
     }
 
@@ -916,7 +958,7 @@
         },
         data: dataStr
       });
-      const j = JSON.parse(r.responseText || '{}');
+      const j = safeJsonParse(r.responseText, label || '115 写操作');
       if (j.state === false) {
         const err = new Error((label || '操作') + '失败: ' + (j.error_msg || j.error || j.msg || '未知错误'));
         err.errNo = j.errno || j.errNo || 0;
@@ -934,6 +976,17 @@
         return s.replace(/[:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
       }).filter(Boolean);
       let curCid = String(baseCid || '0').trim() || '0';
+      async function loadDirMap(parentCid, force) {
+        const mapKey = '__dirmap::' + parentCid;
+        if (!force && cache.has(mapKey)) return cache.get(mapKey);
+        const listing = await listDirAll(parentCid, 5000);
+        const byName = new Map();
+        listing.items.forEach(function (x) {
+          if (x.dir && x.cid && x.name && !byName.has(x.name)) byName.set(x.name, x.cid);
+        });
+        cache.set(mapKey, byName);
+        return byName;
+      }
       for (let i = 0; i < segs.length; i++) {
         const seg = segs[i];
         const key = curCid + '::' + seg;
@@ -941,10 +994,10 @@
           curCid = cache.get(key);
           continue;
         }
-        let listing = await listDirAll(curCid, 600);
-        let found = listing.items.find(function (x) { return x.dir && x.name === seg; });
-        if (found && found.cid) {
-          curCid = found.cid;
+        let dirMap = await loadDirMap(curCid, false);
+        let foundCid = dirMap.get(seg);
+        if (foundCid) {
+          curCid = foundCid;
           cache.set(key, curCid);
         } else {
           await sleep(240);
@@ -953,13 +1006,14 @@
             const mk = await mkdir(curCid, seg);
             nextCid = String((mk && (mk.cid || mk.file_id || mk.category_id || mk.id)) || '');
           } catch (e) {
-            // 若目录并发已存在（errNo 20004），重新列目录定位其真实 cid
-            listing = await listDirAll(curCid, 600);
-            found = listing.items.find(function (x) { return x.dir && x.name === seg; });
-            if (found && found.cid) nextCid = found.cid;
+            // 若目录并发已存在（errNo 20004），强制全量重刷目录定位其真实 cid
+            dirMap = await loadDirMap(curCid, true);
+            foundCid = dirMap.get(seg);
+            if (foundCid) nextCid = foundCid;
             else throw e;
           }
           if (!nextCid || nextCid === '0') throw new Error('无法获取新建目录 CID：' + seg);
+          dirMap.set(seg, nextCid);
           curCid = nextCid;
           cache.set(key, curCid);
         }
@@ -970,6 +1024,7 @@
       return postForm('https://webapi.115.com/files/edit', 'fid=' + encodeURIComponent(fid) + '&file_name=' + encodeURIComponent(newName), '改名');
     }
     // 关键修复：115 webapi.115.com/files/move 目标目录参数名必须为 pid（旧写 to_cid 会被 115 当作 pid=0 移进根目录！）
+    // 大批量按 50 项分片提交，避免单次请求超出 115 服务端批量上限
     async function move(fids, destCid) {
       const list = (fids || []).filter(Boolean);
       if (!list.length) return null;
@@ -977,17 +1032,31 @@
       if (!targetPid || targetPid === '0' || !/^\d+$/.test(targetPid)) {
         throw new Error('安全拦截：目标目录 CID 无效 (' + targetPid + ')，已阻止移动到根目录');
       }
-      const body = list.map(function (id, i) { return encodeURIComponent('fid[' + i + ']') + '=' + encodeURIComponent(id); })
-        .concat(['pid=' + encodeURIComponent(targetPid)]).join('&');
-      return postForm('https://webapi.115.com/files/move', body, '移动');
+      const CHUNK = 50;
+      let lastRes = null;
+      for (let offset = 0; offset < list.length; offset += CHUNK) {
+        const part = list.slice(offset, offset + CHUNK);
+        const body = part.map(function (id, i) { return encodeURIComponent('fid[' + i + ']') + '=' + encodeURIComponent(id); })
+          .concat(['pid=' + encodeURIComponent(targetPid)]).join('&');
+        lastRes = await postForm('https://webapi.115.com/files/move', body, '移动');
+        if (offset + CHUNK < list.length) await sleep(240);
+      }
+      return lastRes;
     }
     async function removeJunk(fids, parentCid) {
       const list = (fids || []).filter(Boolean);
       if (!list.length) return null;
-      const body = list.map(function (id, i) { return encodeURIComponent('fid[' + i + ']') + '=' + encodeURIComponent(id); })
-        .concat(parentCid ? ['pid=' + encodeURIComponent(parentCid)] : [])
-        .concat(['ignore_warn=1']).join('&');
-      return postForm('https://webapi.115.com/rb/delete', body, '清理垃圾');
+      const CHUNK = 50;
+      let lastRes = null;
+      for (let offset = 0; offset < list.length; offset += CHUNK) {
+        const part = list.slice(offset, offset + CHUNK);
+        const body = part.map(function (id, i) { return encodeURIComponent('fid[' + i + ']') + '=' + encodeURIComponent(id); })
+          .concat(parentCid ? ['pid=' + encodeURIComponent(parentCid)] : [])
+          .concat(['ignore_warn=1']).join('&');
+        lastRes = await postForm('https://webapi.115.com/rb/delete', body, '清理垃圾');
+        if (offset + CHUNK < list.length) await sleep(240);
+      }
+      return lastRes;
     }
 
     return {
@@ -1119,20 +1188,45 @@
     };
   }
 
-  // 同批次同目标目录重名防冲突消歧（例如同时存在 HAWA-389-LTX.mp4 与 HAWA-389-ltx.mp4 时，自动命名为 HAWA-389.mp4 与 HAWA-389-2.mp4）
-  function disambiguateBatchPlans(rows) {
-    const used = new Map();
-    rows.forEach(function (r) {
-      if (!r || !r.plan || !r.plan.newFileName) return;
-      const scope = (r.plan.targetRelPath || '__CUR__').toLowerCase();
-      const lowerName = r.plan.newFileName.toLowerCase();
-      const key = scope + '::' + lowerName;
-      const count = used.get(key) || 0;
-      if (count > 0) {
-        const nextIdx = count + 1;
-        r.plan.newFileName = r.plan.newFileName.replace(/(\.[a-z0-9]{2,5})$/i, '-' + nextIdx + '$1');
+  // 在扩展名及字幕语言后缀（如 .zh.srt / .chs.ass）之前插入消歧序号，保留外挂字幕语言识别标签
+  function appendSeqBeforeExt(fileName, seq) {
+    const s = String(fileName || '');
+    const m = s.match(/(\.(?:zh|chs|cht|jpn|ja|en|sc|tc|big5|gb))?(\.[a-z0-9]{2,5})$/i);
+    if (m) {
+      const tail = (m[1] || '') + m[2];
+      return s.slice(0, s.length - tail.length) + '-' + seq + tail;
+    }
+    return s + '-' + seq;
+  }
+
+  // 同批次同目标目录重名防冲突消歧（例如同时存在 HAWA-389-LTX.mp4 与 HAWA-389-ltx.mp4 时，自动命名为 HAWA-389.mp4 与 HAWA-389-2.mp4；
+  // 留原目录改名时同时避让源目录内既有未变更文件名，且字幕语言后缀 .zh.srt 完整保留）
+  function disambiguateBatchPlans(rows, allSourceItems) {
+    const usedByScope = new Map();
+    const curScope = '__cur__';
+    const curUsed = new Set();
+    const batchFids = new Set();
+    (rows || []).forEach(function (r) { if (r && r.file && r.file.fid) batchFids.add(r.file.fid); });
+    (allSourceItems || []).forEach(function (it) {
+      if (it && it.isFile && !batchFids.has(it.fid) && it.name) {
+        curUsed.add(String(it.name).toLowerCase());
       }
-      used.set(key, count + 1);
+    });
+    usedByScope.set(curScope, curUsed);
+
+    (rows || []).forEach(function (r) {
+      if (!r || !r.plan || !r.plan.newFileName) return;
+      const scope = (r.plan.targetRelPath || curScope).toLowerCase();
+      if (!usedByScope.has(scope)) usedByScope.set(scope, new Set());
+      const scopeSet = usedByScope.get(scope);
+      let candidate = r.plan.newFileName;
+      let seq = 2;
+      while (scopeSet.has(candidate.toLowerCase())) {
+        candidate = appendSeqBeforeExt(r.plan.newFileName, seq);
+        seq++;
+      }
+      r.plan.newFileName = candidate;
+      scopeSet.add(candidate.toLowerCase());
     });
   }
 
@@ -1259,7 +1353,10 @@
       return;
     }
     const old = document.getElementById('f115-lightbox');
-    if (old) old.remove();
+    if (old) {
+      if (typeof old._close === 'function') old._close();
+      else old.remove();
+    }
     let idx = Math.max(0, Math.min(urls.length - 1, startIdx || 0));
     const mask = document.createElement('div');
     mask.id = 'f115-lightbox';
@@ -1275,7 +1372,7 @@
       '</div>' +
       '<div class="f115-lb-strip">' +
         urls.map(function (u, i) {
-          return '<img src="' + escAttr(u) + '" data-lb-thumb="' + i + '" referrerpolicy="no-referrer" loading="lazy" onerror="this.style.display=\'none\'" alt="">';
+          return '<img src="' + escAttr(u) + '" data-lb-thumb="' + i + '" referrerpolicy="no-referrer" loading="lazy" alt="">';
         }).join('') +
       '</div>';
     document.body.appendChild(mask);
@@ -1294,6 +1391,7 @@
       document.removeEventListener('keydown', onKey, true);
       mask.remove();
     };
+    mask._close = close;
     const onKey = function (e) {
       if (e.key === 'Escape') { e.stopPropagation(); close(); }
       else if (e.key === 'ArrowLeft') { e.stopPropagation(); show(idx - 1); }
@@ -1305,6 +1403,7 @@
     mask.querySelector('[data-lb-next]').addEventListener('click', function () { show(idx + 1); });
     mask.addEventListener('click', function (e) { if (e.target === mask) close(); });
     thumbs.forEach(function (t) {
+      t.addEventListener('error', function () { t.style.display = 'none'; });
       t.addEventListener('click', function () { show(parseInt(t.getAttribute('data-lb-thumb'), 10) || 0); });
     });
     show(idx);
@@ -1431,32 +1530,65 @@
       if (item.duration) subParts.push(formatDuration(item.duration));
       if (subParts.length && subRow) subRow.textContent = subParts.join(' · ');
 
-      // 装载有效预览剧照用于顶部光标无感滑动预览 + 灯箱查看
-      const validThumbs = [];
+      // 登记待悬停懒加载的候选剧照：首次 mouseenter 该卡片时再按原序探测，
+      // 彻底避免视口滑过 50 张卡瞬间并发 500 张高清剧照请求，且保持剧照原始顺序不乱序、减少重复 DOM 重排
       if (meta.thumbs && meta.thumbs.length) {
-        // 先放封面做第 0 帧，再追加剧照，过滤掉加载失败的占位图
-        const rawList = [meta.cover].concat(meta.thumbs).filter(Boolean);
-        let checked = 0;
-        rawList.slice(0, 11).forEach(function (u, idx) {
-          if (idx === 0) {
-            validThumbs[0] = u;
-            return;
-          }
-          const probe = new Image();
-          probe.referrerPolicy = 'no-referrer';
-          probe.onload = function () {
-            if (probe.naturalWidth >= 200) validThumbs.push(u);
-            checked++;
-            if (validThumbs.length > 1 && scrubBar) {
-              card._scrubUrls = validThumbs.slice();
+        const rawList = [meta.cover].concat(meta.thumbs).filter(Boolean).slice(0, 11);
+        card._pendingThumbUrls = rawList;
+        card._thumbsProbing = false;
+        card._thumbsLoaded = false;
+        card._loadScrubThumbs = function () {
+          if (card._thumbsProbing || card._thumbsLoaded || !card.isConnected) return;
+          card._thumbsProbing = true;
+          const slots = new Array(rawList.length);
+          slots[0] = rawList[0];
+          let remaining = rawList.length - 1;
+          let paintQueued = false;
+          const flushBar = function () {
+            paintQueued = false;
+            if (!card.isConnected || !scrubBar) return;
+            const ordered = slots.filter(Boolean);
+            if (ordered.length > 1) {
+              card._scrubUrls = ordered;
               scrubBar.classList.add('has-thumbs');
-              scrubBar.innerHTML = card._scrubUrls.map(function (_, i) {
-                return '<span class="f115-scrub-seg' + (i === 0 ? ' active' : '') + '"></span>';
+              scrubBar.innerHTML = ordered.map(function (_, i) {
+                return '<span class="f115-scrub-seg' + (i === (card._scrubIdx || 0) ? ' active' : '') + '"></span>';
               }).join('');
+              card._scrubSegs = scrubBar.querySelectorAll('.f115-scrub-seg');
             }
           };
-          probe.src = u;
-        });
+          const scheduleFlush = function () {
+            if (paintQueued) return;
+            paintQueued = true;
+            requestAnimationFrame(flushBar);
+          };
+          if (remaining <= 0) {
+            card._thumbsLoaded = true;
+            card._thumbsProbing = false;
+            return;
+          }
+          for (let idx = 1; idx < rawList.length; idx++) {
+            (function (i, u) {
+              const probe = new Image();
+              probe.referrerPolicy = 'no-referrer';
+              const done = function (ok) {
+                if (ok && card.isConnected) {
+                  slots[i] = u;
+                  scheduleFlush();
+                }
+                remaining--;
+                if (remaining <= 0) {
+                  card._thumbsLoaded = true;
+                  card._thumbsProbing = false;
+                  if (card.isConnected) flushBar();
+                }
+              };
+              probe.onload = function () { done(probe.naturalWidth >= 200); };
+              probe.onerror = function () { done(false); };
+              probe.src = u;
+            })(idx, rawList[idx]);
+          }
+        };
       }
     }
 
@@ -1562,25 +1694,32 @@
         const mainImg = card.querySelector('img.f115-main-img');
         const scrubBar = card.querySelector('.f115-scrub-bar');
 
-        // 光标横向滑过海报：丝滑切换多张预览剧照
+        // 光标悬停懒加载剧照并缓存几何与进度槽引用，消除 mousemove 高频 getBoundingClientRect / querySelectorAll 布局抖动
+        let posterRect = null;
+        poster.addEventListener('mouseenter', function () {
+          posterRect = poster.getBoundingClientRect();
+          if (typeof card._loadScrubThumbs === 'function') card._loadScrubThumbs();
+        });
         poster.addEventListener('mousemove', function (e) {
           const urls = card._scrubUrls;
           if (!urls || urls.length < 2) return;
-          const rect = poster.getBoundingClientRect();
-          if (!rect.width) return;
-          const ratio = Math.max(0, Math.min(0.999, (e.clientX - rect.left) / rect.width));
+          if (!posterRect || !posterRect.width) posterRect = poster.getBoundingClientRect();
+          if (!posterRect.width) return;
+          const ratio = Math.max(0, Math.min(0.999, (e.clientX - posterRect.left) / posterRect.width));
           const idx = Math.floor(ratio * urls.length);
           if (card._scrubIdx === idx) return;
           card._scrubIdx = idx;
           mainImg.src = urls[idx];
-          const segs = scrubBar.querySelectorAll('.f115-scrub-seg');
+          const segs = card._scrubSegs || scrubBar.querySelectorAll('.f115-scrub-seg');
           segs.forEach(function (s, i) { s.classList.toggle('active', i === idx); });
         });
         poster.addEventListener('mouseleave', function () {
+          posterRect = null;
           if (card._baseCover && card._scrubIdx !== undefined && card._scrubIdx !== 0) {
             card._scrubIdx = 0;
             mainImg.src = card._baseCover;
-            scrubBar.querySelectorAll('.f115-scrub-seg').forEach(function (s, i) { s.classList.toggle('active', i === 0); });
+            const segs = card._scrubSegs || scrubBar.querySelectorAll('.f115-scrub-seg');
+            segs.forEach(function (s, i) { s.classList.toggle('active', i === 0); });
           }
         });
 
@@ -1784,7 +1923,7 @@
         const plan = buildArchivePlanForItem(f, meta, curConf);
         rows.push({ file: f, meta: meta, plan: plan, checked: !plan.skipMove });
       }
-      disambiguateBatchPlans(rows);
+      disambiguateBatchPlans(rows, items);
 
       const readyCount = rows.filter(function (r) { return r.checked; }).length;
       const skippedCount = rows.length - readyCount;
@@ -1875,45 +2014,71 @@
           await sleep(280);
         }
 
-        // 按目标目录分组批量移动（使用修复后的 pid 参数，绝不误移至根目录）
+        // 先按目标目录分组移动到目标目录，再在目标目录内执行改名：
+        // 彻底避免源目录中既有同名文件拦截就地改名，也避免改名失败后把未改名文件误移走
         const moveGroups = new Map();
+        const readyToRename = [];
         for (let i = 0; i < selected.length; i++) {
           const r = selected[i];
-          logEl.textContent = '✏️ 正在规范改名 (' + (i + 1) + '/' + selected.length + ')：' + r.file.name + ' → ' + r.plan.newFileName + '…';
-          if (r.plan.newFileName && r.plan.newFileName !== r.file.name) {
-            try {
-              await Api115.rename(r.file.fid, r.plan.newFileName);
-              r.file.name = r.plan.newFileName;
-              renamed++;
-              await sleep(260);
-            } catch (e) {
-              failed++;
-              lastErr = e.message;
-            }
-          }
           const rel = String(r.plan.targetRelPath || '').trim().replace(/^\/+|\/+$/g, '');
           if (rel) {
             if (!moveGroups.has(rel)) moveGroups.set(rel, []);
-            moveGroups.get(rel).push(r.file.fid);
+            moveGroups.get(rel).push(r);
+          } else {
+            readyToRename.push(r);
           }
         }
 
         for (const entry of moveGroups.entries()) {
           const relPath = entry[0];
-          const fids = entry[1];
+          const groupRows = entry[1];
+          const fids = groupRows.map(function (r) { return r.file.fid; });
           logEl.textContent = '📂 正在定位目标目录并移入：' + relPath + ' (' + fids.length + ' 项)…';
           const rootBase = (relPath.indexOf('/') >= 0 || relPath.indexOf('云下载') === 0) ? '0' : targetCid;
           try {
             const destCid = await Api115.ensureDirPath(rootBase, relPath, dirCache);
             if (destCid && destCid !== '0' && destCid !== targetCid) {
-              await sleep(260);
+              await sleep(240);
               await Api115.move(fids, destCid);
               moved += fids.length;
+              groupRows.forEach(function (r) { readyToRename.push(r); });
+            } else {
+              groupRows.forEach(function (r) { readyToRename.push(r); });
             }
           } catch (e) {
-            failed++;
+            failed += groupRows.length;
             lastErr = e.message;
           }
+        }
+
+        for (let i = 0; i < readyToRename.length; i++) {
+          const r = readyToRename[i];
+          if (!r.plan.newFileName || r.plan.newFileName === r.file.name) continue;
+          logEl.textContent = '✏️ 正在规范改名 (' + (i + 1) + '/' + readyToRename.length + ')：' + r.file.name + ' → ' + r.plan.newFileName + '…';
+          let targetName = r.plan.newFileName;
+          let ok = false;
+          for (let attempt = 0; attempt < 5; attempt++) {
+            try {
+              await Api115.rename(r.file.fid, targetName);
+              r.file.name = targetName;
+              r.plan.newFileName = targetName;
+              renamed++;
+              ok = true;
+              await sleep(260);
+              break;
+            } catch (e) {
+              const msg = String((e && e.message) || '');
+              const isDup = /已存在|重名|同名|exists/i.test(msg) || Number(e && e.errNo) === 20004 || Number(e && e.errNo) === 20019;
+              if (isDup && attempt < 4) {
+                targetName = appendSeqBeforeExt(r.plan.newFileName, attempt + 2);
+                await sleep(160);
+                continue;
+              }
+              lastErr = msg || '改名失败';
+              break;
+            }
+          }
+          if (!ok) failed++;
         }
 
         logEl.textContent = '✅ 批量归档完成！清理垃圾 ' + cleaned + ' 项 · 规范改名 ' + renamed + ' 项 · 成功移入目标目录 ' + moved + ' 项' +

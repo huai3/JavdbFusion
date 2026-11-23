@@ -2,5 +2,8 @@ node_modules/
 tools/pw/out/
 tools/pw/node_modules/
 tools/pw/auth/
+storage.json
 *.log
+*.bak
+*.patch
 .DS_Store

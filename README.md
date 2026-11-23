@@ -2,8 +2,8 @@
 
 面向 **JAVDB** 与 **115 网盘** 的 Apple TV+ / tvOS 18 影院级双端联动 Tampermonkey 用户脚本套件：
 
-- **`JavdbFusion.user.js`（当前版本：`7.420-appletv-pro`）**：运行于 JAVDB 及镜像站，融合 Apple TV+ 影院级 UI、Emby/Jellyfin 媒体库联动、115 云盘命中检测与 **IINA / PotPlayer / mpv / Infuse** 免 Cookie 专属 UA 签名原画直调（适配 `se=u,ua` 防盗链校验）、离线秒传自动归档（默认纯番号 `${code}` 洁净改名 + AV-Wiki 素人女优真名补全）、列表海报悬停内嵌直播预告片、多维净化黑名单与五源磁力聚合。
-- **`115Fusion.user.js`（当前版本：`1.1.0-appletv-pro`）**：独立运行于 `115.com`，提供 **Apple TV+ 海报墙**、光标横向滑动实时预览 10+ 张高清剧照与灯箱、本地播放器 `libmpv` / `Lavf` 专属 UA 签名原画直连（内置差分 UA 探测与 IINA `mpv.conf` 一键同步引导），以及存量番号视频与外挂字幕批量智能整理归档（**JAVDB + JavBus + AV-Wiki 三源女优识别**、拒绝生成「佚名」垃圾目录、纯番号洁净改名与同目录重名自动消歧，采用无限容量 `IndexedDB` + DMM 确定性直链零搜索预测 + 视口懒加载防风控队列，千部大目录永不失效）。
+- **`JavdbFusion.user.js`（当前版本：`7.421-appletv-pro`）**：运行于 JAVDB 及镜像站，融合 Apple TV+ 影院级 UI、Emby/Jellyfin 媒体库联动、115 云盘命中检测与 **IINA / PotPlayer / mpv / Infuse** 免 Cookie 专属 UA 签名原画直调（适配 `se=u,ua` 防盗链校验）、离线秒传自动归档（默认纯番号 `${code}` 洁净改名 + AV-Wiki 素人女优真名补全）、列表海报悬停内嵌直播预告片、多维净化黑名单与五源磁力聚合。
+- **`115Fusion.user.js`（当前版本：`1.1.1-appletv-pro`）**：独立运行于 `115.com`，提供 **Apple TV+ 海报墙**、光标横向滑动实时预览 10+ 张高清剧照与灯箱、本地播放器 `libmpv` / `Lavf` 专属 UA 签名原画直连（内置差分 UA 探测与 IINA `mpv.conf` 一键同步引导），以及存量番号视频与外挂字幕批量智能整理归档（**JAVDB + JavBus + AV-Wiki 三源女优识别**、拒绝生成「佚名」垃圾目录、纯番号洁净改名与同目录重名自动消歧，采用无限容量 `IndexedDB` + DMM 确定性直链零搜索预测 + 视口懒加载防风控队列，千部大目录永不失效）。
 
 ## 功能
 
@@ -88,20 +88,33 @@
 - **页面滚动发涩**：在「设置 → 外观与显示」打开「低特效模式」，或系统开启「减少动态效果」。
 - **更新后界面没有变化**：在 Tampermonkey 中确认脚本版本已更新，然后刷新 JAVDB 页面。
 
-## 本仓库的改动与验证
+## 本仓库的改动与自动化验证
 
-本仓库在原版基础上做了性能、可读性与功能增强，改动全部以可复现的补丁脚本形式提交在 `tools/`：
+仓库内置零依赖静态安全门禁、回归单元测试与 GitHub Actions CI（`.github/workflows/ci.yml`），每次提交都会自动校验 `JavdbFusion.user.js` 与 `115Fusion.user.js`：
+
+```bash
+# 1. 语法 + 元数据 + CSS 模板求值 + 安全红线门禁（零依赖）
+node tools/pw/lint-userscript.js
+
+# 2. 双脚本沙箱回归单元测试（零依赖）
+node tools/pw/test-unit.js
+
+# 3. 完整 ESLint 检查（需安装 tools/pw 依赖）
+npm --prefix tools/pw run lint
+```
+
+历史优化与测试报告归档在 `docs/reports/`：
 
 | 文档 | 内容 |
 |---|---|
-| [`OPTIMIZATION-REPORT.md`](OPTIMIZATION-REPORT.md) | 性能 / 可读性 / 排布的实测与优化 |
-| [`OPTIMIZATION-PHASE2.md`](OPTIMIZATION-PHASE2.md) | 预告片画质、详情页页签、磁力聚合、115 整理 |
-| [`OPTIMIZATION-PHASE3.md`](OPTIMIZATION-PHASE3.md) | 重复请求去重、预告片解析诊断 |
-| [`DEBUG-REPORT-2026-11.md`](DEBUG-REPORT-2026-11.md) | 2026-11 静态审计 + 动态复现（短评导航 / 预告片多路 / 磁力聚合 / 可读性） |
-| [`FULL-TEST-REPORT-2026-11-12.md`](FULL-TEST-REPORT-2026-11-12.md) | 登录态全量测试 + 115 推送专项 + 压力/性能报告 |
+| [`docs/reports/OPTIMIZATION-REPORT.md`](docs/reports/OPTIMIZATION-REPORT.md) | 性能 / 可读性 / 排布的实测与优化 |
+| [`docs/reports/OPTIMIZATION-PHASE2.md`](docs/reports/OPTIMIZATION-PHASE2.md) | 预告片画质、详情页页签、磁力聚合、115 整理 |
+| [`docs/reports/OPTIMIZATION-PHASE3.md`](docs/reports/OPTIMIZATION-PHASE3.md) | 重复请求去重、预告片解析诊断 |
+| [`docs/reports/DEBUG-REPORT-2026-11.md`](docs/reports/DEBUG-REPORT-2026-11.md) | 2026-11 静态审计 + 动态复现（短评导航 / 预告片多路 / 磁力聚合 / 可读性） |
+| [`docs/reports/FULL-TEST-REPORT-2026-11-12.md`](docs/reports/FULL-TEST-REPORT-2026-11-12.md) | 登录态全量测试 + 115 推送专项 + 压力/性能报告 |
+| [`docs/reports/JavdbFusion_修改备忘.md`](docs/reports/JavdbFusion_修改备忘.md) | 早期 Trace 实测与修改备忘 |
 | [`tools/pw/README-live.md`](tools/pw/README-live.md) | Playwright + GM 垫片动态自检（`live-check.js` / `review-mock.js`） |
-| [`JavdbFusion.optimize.patch`](JavdbFusion.optimize.patch) | 相对原版的完整 unified diff |
-| [`tools/`](tools/) | 补丁脚本 + Playwright 测试套件（性能对比、冒烟、预告片自检） |
+| [`tools/pw/`](tools/pw/) | 静态体检、单元测试、ESLint 配置与 Playwright 动态验证套件 |
 
 ## 致谢
 

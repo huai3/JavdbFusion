@@ -1,0 +1,35 @@
+name: Userscript CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Syntax check both userscripts
+        run: |
+          node --check JavdbFusion.user.js
+          node --check 115Fusion.user.js
+
+      - name: Static lint, CSS template & security guardrails
+        run: node tools/pw/lint-userscript.js
+
+      - name: Unit & sandbox regression tests
+        run: node tools/pw/test-unit.js
+
+      - name: ESLint check (no-undef / syntax defects)
+        run: |
+          npm install --no-save --prefix tools/pw eslint@9 globals@15
+          npm --prefix tools/pw run lint

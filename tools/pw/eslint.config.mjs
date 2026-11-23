@@ -28,9 +28,14 @@ export default [{
     'no-undef': 'error',
     'no-dupe-keys': 'error',
     'no-dupe-args': 'error',
+    'no-dupe-else-if': 'error',
     'no-unreachable': 'error',
     'no-cond-assign': 'error',
     'no-self-assign': 'error',
-    'no-constant-condition': 'error'
+    'no-constant-condition': 'error',
+    'no-unsafe-finally': 'error',
+    'use-isnan': 'error',
+    'valid-typeof': 'error',
+    'no-redeclare': 'warn'
   }
 }];

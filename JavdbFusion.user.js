@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JavdbEmbySkin x Fusion (Emby-Jellyfin Jump + Trailer + Magnet Suite)
 // @namespace    com.local.javdbemby
-// @version      7.420-appletv-pro
+// @version      7.421-appletv-pro
 // @connect      jdforrepam.com
 // @connect      c0.jdbstatic.com
 // @connect      jdbstatic.com
@@ -147,6 +147,19 @@
       setTimeout(clearSkinBoot, 10000);
     } catch (e) {}
   }
+  function isCloudflareChallengePage() {
+    try {
+      if (document.querySelector('#challenge-running, #challenge-stage, #challenge-form, .cf-turnstile, #turnstile-wrapper, iframe[src*="challenges.cloudflare.com"]')) {
+        return true;
+      }
+      const title = String(document.title || '');
+      if (/Just a moment|Attention Required|请稍候|安全检查/i.test(title) && !document.querySelector('nav.navbar, .movie-list, .video-detail')) {
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
   function clearSkinBoot() {
     try {
       if (document.documentElement) document.documentElement.classList.remove('emby-skin-pending');
@@ -184,7 +197,7 @@
   }
   ensureImageNoReferrer();
   try { setupImgFallbackDelegation(); } catch (e) {}
-  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.390-appletv-pro';
+  var VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) ? GM_info.script.version : '7.421-appletv-pro';
   // 记录启动时的 hash 深链接：JAVDB 自己的脚本/跳转可能在 DOMContentLoaded 前就把 # 清掉
   var JF_BOOT_HASH = (location.hash || '').replace('#emby-dtab-', '');
   var tabHome = null, tabFav = null, favPanel = null;
@@ -233,7 +246,8 @@
           tries++;
           return worker().then(function (v) { resolve(v); return v; }, function (err) {
             const msg = (err && err.message) ? err.message : String(err);
-            if (tries < 3 && /429|403|Rate limit|Too Many/i.test(msg)) {
+            // 仅对限流/瞬时服务不可用 (429/503) 退避重试；403 多为鉴权失败或 WAF 封禁，重试反而放大风控风险
+            if (tries < 3 && /429|503|Rate limit|Too Many/i.test(msg)) {
               return new Promise(function (r) { setTimeout(r, 800 * tries + Math.random() * 400); }).then(attempt);
             }
             reject(err); throw err;
@@ -377,7 +391,12 @@
   const __gmMemo = new Map();
   const __gmMemoMax = 40;
   const __gmMemoCool = 300000; // 5 分钟，与站点可用性缓存 TTL 一致
-  const __gmMemoExclude = ['webapi.115.com', '115.com/proapi', 'proapi.115.com'];
+  // 排除所有 115 动态/离线轮询/UA签名串流接口以及 Git 备份 API，杜绝 5 分钟缓存毒化实时状态与多播放器 UA 签名
+  const __gmMemoExclude = [
+    'webapi.115.com', '115.com/proapi', 'proapi.115.com',
+    '115.com/web/lixian', '115.com/api/video/m3u8', '115.com/?ct=offline', '115vod.com',
+    'api.github.com/repos/', 'gitee.com/api/'
+  ];
   function __gmHeaderSig(headers) {
     if (!headers || typeof headers !== 'object') return '';
     const keys = Object.keys(headers);
@@ -386,11 +405,23 @@
     for (let i = 0; i < keys.length; i++) {
       const k = keys[i];
       const kl = k.toLowerCase();
-      if (kl === 'range' || kl === 'authorization' || kl === 'x-emby-token' || kl === 'jdsignature') {
-        picked.push(kl + ':' + String(headers[k] || '').slice(0, 48));
+      if (kl === 'range' || kl === 'authorization' || kl === 'x-emby-token' || kl === 'jdsignature' || kl === 'user-agent' || kl === 'accept') {
+        picked.push(kl + ':' + String(headers[k] || '').slice(0, kl === 'user-agent' ? 256 : 64));
       }
     }
     return picked.length ? ('|' + picked.sort().join('|')) : '';
+  }
+  function __buildNetDedupeKey(opt) {
+    if (!opt || !opt.url) return null;
+    // 带 AbortSignal 的调用不做跨调用方共享 Promise 合并，防止一方 abort 误伤另一方
+    if (opt.signal) return null;
+    const m = String(opt.method || 'GET').toUpperCase();
+    if (m !== 'GET') return null;
+    const u = String(opt.url);
+    if (__gmMemoExclude.some(function (h) { return u.indexOf(h) >= 0; })) return null;
+    const hdrSig = __gmHeaderSig(opt.headers);
+    if (hdrSig.indexOf('range:') >= 0) return null;
+    return 'GET ' + u + (opt.anonymous ? '|anon:1' : '') + hdrSig;
   }
   if (__gmRawXhr) {
     const __gmWrapped = function (opt) {
@@ -401,9 +432,10 @@
       const hdrSig = __gmHeaderSig(opt.headers);
       const isRange = hdrSig.indexOf('range:') >= 0;
       const isBinary = rType === 'blob' || rType === 'arraybuffer';
+      const anonSig = opt.anonymous ? '|anon:1' : '';
       // 带流式钩子/Range 探针的请求直接走底层句柄，确保调用方可随时精准 abort 截断流量
       const key = (method === 'GET' && opt.url && !hasStreamHook && !isRange)
-        ? (method + ' ' + opt.url + (rType ? (' [' + rType + ']') : '') + hdrSig)
+        ? (method + ' ' + opt.url + (rType ? (' [' + rType + ']') : '') + anonSig + hdrSig)
         : null;
       if (!key) return __gmRawXhr(opt);
 
@@ -494,6 +526,64 @@
   function log(m) { try { console.log('[JAVDB→Emby] ' + m); } catch (e) {} }
   log('脚本已注入页面');
   window.__javdbEmbyVersion = VERSION;
+
+  /* =======================================================================
+   * 敏感凭据隔离存储层：统一落盘至油猴 GM_* 沙箱（彻底脱离宿主页面 localStorage），
+   * 首次读取时自动将旧版 localStorage 凭据一次性迁移至 GM_* 并清除宿主侧明文残留。
+   * ===================================================================== */
+  const SECRET_GM_PREFIX = 'jf_sec_';
+  function secretGet(key) {
+    try {
+      const gmKey = SECRET_GM_PREFIX + key;
+      const gmVal = (typeof GM_getValue === 'function') ? GM_getValue(gmKey, '') : '';
+      if (gmVal && typeof gmVal === 'string') {
+        try { if (localStorage.getItem(key) !== null) localStorage.removeItem(key); } catch (e) {}
+        return gmVal;
+      }
+      let legacy = '';
+      try { legacy = localStorage.getItem(key) || ''; } catch (e) {}
+      if (legacy) {
+        try { if (typeof GM_setValue === 'function') GM_setValue(gmKey, legacy); } catch (e) {}
+        try { localStorage.removeItem(key); } catch (e) {}
+        return legacy;
+      }
+    } catch (e) {}
+    return '';
+  }
+  function secretSet(key, val) {
+    const clean = String(val == null ? '' : val);
+    try {
+      if (typeof GM_setValue === 'function') GM_setValue(SECRET_GM_PREFIX + key, clean);
+    } catch (e) {}
+    try { localStorage.removeItem(key); } catch (e) {}
+  }
+  function secretRemove(key) {
+    try {
+      if (typeof GM_setValue === 'function') GM_setValue(SECRET_GM_PREFIX + key, '');
+    } catch (e) {}
+    try { localStorage.removeItem(key); } catch (e) {}
+  }
+  // 启动即刻迁移旧版宿主 localStorage 中的高危凭据，避免用户不打开设置页时明文滞留
+  ['javdb_git_token', 'javdb_webdav_pass', 'jhs_appAuthorization'].forEach(function (k) {
+    try { secretGet(k); } catch (e) {}
+  });
+
+  /* =======================================================================
+   * 增强插件注册表（提前声明于顶层，彻底消除任意早置路由守卫触发 TDZ ReferenceError）
+   * ===================================================================== */
+  const PLUGIN_REGISTRY = [
+    { id: 'blockJavdbTranslate', name: '还原日文原标题', desc: '自动屏蔽 JAVDB 自带的中文翻译，番号详情页始终优先展示纯正日文原标题', default: true },
+    { id: 'translate', name: '标题翻译', desc: '调用谷歌官方接口自动将日文标题翻译为中文，并在详情页展示', default: true },
+    { id: 'dfPreview', name: '悬停封面大图', desc: '鼠标悬停封面弹出超清大图浮层与详细参数', default: true },
+    { id: 'otherSite', name: '外部播放站点', desc: '开启后在番号详情页提供多源跳转播放；关闭时默认直接调用 JAVDB 官方播放（会员免跳转）', default: true },
+    { id: 'infoSites', name: '番号信息站点', desc: '开启后在番号后面以网站LOGO形式展示 JAVBUS、JAVLib、FANZA動画、javtxt 快捷跳转入口', default: true },
+    { id: 'infiniteScroll', name: '无限加载', desc: '浏览列表时滚动到底部自动加载下一页，免去手动点击翻页', default: true },
+    { id: 'reviewListInfinite', name: '绕过JAVDB限制', desc: '为非 VIP 账号扩展评论与相关清单浏览；TOP250 与热播榜界面始终可用，VIP 优先走网页会话直读榜单，无需移动端 Token', default: false },
+    { id: 'actressInfo', name: '女优信息与收藏标记', desc: '查询女优现役/退役状态、年龄、身高、三围等体检数据，并控制女优头像红心收藏标记的显示', default: true },
+    { id: 'gfriendsAvatar', name: '演员头像高清替换', desc: '开启后优先从高清头像库匹配演员头像（男女演员均支持），未匹配则平滑回退 JAVDB 官方头像', default: true },
+    { id: 'quickStatusPreview', name: '状态快捷标记和预览图', desc: '在作品封面提供「想看/已看评分」快捷标记按钮，以及预览大图嗅探抓取与画廊浮层', default: false },
+    { id: 'ratingHeatmap', name: '评分热度排序', desc: '在 JAVDB 列表标出评分热度，按综合热度/评分/评价数排序，并按最低评分筛选', default: false }
+  ];
 
   /* =======================================================================
    * 全局基础工具函数（HTML转义与安全实体属性解析）
@@ -719,16 +809,26 @@
   };
 
   /* =======================================================================
-   * 规避 JAVDB 服务端 302 重定向至 /plans/ypay 的 VIP 拦截墙（仅非会员且开启绕过限制时生效）
+   * 规避 JAVDB 服务端 302 重定向至 /plans/ypay 的 VIP 拦截墙
+   * 【修复】不再在 document-start 阶段同步执行：
+   *   1) 避免早于 DOM 解析调用 isJavdbVipUser() 误将真实 VIP 踢出 /plans 续费页；
+   *   2) 仅在 DOMContentLoaded 后的 init() 内且明确来自榜单重定向时触发（见 maybeBypassPlansRedirect）。
    * ===================================================================== */
-  if (location.pathname.startsWith('/plans')) {
-    if (isPluginEnabled('reviewListInfinite') && !isJavdbVipUser()) {
-      const isTop = location.href.includes('top') || document.referrer.includes('top');
+  function maybeBypassPlansRedirect() {
+    if (!location.pathname.startsWith('/plans')) return false;
+    try {
+      if (!isPluginEnabled('reviewListInfinite') || isJavdbVipUser()) return false;
+      const fromRank = /\/rankings\/(?:top|playback)|top|playback/i.test((document.referrer || '') + ' ' + location.search);
+      if (!fromRank) return false;
+      const isTop = location.href.includes('top') || (document.referrer || '').includes('top');
       const target = isTop
         ? '/advanced_search?handleTop=1&handleType=all&type_value=&page=1'
         : '/advanced_search?handlePlayback=1&period=daily';
+      clearSkinBoot();
       location.replace(target);
-      return;
+      return true;
+    } catch (e) {
+      return false;
     }
   }
 
@@ -7564,7 +7664,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         try {
           localStorage.removeItem('jb_saved_username');
           localStorage.removeItem('jb_appAuthorization');
-          localStorage.removeItem('jhs_appAuthorization');
+          secretRemove('jhs_appAuthorization');
         } catch (err) {}
 
         // 优先直接调用隐藏原生 navbar 中的原生登出链接（由 Rails UJS 托管）
@@ -9079,22 +9179,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
 
   
 /* =======================================================================
-   * 增强插件系统 (Plugin Registry)
+   * 增强插件系统 (Plugin Registry 函数区；PLUGIN_REGISTRY 已提前声明于顶部防 TDZ)
    * ===================================================================== */
-  const PLUGIN_REGISTRY = [
-    { id: 'blockJavdbTranslate', name: '还原日文原标题', desc: '自动屏蔽 JAVDB 自带的中文翻译，番号详情页始终优先展示纯正日文原标题', default: true },
-    { id: 'translate', name: '标题翻译', desc: '调用谷歌官方接口自动将日文标题翻译为中文，并在详情页展示', default: true },
-    { id: 'dfPreview', name: '悬停封面大图', desc: '鼠标悬停封面弹出超清大图浮层与详细参数', default: true },
-    { id: 'otherSite', name: '外部播放站点', desc: '开启后在番号详情页提供多源跳转播放；关闭时默认直接调用 JAVDB 官方播放（会员免跳转）', default: true },
-    { id: 'infoSites', name: '番号信息站点', desc: '开启后在番号后面以网站LOGO形式展示 JAVBUS、JAVLib、FANZA動画、javtxt 快捷跳转入口', default: true },
-    { id: 'infiniteScroll', name: '无限加载', desc: '浏览列表时滚动到底部自动加载下一页，免去手动点击翻页', default: true },
-    { id: 'reviewListInfinite', name: '绕过JAVDB限制', desc: '为非 VIP 账号扩展评论与相关清单浏览；TOP250 与热播榜界面始终可用，VIP 优先走网页会话直读榜单，无需移动端 Token', default: false },
-    { id: 'actressInfo', name: '女优信息与收藏标记', desc: '查询女优现役/退役状态、年龄、身高、三围等体检数据，并控制女优头像红心收藏标记的显示', default: true },
-    { id: 'gfriendsAvatar', name: '演员头像高清替换', desc: '开启后优先从高清头像库匹配演员头像（男女演员均支持），未匹配则平滑回退 JAVDB 官方头像', default: true },
-    { id: 'quickStatusPreview', name: '状态快捷标记和预览图', desc: '在作品封面提供「想看/已看评分」快捷标记按钮，以及预览大图嗅探抓取与画廊浮层', default: false },
-    { id: 'ratingHeatmap', name: '评分热度排序', desc: '在 JAVDB 列表标出评分热度，按综合热度/评分/评价数排序，并按最低评分筛选', default: false }
-  ];
-
   function isPluginEnabled(id) {
     if (id === 'webdav') return true;
     const raw = localStorage.getItem('javdb_plugin_' + id);
@@ -9969,9 +10055,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   const gmHttp = {
     request: function (options) {
       const opts = options || {};
-      const m = ((opts.method) || 'GET').toUpperCase();
-      const u = opts.url;
-      const dedupeKey = (m === 'GET' && u) ? ('GET ' + u) : null;
+      const dedupeKey = __buildNetDedupeKey(opts);
       const run = function () { return netTimeoutRace(gmHttpRawRequest(opts), opts.timeout || 15000); };
       try {
         if (typeof embyNetRun === 'function') return embyNetRun(dedupeKey, run);
@@ -10144,7 +10228,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     }
 
     function getAuthToken() {
-      return localStorage.getItem(APP_AUTH_KEY) || '';
+      return secretGet(APP_AUTH_KEY) || '';
     }
 
     function getSignature() {
@@ -10847,7 +10931,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       const text = await gmHttp.post(url, body, headers);
       const res = JSON.parse(text);
       if (res.success === 1 && res.data && res.data.token) {
-        localStorage.setItem(APP_AUTH_KEY, res.data.token);
+        secretSet(APP_AUTH_KEY, res.data.token);
         return res.data.token;
       }
       throw new Error(res.message || '登录失败');
@@ -10954,7 +11038,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           return;
         }
         const cleanTok = val.replace(/^Bearer\s+/i, '');
-        localStorage.setItem(APP_AUTH_KEY, cleanTok);
+        secretSet(APP_AUTH_KEY, cleanTok);
         closeModal();
         updateAuthBadge();
         if (typeof onSuccess === 'function') onSuccess();
@@ -11123,7 +11207,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             // 这正是 VIP 用户明明已登录却反复被要求登录的直接原因。
             const isAuthError = res.action === 'JWTVerificationError';
             if (isAuthError) {
-              localStorage.removeItem(APP_AUTH_KEY);
+              secretRemove(APP_AUTH_KEY);
               if (listEl) {
                 listEl.innerHTML =
                   '<div style="grid-column:1/-1;text-align:center;padding:70px 20px;color:#e2e8f0;">' +
@@ -11814,7 +11898,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           skinEnabled: enabled,
           dbStatus: '就绪 (IndexedDB)',
           tokenPreview: (function () {
-            const t = localStorage.getItem('jhs_appAuthorization');
+            const t = secretGet('jhs_appAuthorization');
             if (!t) return '未登录 (免登录模式)';
             return t.slice(0, 8) + '...' + t.slice(-6);
           })(),
@@ -13737,12 +13821,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     request(method, path, body, extraHeaders) {
       const self = this;
       return new Promise(function (resolve, reject) {
-        let url = self.apiUrl + path;
-        if (self.isGitee() && self.token && !url.includes('access_token=')) {
-          url += (url.includes('?') ? '&' : '?') + 'access_token=' + encodeURIComponent(self.token);
-        }
+        const url = self.apiUrl + path;
         const headers = self.buildHeaders(extraHeaders);
-        if (body !== undefined && !headers['Content-Type']) {
+        let reqBody = body;
+        // Gitee v5 API 支持 Authorization: Bearer 鉴权；写操作若需 access_token 则置于请求体，严禁拼进 URL query 避免日志/代理泄露
+        if (self.isGitee() && self.token && reqBody && typeof reqBody === 'object' && !reqBody.access_token) {
+          reqBody = Object.assign({ access_token: self.token.replace(/^Bearer\s+/i, '') }, reqBody);
+        }
+        if (reqBody !== undefined && !headers['Content-Type']) {
           headers['Content-Type'] = 'application/json;charset=UTF-8';
         }
 
@@ -13750,7 +13836,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           method: method,
           url: url,
           headers: headers,
-          data: body !== undefined ? JSON.stringify(body) : undefined,
+          data: reqBody !== undefined ? JSON.stringify(reqBody) : undefined,
           timeout: 20000
         }).then(function (text) {
           resolve(text);
@@ -13917,7 +14003,13 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (parsed && parsed.download_url) {
         const dlHeaders = {};
         if (this.token && !this.isGitee()) {
-          dlHeaders['Authorization'] = this.token.startsWith('Bearer ') ? this.token : ('Bearer ' + this.token);
+          try {
+            const dlHost = new URL(parsed.download_url).hostname.toLowerCase();
+            const apiHost = new URL(this.apiUrl).hostname.toLowerCase();
+            if (dlHost === apiHost || dlHost === 'raw.githubusercontent.com' || dlHost === 'github.com' || dlHost.endsWith('.githubusercontent.com')) {
+              dlHeaders['Authorization'] = this.token.startsWith('Bearer ') ? this.token : ('Bearer ' + this.token);
+            }
+          } catch (e) {}
         }
         return await gmHttp.request({ method: 'GET', url: parsed.download_url, headers: dlHeaders });
       }
@@ -14076,18 +14168,19 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     modal.className = 'jhs-settings-mask open';
     modal.style.zIndex = '2147483680';
 
-    const sName = serviceName || '云端';
+    const sName = escapeHtml(serviceName || '云端');
     let rowsHtml = '';
     if (!files.length) {
       rowsHtml = '<div style="text-align:center;color:#888;padding:30px;">' + sName + ' 暂无历史备份文件</div>';
     } else {
       files.forEach(function (f, i) {
         const sz = f.size ? (f.size > 1048576 ? (f.size / 1048576).toFixed(2) + ' MB' : (f.size / 1024).toFixed(1) + ' KB') : '未知';
+        const tsStr = (f.lastModified || f.createTime) ? escapeHtml(String(f.lastModified || f.createTime).slice(0, 19).replace('T', ' ')) : '';
         rowsHtml +=
           '<div class="jhs-backup-row" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);">' +
             '<div>' +
               '<div style="font-size:13px;font-weight:600;color:#fff;">' + escapeHtml(f.name) + '</div>' +
-              '<div style="font-size:11px;color:#888;margin-top:2px;">来源: ' + sName + ' · 大小: ' + sz + ((f.lastModified || f.createTime) ? ' · ' + (f.lastModified || f.createTime).slice(0, 19).replace('T', ' ') : '') + '</div>' +
+              '<div style="font-size:11px;color:#888;margin-top:2px;">来源: ' + sName + ' · 大小: ' + sz + (tsStr ? ' · ' + tsStr : '') + '</div>' +
             '</div>' +
             '<div style="display:flex;gap:8px;">' +
               '<button type="button" class="jhs-btn jhs-btn-success btn-wd-restore" data-name="' + escapeAttr(f.name) + '" style="padding:4px 10px;font-size:11.5px;">恢复导入</button>' +
@@ -15024,7 +15117,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       });
     }
 
-    // WebDAV 密码与凭据保存
+    // WebDAV 密码与凭据保存（密码走 GM_* 沙箱隔离存储，不落盘宿主 localStorage）
     const wdUrl = mask.querySelector('#wd-url');
     const wdUser = mask.querySelector('#wd-user');
     const wdPass = mask.querySelector('#wd-pass');
@@ -15032,7 +15125,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       inp.addEventListener('change', function () {
         localStorage.setItem('javdb_webdav_url', (wdUrl.value || '').trim());
         localStorage.setItem('javdb_webdav_user', (wdUser.value || '').trim());
-        localStorage.setItem('javdb_webdav_pass', (wdPass.value || '').trim());
+        secretSet('javdb_webdav_pass', (wdPass.value || '').trim());
       });
     });
 
@@ -15053,7 +15146,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         const p = (wdPass.value || '').trim();
         localStorage.setItem('javdb_webdav_url', u);
         localStorage.setItem('javdb_webdav_user', user);
-        localStorage.setItem('javdb_webdav_pass', p);
+        secretSet('javdb_webdav_pass', p);
         if (!u) { setWdStatus('❌ 请先填写 WebDAV 服务地址（如 https://dav.jianguoyun.com/dav/）', true); return; }
         if (!user) { setWdStatus('❌ 请先填写 WebDAV 用户名 / 账号', true); return; }
         if (!p) { setWdStatus('❌ 请先填写 WebDAV 密码 / 应用授权码', true); return; }
@@ -15083,7 +15176,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         const p = (wdPass.value || '').trim();
         localStorage.setItem('javdb_webdav_url', u);
         localStorage.setItem('javdb_webdav_user', user);
-        localStorage.setItem('javdb_webdav_pass', p);
+        secretSet('javdb_webdav_pass', p);
         if (!u || !user || !p) { setWdStatus('❌ 请先填写完整的 WebDAV 服务地址、用户名及密码', true); return; }
         isCloudSyncBusy = true;
         btnWdBackup.disabled = true;
@@ -15140,7 +15233,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     if (gitUrlInp) gitUrlInp.value = localStorage.getItem('javdb_git_api_url') || 'https://api.github.com';
     if (gitRepoInp) gitRepoInp.value = localStorage.getItem('javdb_git_repo') || '';
     if (gitBranchInp) gitBranchInp.value = localStorage.getItem('javdb_git_branch') || 'main';
-    if (gitTokenInp) gitTokenInp.value = localStorage.getItem('javdb_git_token') || '';
+    if (gitTokenInp) gitTokenInp.value = secretGet('javdb_git_token') || '';
 
     [gitUrlInp, gitRepoInp, gitBranchInp, gitTokenInp].forEach(function (inp) {
       if (!inp) return;
@@ -15148,7 +15241,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         localStorage.setItem('javdb_git_api_url', (gitUrlInp.value || '').trim());
         localStorage.setItem('javdb_git_repo', (gitRepoInp.value || '').trim());
         localStorage.setItem('javdb_git_branch', (gitBranchInp.value || '').trim());
-        localStorage.setItem('javdb_git_token', (gitTokenInp.value || '').trim());
+        secretSet('javdb_git_token', (gitTokenInp.value || '').trim());
       });
     });
 
@@ -15167,7 +15260,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         localStorage.setItem('javdb_git_api_url', aUrl);
         localStorage.setItem('javdb_git_repo', repo);
         localStorage.setItem('javdb_git_branch', branch);
-        localStorage.setItem('javdb_git_token', token);
+        secretSet('javdb_git_token', token);
         if (!repo) { setGitStatus('❌ 请填写 Git 仓库（格式：owner/repo）', true); return; }
         if (!token) { setGitStatus('❌ 请填写 Git 访问令牌 (Personal Access Token)', true); return; }
         setGitStatus('正在连接 Git 仓库并验证权限...', false);
@@ -15194,14 +15287,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         localStorage.setItem('javdb_git_api_url', aUrl);
         localStorage.setItem('javdb_git_repo', repo);
         localStorage.setItem('javdb_git_branch', branch);
-        localStorage.setItem('javdb_git_token', token);
+        secretSet('javdb_git_token', token);
         if (!repo || !token) { setGitStatus('❌ 请先填写完整的 Git 仓库与 Token 凭据', true); return; }
         isCloudSyncBusy = true;
         btnGitBackup.disabled = true;
         setGitStatus('正在导出本地数据库并上传到 Git 仓库...', false);
         try {
           if (!FAV || !FAV.exportJson) throw new Error('收藏夹数据模块未就绪');
-          const jsonStr = await FAV.exportJson();
+          // 推送至 Git 仓库时强制排除 Git PAT 本身，避免触发 GitHub Secret Scanning 吊销/Push Protection 拒收或令牌泄露
+          const jsonStr = await FAV.exportJson(undefined, { excludeGitToken: true });
           const client = new GitBackupClient(aUrl, repo, branch, token);
           const fileName = getBackupFileName();
           await client.backup(fileName, jsonStr);
@@ -16115,7 +16209,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       const wus = mask.querySelector('#wd-user');
       if (wus) wus.value = localStorage.getItem('javdb_webdav_user') || '';
       const wp = mask.querySelector('#wd-pass');
-      if (wp) wp.value = localStorage.getItem('javdb_webdav_pass') || '';
+      if (wp) wp.value = secretGet('javdb_webdav_pass') || '';
+      const gt = mask.querySelector('#git-token');
+      if (gt) gt.value = secretGet('javdb_git_token') || '';
 
       renderFullPluginList(mask);
       renderFullSiteList(mask);
@@ -19333,39 +19429,46 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           } catch (err) {}
         }, true);
 
-        // 4. 点击打开「存入清單」按钮或 Emby list 按钮时，自动触发校准
+        // 4. 点击打开「存入清單」按钮或 Emby list 按钮时，自动触发校准并按需绑定弹窗级观察器
+        const observedModals = new WeakSet();
+        const modalObserver = new MutationObserver(function (mutations) {
+          mutations.forEach(function (m) {
+            if (m.type === 'attributes' && m.attributeName === 'class') {
+              const target = m.target;
+              if (target && target.classList && target.classList.contains('is-active')) {
+                Promise.resolve(syncWithSaveListModal(target)).catch(function () {});
+                setTimeout(function () { Promise.resolve(syncWithSaveListModal(target)).catch(function () {}); }, 300);
+              }
+            }
+          });
+        });
+        function attachSaveListModalObservers() {
+          try {
+            document.querySelectorAll('#modal-save-list, .modal-save-list, [id*="save-list"], [id*="save_list"]').forEach(function (m) {
+              if (!observedModals.has(m)) {
+                observedModals.add(m);
+                modalObserver.observe(m, { attributes: true, attributeFilter: ['class'] });
+              }
+            });
+          } catch (err) {}
+        }
+        attachSaveListModalObservers();
         document.addEventListener('click', function (e) {
           try {
             const trigger = e.target && e.target.closest && e.target.closest('#save-list-button, .save-list-button, .emby-circle-btn[data-type="list"]');
             if (trigger) {
+              attachSaveListModalObservers();
               setTimeout(function () { Promise.resolve(syncWithSaveListModal()).catch(function () {}); }, 150);
               setTimeout(function () { Promise.resolve(syncWithSaveListModal()).catch(function () {}); }, 500);
             }
           } catch (err) {}
         }, true);
-
-        // 5. 监听弹窗展开（class 变为 is-active 或 DOM 节点追加）
-        try {
-          const modalObserver = new MutationObserver(function (mutations) {
-            mutations.forEach(function (m) {
-              if (m.type === 'attributes' && m.attributeName === 'class') {
-                const target = m.target;
-                if (target && target.classList && target.classList.contains('is-active')) {
-                  if (target.matches && target.matches('#modal-save-list, .modal-save-list, [id*="save-list"], [id*="save_list"]')) {
-                    Promise.resolve(syncWithSaveListModal(target)).catch(function () {});
-                    setTimeout(function () { Promise.resolve(syncWithSaveListModal(target)).catch(function () {}); }, 300);
-                  }
-                }
-              }
-            });
-          });
-          modalObserver.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
-        } catch (err) {}
       } catch (e) {}
     }
 
     /* ---------- 导入导出 ---------- */
-    function collectAllConfig(includeCredentialsOpt) {
+    function collectAllConfig(includeCredentialsOpt, opts) {
+      const o = opts || {};
       let includeCredentials = false;
       if (typeof includeCredentialsOpt === 'boolean') {
         includeCredentials = includeCredentialsOpt;
@@ -19382,19 +19485,19 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         settings: {},
         playSites: null,
         infoSites: null,
-        auth: includeCredentials ? (localStorage.getItem('jhs_appAuthorization') || '') : ''
+        auth: includeCredentials ? (secretGet('jhs_appAuthorization') || '') : ''
       };
       if (includeCredentials) {
         try {
           const sign = localStorage.getItem('jb_jdsignature');
           if (sign) config.signature = sign;
-          const wdPass = localStorage.getItem('javdb_webdav_pass');
+          const wdPass = secretGet('javdb_webdav_pass');
           const wdUser = localStorage.getItem('javdb_webdav_user');
           const wdUrl = localStorage.getItem('javdb_webdav_url');
           if (wdPass || wdUser || wdUrl) {
             config.webdav = { url: wdUrl || '', user: wdUser || '', pass: wdPass || '' };
           }
-          const gitToken = localStorage.getItem('javdb_git_token');
+          const gitToken = o.excludeGitToken ? '' : secretGet('javdb_git_token');
           const gitRepo = localStorage.getItem('javdb_git_repo');
           const gitBranch = localStorage.getItem('javdb_git_branch');
           const gitUrl = localStorage.getItem('javdb_git_api_url');
@@ -19464,7 +19567,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           savePreviewSiteConfigs(config.previewSites);
         }
         if (typeof config.auth === 'string' && config.auth) {
-          localStorage.setItem('jhs_appAuthorization', config.auth);
+          secretSet('jhs_appAuthorization', config.auth);
         }
         if (typeof config.signature === 'string' && config.signature) {
           localStorage.setItem('jb_jdsignature', config.signature);
@@ -19472,13 +19575,13 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         if (config.webdav && typeof config.webdav === 'object') {
           if (typeof config.webdav.url === 'string') localStorage.setItem('javdb_webdav_url', config.webdav.url);
           if (typeof config.webdav.user === 'string') localStorage.setItem('javdb_webdav_user', config.webdav.user);
-          if (typeof config.webdav.pass === 'string') localStorage.setItem('javdb_webdav_pass', config.webdav.pass);
+          if (typeof config.webdav.pass === 'string' && config.webdav.pass) secretSet('javdb_webdav_pass', config.webdav.pass);
         }
         if (config.git && typeof config.git === 'object') {
           if (typeof config.git.url === 'string') localStorage.setItem('javdb_git_api_url', config.git.url);
           if (typeof config.git.repo === 'string') localStorage.setItem('javdb_git_repo', config.git.repo);
           if (typeof config.git.branch === 'string') localStorage.setItem('javdb_git_branch', config.git.branch);
-          if (typeof config.git.token === 'string') localStorage.setItem('javdb_git_token', config.git.token);
+          if (typeof config.git.token === 'string' && config.git.token) secretSet('javdb_git_token', config.git.token);
         }
         try { applySettings(); } catch (e) {}
       } catch (e) {
@@ -19486,7 +19589,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       }
     }
 
-    async function getBackupDataObject(includeCredentials) {
+    async function getBackupDataObject(includeCredentials, opts) {
       return {
         app: 'javdb-emby-fav', version: 4, exportedAt: new Date().toISOString(),
         lists: await dbAllLists(), movies: await dbAllMovies(),
@@ -19494,13 +19597,13 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         actorGenders: await dbAllActorGenders(),
         notes: await dbAllNotes(),
         meta: await dbAllMeta(),
-        __config: collectAllConfig(includeCredentials)
+        __config: collectAllConfig(includeCredentials, opts)
       };
     }
 
     // 导出 = 完整备份：清单/影片/画廊/演员性别表/实体备注/全部 meta/用户个性化配置
-    async function exportJSON(includeCredentials) {
-      const data = await getBackupDataObject(includeCredentials);
+    async function exportJSON(includeCredentials, opts) {
+      const data = await getBackupDataObject(includeCredentials, opts);
       const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -19511,8 +19614,8 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       a.remove();
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
     }
-    async function exportJson(includeCredentials) {
-      const data = await getBackupDataObject(includeCredentials);
+    async function exportJson(includeCredentials, opts) {
+      const data = await getBackupDataObject(includeCredentials, opts);
       return JSON.stringify(data);
     }
     function fieldRichness(v) {
@@ -20576,7 +20679,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         }
         var badgeTitle = noteContent ? escapeAttr(noteContent) : escapeAttr(a.name);
         const safeActorHref = safeHref(a.href, '');
-        var clickAttr = (safeActorHref && safeActorHref !== '#') ? (' data-href="' + escapeAttr(safeActorHref) + '" onclick="if(this.dataset.href){event.preventDefault();event.stopPropagation();window.open(this.dataset.href,\'_blank\');}"') : '';
+        var clickAttr = (safeActorHref && safeActorHref !== '#') ? (' data-href="' + escapeAttr(safeActorHref) + '"') : '';
 
         return '<span class="efav-actor-badge' + (isFav ? ' is-favorite' : '') + (noted ? ' is-noted' : '') + (isFolded ? ' efav-actor-folded' : '') + '" title="' + badgeTitle + '"' + clickAttr + '>' +
           avaHtml +
@@ -20622,7 +20725,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         var remainCount = femaleActors.length - 3;
         var remainNames = femaleActors.slice(3).map(function (a) { return a.name; }).join(', ');
         var stackTitle = escapeAttr('共演女优 (还有' + remainCount + '位): ' + remainNames);
-        var stackBadgeHtml = '<span class="efav-actor-stack-badge" title="' + stackTitle + '" onclick="event.preventDefault();event.stopPropagation();var p=this.closest(\'.efav-card-actors\');if(p){p.classList.add(\'is-expanded\');try{if(typeof WaterfallEngine!==\'undefined\'&&typeof WaterfallEngine.refresh===\'function\')WaterfallEngine.refresh();}catch(e){}}">' +
+        var stackBadgeHtml = '<span class="efav-actor-stack-badge" title="' + stackTitle + '">' +
           '<span class="efav-stack-avatars">' + stackCirclesHtml + '</span>' +
           '<span class="efav-stack-count">+' + remainCount + '</span>' +
         '</span>';
@@ -20634,7 +20737,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         }
 
         // 收起按钮（展开后在末尾显示）
-        var collapseBadgeHtml = '<span class="efav-actor-collapse-badge" title="收起共演演员" onclick="event.preventDefault();event.stopPropagation();var p=this.closest(\'.efav-card-actors\');if(p){p.classList.remove(\'is-expanded\');try{if(typeof WaterfallEngine!==\'undefined\'&&typeof WaterfallEngine.refresh===\'function\')WaterfallEngine.refresh();}catch(e){}}">' +
+        var collapseBadgeHtml = '<span class="efav-actor-collapse-badge" title="收起共演演员">' +
           '<span>收起</span><span class="material-symbols-outlined">expand_less</span>' +
         '</span>';
         actorSpans.push(collapseBadgeHtml);
@@ -22422,18 +22525,43 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       window.addEventListener('beforeunload', function () { stopPoll(); fbObserver.disconnect(); });
     }
     initGalleryCollect();
+    // 卡片内演员徽章点击跳转与共演女优折叠/展开全局事件委托（覆盖收藏夹、TOP250 与画廊，在油猴闭包内可直接调用 WaterfallEngine.refresh()）
+    if (!window.__efavActorDelegateBound) {
+      window.__efavActorDelegateBound = true;
+      document.addEventListener('click', function (e) {
+        const stackBtn = e.target && e.target.closest ? e.target.closest('.efav-actor-stack-badge') : null;
+        if (stackBtn) {
+          e.preventDefault(); e.stopPropagation();
+          const p = stackBtn.closest('.efav-card-actors');
+          if (p) {
+            p.classList.add('is-expanded');
+            try { if (typeof WaterfallEngine !== 'undefined' && typeof WaterfallEngine.refresh === 'function') WaterfallEngine.refresh(); } catch (err) {}
+          }
+          return;
+        }
+        const collapseBtn = e.target && e.target.closest ? e.target.closest('.efav-actor-collapse-badge') : null;
+        if (collapseBtn) {
+          e.preventDefault(); e.stopPropagation();
+          const p = collapseBtn.closest('.efav-card-actors');
+          if (p) {
+            p.classList.remove('is-expanded');
+            try { if (typeof WaterfallEngine !== 'undefined' && typeof WaterfallEngine.refresh === 'function') WaterfallEngine.refresh(); } catch (err) {}
+          }
+          return;
+        }
+        const actorBadge = e.target && e.target.closest ? e.target.closest('.efav-actor-badge[data-href]') : null;
+        if (actorBadge && actorBadge.dataset.href) {
+          e.preventDefault(); e.stopPropagation();
+          try { window.open(actorBadge.dataset.href, '_blank', 'noopener'); } catch (err) {}
+        }
+      });
+    }
 
     return { mount: mount, unmount: unmount, filterByDetail: filterByDetail, renderGallery: renderGallery, buildCard: buildCard, applyGalleryRandomBg: applyGalleryRandomBg, openFilterModal: openFilterModal, doImport: doImport, reload: reload };
   })();
-  // 暴露到 window，便于详情页注入的按钮点击时调用（同闭包内 FAVUI 也已可见，双保险）
+  // 仅挂载至用户脚本沙箱 window，严禁暴露给宿主页面 unsafeWindow，防止第三方脚本调用 exportJSON/clearAll
   window.FAVUI = FAVUI;
   window.FAV = FAV;
-  try {
-    if (typeof unsafeWindow !== 'undefined' && unsafeWindow) {
-      unsafeWindow.FAVUI = FAVUI;
-      unsafeWindow.FAV = FAV;
-    }
-  } catch (e) {}
 
   /* =======================================================================
    * v7.308 状态快捷标记与预览图系统 (Quick Status & Preview Modal)
@@ -27186,8 +27314,6 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     return sec;
   }
 
-  function escapeAttr(s) { return escapeHtml(s); }
-
   // 清理详情页注入结构（供路由切换重建时调用）
   function removeDetailDom() {
     try { stopDetailFilterBtnWatcher(); } catch (e) {}
@@ -27228,13 +27354,6 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     });
     // 重建前的清理：同步清除原生浮层守卫类，避免上一页状态残留隐藏开关
     document.documentElement.classList.remove('emby-native-overlay-open');
-  }
-
-  function escapeHtml(s) {
-    // 单引号一并转义：escapeAttr 是本函数的别名，而属性值也可能用单引号包裹；
-    // 少转义一个引号字符就等于留了一个属性注入口。
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-                    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
   /* =======================================================================
@@ -27638,13 +27757,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
 
   function applySkin(on) {
     if (on) {
+      if (isCloudflareChallengePage()) { clearSkinBoot(); return; }
       try { ensureFontLinks(); } catch (e) {}
       if (!skinEl) {
         skinEl = document.createElement('style');
         skinEl.id = 'javdb-emby-skin';
+        lastReduceMotion = isReduceMotionEnabled();
         skinEl.textContent = buildSkinCss(SKIN_ACCENT);
         document.head.appendChild(skinEl);
-        refreshSkinCss(true);
       }
       document.documentElement.classList.add('emby-skin');
       try { buildChrome(); } catch (e) { log('buildChrome 异常: ' + e.message); }
@@ -27704,13 +27824,21 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
   }
 
   /* =======================================================================
-   * 年龄弹窗自动点击
+   * 年龄弹窗自动点击（严格限定在年龄确认弹窗或 over18 确认链接内，杜绝误点标题含 "18+"/"18歲" 的影片卡片）
    * ===================================================================== */
   function tryAgeGate() {
-    const els = document.querySelectorAll('a, button');
-    for (let i = 0; i < els.length; i++) {
-      const t = els[i].textContent || '';
-      if (/滿18|over\s*18|18歲|18岁|18\+/i.test(t)) { els[i].click(); return true; }
+    const direct = document.querySelector('a[href*="over18"], .over18-modal a.button, .over18-modal button');
+    if (direct && !direct.closest('.movie-list, .video-detail')) {
+      const dt = direct.textContent || '';
+      if (/滿18|over\s*18|18歲|18岁|18\+|是|enter|yes/i.test(dt)) { direct.click(); return true; }
+    }
+    const modals = document.querySelectorAll('.modal.is-active, .over18-modal, [class*="over18"], [id*="over18"]');
+    for (let m = 0; m < modals.length; m++) {
+      const els = modals[m].querySelectorAll('a, button');
+      for (let i = 0; i < els.length; i++) {
+        const t = els[i].textContent || '';
+        if (/滿18|over\s*18|18歲|18岁|18\+/i.test(t)) { els[i].click(); return true; }
+      }
     }
     return false;
   }
@@ -27828,6 +27956,41 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         return u.pathname + (u.search || '');
       } catch (e) { return location.pathname + location.search; }
     }
+    // 排行榜全局拦截器（首屏即刻绑定且只绑一次）：Emby 模式直接切入自洽的 TOP250 全屏面板
+    if (!window.__rankingClickBound) {
+      window.__rankingClickBound = true;
+      document.addEventListener('click', function (e) {
+        const a = e.target && e.target.closest && e.target.closest('a[href*="/rankings/playback"], a[href*="/rankings/movies"], a[href*="/rankings/top"], a[href$="/rankings/playback"], a[href$="/rankings/movies"], a[href$="/rankings/top"]');
+        if (!a) return;
+        const href = a.getAttribute('href') || '';
+        const isPb = href.includes('playback');
+        if (enabled) {
+          const isTopRoute = /\/rankings\/top(?:\/|\?|$)/.test(href);
+          // /rankings/top is TOP250; /rankings/movies remains the site's daily/category ranking.
+          if (isTopRoute) { e.preventDefault(); e.stopPropagation(); Top250ViewManager.switchMode('top'); switchTab('top250'); return; }
+          if (!isPb) return;
+          e.preventDefault();
+          e.stopPropagation();
+          Top250ViewManager.switchMode('playback');
+          switchTab('top250');
+        } else {
+          // 原生模式下，仅拦截被官方收费限制的热播榜单，TOP250 官方榜单天然放行导航
+          if (isPb) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (location.pathname.startsWith('/rankings/')) {
+              try { history.pushState({}, '', href); } catch (err) {}
+              const nb = document.getElementById('native-t250-box');
+              if (nb) nb.removeAttribute('data-mounted');
+              Top250ViewManager.hookNativePage();
+            } else {
+              location.href = href;
+            }
+          }
+        }
+      }, true);
+    }
+
     let lastKey = pageKey();
     function checkRouteChange() {
       normalizeRankingHash();
@@ -27843,40 +28006,6 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           restructureCurrent(true);
           syncTopNavActiveState();
           if (/^\/(actors|directors|makers|series|video_codes)\//.test(location.pathname)) startDetailFilterBtnWatcher();
-          // 排行榜全局拦截器（只绑一次）：Emby 模式直接切入自洽的 TOP250 全屏面板
-          if (!window.__rankingClickBound) {
-            window.__rankingClickBound = true;
-            document.addEventListener('click', function (e) {
-              const a = e.target.closest('a[href*="/rankings/playback"], a[href*="/rankings/movies"], a[href*="/rankings/top"], a[href$="/rankings/playback"], a[href$="/rankings/movies"], a[href$="/rankings/top"]');
-              if (!a) return;
-              const href = a.getAttribute('href') || '';
-              const isPb = href.includes('playback');
-              if (enabled) {
-                const isTopRoute = /\/rankings\/top(?:\/|\?|$)/.test(href);
-                // /rankings/top is TOP250; /rankings/movies remains the site's daily/category ranking.
-                if (isTopRoute) { e.preventDefault(); e.stopPropagation(); Top250ViewManager.switchMode('top'); switchTab('top250'); return; }
-                if (!isPb) return;
-                e.preventDefault();
-                e.stopPropagation();
-                Top250ViewManager.switchMode('playback');
-                switchTab('top250');
-              } else {
-                // 原生模式下，仅拦截被官方收费限制的热播榜单，TOP250 官方榜单天然放行导航
-                if (isPb) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (location.pathname.startsWith('/rankings/')) {
-                    try { history.pushState({}, '', href); } catch (e) {}
-                    const nb = document.getElementById('native-t250-box');
-                    if (nb) nb.removeAttribute('data-mounted');
-                    Top250ViewManager.hookNativePage();
-                  } else {
-                    location.href = href;
-                  }
-                }
-              }
-            }, true);
-          }
 
           // 若当前直接访问排行榜或被 302 到 /plans 或 /advanced_search
           const isRankPage = location.pathname.startsWith('/plans') ||
@@ -27884,13 +28013,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
                              (location.pathname.startsWith('/advanced_search') && (location.search.includes('handlePlayback') || location.search.includes('handleTop')));
           if (isRankPage) {
             try {
-              if (enabled) {
-                const isPb = location.pathname.includes('playback') || location.search.includes('handlePlayback') || (document.referrer && document.referrer.includes('playback'));
-                Top250ViewManager.switchMode(isPb ? 'playback' : 'top');
-                switchTab('top250');
-              } else {
-                Top250ViewManager.hookNativePage();
-              }
+              const isPb = location.pathname.includes('playback') || location.search.includes('handlePlayback') || (document.referrer && document.referrer.includes('playback'));
+              Top250ViewManager.switchMode(isPb ? 'playback' : 'top');
+              switchTab('top250');
             } catch (e) {}
           }
         } else {
@@ -27997,8 +28122,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     }
     function gmReq(opt) {
       const o = opt || {};
-      const m = ((o.method) || 'GET').toUpperCase();
-      const key = (m === 'GET' && o.url) ? ('GET ' + o.url) : null;
+      const key = __buildNetDedupeKey(o);
       const run = function () { return netTimeoutRace(gmReqRaw(o), o.timeout || 15000); };
       try {
         if (typeof embyNetRun === 'function') return embyNetRun(key, run);
@@ -28027,6 +28151,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           jumpMode: ['direct', 'search', 'custom'].indexOf(s.jumpMode) >= 0 ? s.jumpMode : 'direct',
           customTemplate: String(s.customTemplate || ''),
           version: String(s.version || ''),
+          serverId: String(s.serverId || ''),
           enabled: s.enabled !== false
         };
       });
@@ -28242,7 +28367,26 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     function readCache(s) {
       try { return JSON.parse(GM_getValue(cacheKey(s), '{}') || '{}'); } catch (e) { return {}; }
     }
-    function writeCache(s, c) { try { GM_setValue(cacheKey(s), JSON.stringify(c || {})); } catch (e) {} }
+    function writeCache(s, c) {
+      try {
+        const src = c || {};
+        const now = Date.now();
+        const keys = Object.keys(src).filter(function (k) {
+          const v = src[k];
+          return v && (!v.ts || (now - v.ts) < CACHE_TTL);
+        });
+        let out = src;
+        if (keys.length > 1500) {
+          keys.sort(function (a, b) { return ((src[b] && src[b].ts) || 0) - ((src[a] && src[a].ts) || 0); });
+          out = {};
+          keys.slice(0, 1500).forEach(function (k) { out[k] = src[k]; });
+        } else if (keys.length !== Object.keys(src).length) {
+          out = {};
+          keys.forEach(function (k) { out[k] = src[k]; });
+        }
+        GM_setValue(cacheKey(s), JSON.stringify(out));
+      } catch (e) {}
+    }
     const INDEX_TTL = 60 * 60 * 1000;      // 索引有效期 1 小时（JavdbBuddy 模型）
     const CACHE_TTL = 24 * 60 * 60 * 1000; // 条目缓存 24 小时
 
@@ -28254,9 +28398,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         const url = apiUrl(s, '/Items?Recursive=true&IncludeItemTypes=Movie&Fields=Name,OriginalTitle,Path' +
           '&StartIndex=' + start + '&Limit=' + pageSize + '&SortBy=SortName');
         const res = await gmReq({ url: url, headers: serverHeaders(s), timeout: 60000 });
+        if (res.status < 200 || res.status >= 300) {
+          throw new Error('索引同步失败（HTTP ' + res.status + (res.status === 401 ? '，请检查 API Key' : '') + '）');
+        }
         let data;
         try { data = JSON.parse(res.responseText); } catch (e) { throw new Error('索引响应解析失败'); }
-        const items = (data && data.Items) || [];
+        if (!data || !Array.isArray(data.Items)) {
+          throw new Error('索引响应格式异常（缺少 Items 数组），已保留原有索引');
+        }
+        const items = data.Items;
         if (typeof (data && data.TotalRecordCount) === 'number') total = data.TotalRecordCount;
         else total = start + items.length;
         for (const it of items) {
@@ -28335,10 +28485,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           }
           return match;
         })().then(function (match) {
-          listLookupResults.set(job.key, match || false);
+          memCacheSetCapped(listLookupResults, job.key, match || false, 1000);
           job.resolve(match);
         }).catch(function () {
-          listLookupResults.set(job.key, false);
+          memCacheSetCapped(listLookupResults, job.key, false, 1000);
           job.resolve(null);
         }).finally(function () {
           listLookupPending.delete(job.key);
@@ -28403,7 +28553,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           ? (base + '/web/index.html#/details?id=' + itemId + sid)
           : (base + '/web/index.html#!/item?id=' + itemId + sid);
       } else if (s.jumpMode === 'custom' && s.customTemplate) {
-        rawUrl = s.customTemplate.replace('{code}', encodeURIComponent(code));
+        rawUrl = s.customTemplate.replace(/\{code\}/g, encodeURIComponent(code));
       } else {
         rawUrl = jfNewRouter
           ? (base + '/web/index.html#/search?q=' + encodeURIComponent(code))
@@ -29581,10 +29731,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       }
 
       function conf() {
+        const rawDir = GM_getValue(CONF.dirTpl, DEF_DIR_TPL);
+        const rawFolder = GM_getValue(CONF.folderTpl, DEF_FOLDER_TPL);
         return {
-          dirTpl: GM_getValue(CONF.dirTpl, DEF_DIR_TPL) || DEF_DIR_TPL,
+          dirTpl: (rawDir === null || rawDir === undefined) ? DEF_DIR_TPL : String(rawDir),
           fileTpl: GM_getValue(CONF.fileTpl, DEF_FILE_TPL) || DEF_FILE_TPL,
-          folderTpl: GM_getValue(CONF.folderTpl, DEF_FOLDER_TPL) || DEF_FOLDER_TPL,
+          folderTpl: (rawFolder === null || rawFolder === undefined) ? DEF_FOLDER_TPL : String(rawFolder),
           autoOrganize: GM_getValue(CONF.autoOrganize, false) === true,
           autoSilentArchive: GM_getValue(CONF.autoSilentArchive, false) === true,
           autoClean: GM_getValue(CONF.autoClean, true) !== false,
@@ -29657,16 +29809,29 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         });
       }
 
-      // 列目录（修复字段映射：保留真实 fid、parentCid、size、pickcode、isVideo）
-      async function listDir(cid) {
-        const url = 'https://webapi.115.com/files?aid=1&cid=' + encodeURIComponent(cid || '0') +
-          '&offset=0&limit=500&show_dir=1&o=file_name&asc=1&natsort=1&format=json';
-        const r = await gmReq({ url: url, timeout: 15000, headers: { 'Accept': 'application/json', 'Referer': 'https://115.com/' } });
-        const txt = r.responseText || '{}';
-        if (txt.trim().indexOf('<') === 0) throw new Error('115 未登录或会话已过期');
-        const j = JSON.parse(txt);
-        if (j.state === false && j.errNo !== 0) throw new Error(j.error || j.error_msg || '列目录失败');
-        return (j.data || []).map(map115Item);
+      // 列目录（支持跨分页全量读取，突破单次 500 条截断；保留真实 fid、parentCid、size、pickcode、isVideo）
+      async function listDir(cid, maxItems) {
+        const targetCid = String(cid || '0').trim() || '0';
+        const limit = 500;
+        const cap = maxItems || 5000;
+        let offset = 0;
+        let all = [];
+        while (offset < cap) {
+          const url = 'https://webapi.115.com/files?aid=1&cid=' + encodeURIComponent(targetCid) +
+            '&offset=' + offset + '&limit=' + limit + '&show_dir=1&o=file_name&asc=1&natsort=1&format=json';
+          const r = await gmReq({ url: url, timeout: 15000, headers: { 'Accept': 'application/json', 'Referer': 'https://115.com/' } });
+          const txt = r.responseText || '{}';
+          if (txt.trim().indexOf('<') === 0) throw new Error('115 未登录或会话已过期');
+          let j;
+          try { j = JSON.parse(txt); } catch (e) { throw new Error('115 目录响应异常（非 JSON）'); }
+          if (j.state === false && j.errNo !== 0) throw new Error(j.error || j.error_msg || '列目录失败');
+          const batch = (j.data || []).map(map115Item);
+          all = all.concat(batch);
+          const totalCount = Number(j.count || 0);
+          if (!batch.length || batch.length < limit || (totalCount > 0 && all.length >= totalCount)) break;
+          offset += batch.length;
+        }
+        return all;
       }
 
       // 新建单层目录
@@ -29809,7 +29974,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           } catch (e) {}
         }
         videos.sort(function (a, b) { return (b.size || 0) - (a.size || 0); });
-        videoHitMem.set(norm, { ts: Date.now(), items: videos });
+        memCacheSetCapped(videoHitMem, norm, { ts: Date.now(), items: videos }, 300);
         markCodeHit115(norm, videos.length > 0);
         return videos;
       }
@@ -29864,7 +30029,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           }
         }
         if (!bestUrl) throw new Error('未能从 M3U8 清单提取有效串流地址');
-        streamUrlMem.set(cacheKey, { ts: Date.now(), url: bestUrl });
+        memCacheSetCapped(streamUrlMem, cacheKey, { ts: Date.now(), url: bestUrl }, 200);
         return bestUrl;
       }
 
@@ -29988,7 +30153,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               });
               if (found.length) break;
             }
-            avWikiActorMem.set(realCode, found);
+            memCacheSetCapped(avWikiActorMem, realCode, found, 500);
             if (found.length) {
               m.actor = found[0];
               m.actors = found.slice(0, 4).join(' ');
@@ -30097,10 +30262,15 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           }
         }
 
+        const videoCount = files.filter(function (x) { return x.isVideo && !x.isJunk; }).length;
         const targets = files.filter(function (f) {
           if (!f.isFile || f.isJunk || !f.fid) return false;
           if (!code) return f.isVideo || f.isSub;
-          return (f.isVideo || f.isSub) && (matchesMovieCode(f.name, code) || files.filter(function (x) { return x.isVideo; }).length === 1);
+          if (!(f.isVideo || f.isSub)) return false;
+          if (matchesMovieCode(f.name, code)) return true;
+          // 仅在已进入「匹配当前番号的专属子文件夹」时才允许单视频/配套字幕回退，
+          // 严禁在共享下载目录（如「云下载」）里把无关的旧视频误改名并移入当前女优目录！
+          return Boolean(matchedSubDir && (videoCount === 1 || f.isSub));
         });
         if (!targets.length) {
           return { ok: false, cleaned: cleaned, renamed: 0, moved: 0, message: '目录中暂无可归档的视频文件（可能仍在离线下载中）' };
@@ -30170,7 +30340,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             if (done) return;
             try {
               const r = await gmReq({
-                url: 'https://115.com/web/lixian/?ct=lixian&ac=task_lists&page=1',
+                url: 'https://115.com/web/lixian/?ct=lixian&ac=task_lists&page=1&_=' + Date.now(),
                 headers: { 'Accept': 'application/json, text/plain, */*', 'Referer': 'https://115.com/' }, timeout: 9000
               });
               const j = JSON.parse(r.responseText || '{}');
@@ -30183,9 +30353,19 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
               });
               if (hit && Number(hit.status) === 2) {
                 done = true;
-                const taskDirCid = String(hit.file_id || hit.wp_path_id || targetCid || '0');
-                // 若 hit.file_id 是离线生成的文件夹 cid，直接进去整理；否则在 wp_path_id 整理
-                const res = await executeAutoArchive(taskDirCid, code, metaSnapshot);
+                const primaryCid = String(hit.file_id || '').trim();
+                const fallbackCid = String(hit.wp_path_id || targetCid || '0').trim() || '0';
+                // 多文件离线任务 hit.file_id 为生成的子目录 CID；单文件任务（如 ed2k）hit.file_id 为文件 ID，
+                // 直接列目录会失败或为空，必须自动回退至 wp_path_id / targetCid
+                let res = null;
+                if (primaryCid && primaryCid !== '0' && primaryCid !== fallbackCid) {
+                  try {
+                    res = await executeAutoArchive(primaryCid, code, metaSnapshot);
+                  } catch (e) { res = null; }
+                }
+                if (!res || !res.ok) {
+                  res = await executeAutoArchive(fallbackCid, code, metaSnapshot);
+                }
                 if (res && res.ok) {
                   magToast('✨ 115 秒传并自动归档完成 → ' + (res.path || code), true);
                   if (typeof injectPan115PlayButton === 'function') {
@@ -30240,7 +30420,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
 
         function draw() {
           if (!files.length) { listEl.innerHTML = '<div style="color:rgba(235,235,245,.45);padding:18px 0;text-align:center;">（该目录下暂无文件）</div>'; return; }
-          const tpl = conf().fileTpl;
+          const curConf = conf();
+          const tpl = curConf.fileTpl;
+          const dp = curConf.defaultPlayer || 'iina';
+          const dpLabel = dp === '115vod' ? '云播' : dp.toUpperCase();
           listEl.innerHTML = files.map(function (f) {
             const c2 = code || codeOf(f.name);
             const nextName = (f.isFile && !f.isJunk && (f.isVideo || f.isSub)) ? buildTargetFileName(tpl, c2, f, pageMeta) : '';
@@ -30256,7 +30439,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
                 badge +
                 '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;">' + escapeHtml(f.name) + '</span>' +
                 (f.dir ? '<button type="button" class="jf-magtool-btn" data-enter-cid="' + escapeAttr(f.cid) + '" style="padding:2px 8px;font-size:11px;">进入</button>' : '') +
-                (f.isVideo && f.pickcode ? '<button type="button" class="jf-magtool-btn" data-play-pc="' + escapeAttr(f.pickcode) + '" style="padding:2px 8px;font-size:11px;">▶ IINA</button>' : '') +
+                (f.isVideo && f.pickcode ? '<button type="button" class="jf-magtool-btn" data-play-pc="' + escapeAttr(f.pickcode) + '" style="padding:2px 8px;font-size:11px;">▶ ' + escapeHtml(dpLabel) + '</button>' : '') +
                 '<span style="color:rgba(235,235,245,.52);font-size:12px;font-variant-numeric:tabular-nums;">' + (f.isFile ? formatBytes(f.size) : 'CID ' + escapeHtml(f.cid)) + '</span>' +
               '</div>' +
               (nextName && nextName !== f.name ? '<div style="font-size:11.5px;color:#7cc4ff;padding-left:4px;">↳ 拟改名为：' + escapeHtml(nextName) + '</div>' : '') +
@@ -30270,9 +30453,21 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           });
           listEl.querySelectorAll('[data-play-pc]').forEach(function (b) {
             b.addEventListener('click', function () {
-              launchExternalPlayer('iina', b.getAttribute('data-play-pc'), 'IINA');
+              const curDp = conf().defaultPlayer || 'iina';
+              const pc = b.getAttribute('data-play-pc');
+              if (curDp === '115vod') {
+                window.open('https://115vod.com/?pickcode=' + encodeURIComponent(pc) + '&share_id=0', '_blank', 'noopener');
+              } else {
+                launchExternalPlayer(curDp, pc, curDp.toUpperCase());
+              }
             });
           });
+        }
+        let opBusy = false;
+        const actionBtns = mask.querySelectorAll('[data-pan-load], [data-pan-auto], [data-pan-clean], [data-pan-rename], [data-pan-move]');
+        function setBusy(on) {
+          opBusy = !!on;
+          actionBtns.forEach(function (b) { b.disabled = opBusy; });
         }
         async function load() {
           const curCid = (mask.querySelector('[data-pan-cid]').value || '0').trim();
@@ -30284,9 +30479,11 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             say('共列出 ' + files.length + ' 个条目（正片 ' + files.filter(function (x) { return x.isVideo && !x.isJunk; }).length + '，垃圾 ' + files.filter(function (x) { return x.isJunk; }).length + '）');
           } catch (e) { say('列出失败: ' + e.message, true); }
         }
-        mask.querySelector('[data-pan-load]').addEventListener('click', load);
+        mask.querySelector('[data-pan-load]').addEventListener('click', function () { if (!opBusy) load(); });
 
         mask.querySelector('[data-pan-auto]').addEventListener('click', async function () {
+          if (opBusy) return;
+          setBusy(true);
           const curCid = (mask.querySelector('[data-pan-cid]').value || '0').trim();
           try {
             const res = await executeAutoArchive(curCid, code || pageMeta.code, pageMeta, function (m) { say(m); });
@@ -30295,66 +30492,80 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
             await load();
             say('✅ 全自动归档完成！清理 ' + res.cleaned + ' 项 · 改名 ' + res.renamed + ' 项 · 移入「' + (res.path || '当前目录') + '」');
           } catch (e) { say('全自动归档失败: ' + e.message, true); }
+          finally { setBusy(false); }
         });
 
         mask.querySelector('[data-pan-clean]').addEventListener('click', async function () {
+          if (opBusy) return;
           const curCid = (mask.querySelector('[data-pan-cid]').value || '0').trim();
           const junk = files.filter(function (f) { return f.isJunk && f.fid; });
           if (!junk.length) { say('没有需要清理的垃圾文件'); return; }
+          setBusy(true);
           say('正在清理 ' + junk.length + ' 个垃圾文件…');
           try {
             await remove(junk.map(function (f) { return f.fid; }), curCid);
             say('✅ 已移入回收站 ' + junk.length + ' 个垃圾文件');
             await load();
           } catch (e) { say('清理失败: ' + e.message, true); }
+          finally { setBusy(false); }
         });
 
         mask.querySelector('[data-pan-rename]').addEventListener('click', async function () {
+          if (opBusy) return;
           const tpl = conf().fileTpl;
           const targets = files.filter(function (f) { return f.isFile && !f.isJunk && f.fid && (f.isVideo || f.isSub); });
           if (!targets.length) { say('没有可改名的视频或字幕文件'); return; }
+          setBusy(true);
           say('正在按模板规范改名 ' + targets.length + ' 个文件…');
           let ok = 0, fail = 0;
           const usedNames = new Set();
-          for (const f of targets) {
-            const code2 = code || codeOf(f.name);
-            let nv = buildTargetFileName(tpl, code2, f, pageMeta);
-            if (nv) {
-              let candidate = nv;
-              let seq = 2;
-              while (usedNames.has(candidate.toLowerCase())) {
-                candidate = nv.replace(/(\.[a-z0-9]{2,5})$/i, '-' + seq + '$1');
-                if (candidate === nv) candidate = nv + '-' + seq;
-                seq++;
+          try {
+            for (const f of targets) {
+              const code2 = code || codeOf(f.name);
+              let nv = buildTargetFileName(tpl, code2, f, pageMeta);
+              if (nv) {
+                let candidate = nv;
+                let seq = 2;
+                while (usedNames.has(candidate.toLowerCase())) {
+                  candidate = nv.replace(/(\.(?:zh|chs|cht|jpn|ja|en|sc|tc|big5|gb))?(\.[a-z0-9]{2,5})$/i, '-' + seq + '$1$2');
+                  if (candidate === nv) candidate = nv + '-' + seq;
+                  seq++;
+                }
+                nv = candidate;
+                usedNames.add(nv.toLowerCase());
               }
-              nv = candidate;
-              usedNames.add(nv.toLowerCase());
+              if (!nv || nv === f.name) continue;
+              try { await rename(f.fid, nv); ok++; f.name = nv; } catch (e) { fail++; }
             }
-            if (!nv || nv === f.name) continue;
-            try { await rename(f.fid, nv); ok++; f.name = nv; } catch (e) { fail++; }
-          }
-          draw();
-          say('改名完成：成功 ' + ok + '，失败 ' + fail + '（保留原扩展名，模板：' + tpl + '）', fail > 0);
+            draw();
+            say('改名完成：成功 ' + ok + '，失败 ' + fail + '（保留原扩展名，模板：' + tpl + '）', fail > 0);
+          } finally { setBusy(false); }
         });
 
         mask.querySelector('[data-pan-move]').addEventListener('click', async function () {
+          if (opBusy) return;
           const c2 = conf();
           const curCid = (mask.querySelector('[data-pan-cid]').value || '0').trim();
           const targets = files.filter(function (f) { return f.isFile && !f.isJunk && f.fid && (f.isVideo || f.isSub); });
           if (!targets.length) { say('没有可归集的文件'); return; }
-          const finalCode = code || codeOf(targets[0].name);
-          const enriched = await enrichMetaWithAvWiki(finalCode, pageMeta);
-          const vars = varsFor(finalCode, targets[0].name, enriched);
-          const fullRelPath = [pickTpl(c2.dirTpl, vars), pickTpl(c2.folderTpl, vars)].filter(Boolean).join('/') || (finalCode || 'JAVDB');
-          say('正在创建/定位目录「' + fullRelPath + '」…');
+          setBusy(true);
           try {
-            const rootBase = (fullRelPath.indexOf('/') >= 0 || fullRelPath.indexOf('云下载') === 0) ? '0' : curCid;
+            const finalCode = code || codeOf(targets[0].name);
+            const enriched = await enrichMetaWithAvWiki(finalCode, pageMeta);
+            const vars = varsFor(finalCode, targets[0].name, enriched);
+            const dirPath = pickTpl(c2.dirTpl, vars);
+            const subFolder = pickTpl(c2.folderTpl, vars);
+            const fullRelPath = [dirPath, subFolder].filter(Boolean).join('/') || (finalCode || 'JAVDB');
+            say('正在创建/定位目录「' + fullRelPath + '」…');
+            // 与 executeAutoArchive 保持一致：以 dirPath（而非拼接子目录后的 fullRelPath）判定是否从根目录定位
+            const rootBase = (dirPath.indexOf('/') >= 0 || dirPath.indexOf('云下载') === 0) ? '0' : curCid;
             const dirCid = await ensureDirPath(rootBase, fullRelPath);
             await move(targets.map(function (f) { return f.fid; }), dirCid);
             mask.querySelector('[data-pan-cid]').value = dirCid;
             say('✅ 已归入目录「' + fullRelPath + '」');
             await load();
           } catch (e) { say('归集失败: ' + e.message, true); }
+          finally { setBusy(false); }
         });
 
         // 若详情页无显式女优（如素人妻作品 HAWA-389），后台异步从 AV-Wiki 补齐女优真名并刷新路径预览
@@ -30497,7 +30708,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
       if (!name && !btih) return '';
       try {
         const r = await gmReq({
-          url: 'https://115.com/web/lixian/?ct=lixian&ac=task_lists&page=1',
+          url: 'https://115.com/web/lixian/?ct=lixian&ac=task_lists&page=1&_=' + Date.now(),
           headers: { 'Accept': 'application/json, text/plain, */*' }, timeout: 8000
         });
         const j = JSON.parse(r.responseText || '{}');
@@ -30573,7 +30784,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     }
     function showWhatslinkModal(payload, magnet) {
       const old = document.querySelector('.jf-whatslink-overlay');
-      if (old) old.remove();
+      if (old) {
+        if (typeof old._close === 'function') old._close();
+        else old.remove();
+      }
       const shots = Array.isArray(payload && payload.screenshots)
         ? payload.screenshots.map(function (i) { return i && safeHref(i.screenshot, ''); }).filter(function (u) { return u && u !== '#'; })
         : [];
@@ -30650,6 +30864,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         document.removeEventListener('keydown', onKeydown);
         window.removeEventListener('resize', sizeGallery);
       };
+      overlay._close = close;
       closeButton.addEventListener('click', close);
       overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
       overlay.addEventListener('wheel', function (e) { e.preventDefault(); }, { passive: false });
@@ -30666,7 +30881,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     }
     async function handleCheckCar(link, btn) {
       const old = document.querySelector('.jf-whatslink-overlay');
-      if (old) old.remove();
+      if (old) {
+        if (typeof old._close === 'function') old._close();
+        else old.remove();
+      }
       magToast('正在验车…');
       const info = await getMagnetInfo(link);
       if (!info) { magToast('验车失败，请稍后重试', false); return; }
@@ -31389,9 +31607,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           try {
             const r = await checkExists(s, code);
             if (r.hit) {
-              window.open(buildJumpUrl(s, code, r.item), '_blank');
+              window.open(buildJumpUrl(s, code, r.item), '_blank', 'noopener');
             } else {
-              window.open(buildJumpUrl(s, code, null), '_blank');
+              window.open(buildJumpUrl(s, code, null), '_blank', 'noopener');
               ftoast(s.name + '：未入库，已跳转搜索页');
             }
           } catch (err) {
@@ -31774,6 +31992,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           });
         }, { rootMargin: '500px 0px' });
       }
+      if (!GM_getValue('jf_rank_btn_pos_migrated_v742', false)) {
+        const prevPos = GM_getValue('jf_rank_btn_pos', '');
+        if (!prevPos || prevPos === 'bottom-left') GM_setValue('jf_rank_btn_pos', 'footer');
+        GM_setValue('jf_rank_btn_pos_migrated_v742', true);
+      }
+      const rawBtnPos = GM_getValue('jf_rank_btn_pos', 'footer');
       items.forEach(function (it) {
         const titleEl = it.querySelector('.video-title strong, .video-title');
         const code = it.dataset.code || extractCodeFromText((titleEl && titleEl.textContent || '').trim());
@@ -31803,12 +32027,6 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         if (!cover) return;
         cover.style.position = 'relative';
         const box = it.querySelector('a.box') || it.querySelector('.box') || it;
-        if (!GM_getValue('jf_rank_btn_pos_migrated_v742', false)) {
-          const prevPos = GM_getValue('jf_rank_btn_pos', '');
-          if (!prevPos || prevPos === 'bottom-left') GM_setValue('jf_rank_btn_pos', 'footer');
-          GM_setValue('jf_rank_btn_pos_migrated_v742', true);
-        }
-        const rawBtnPos = GM_getValue('jf_rank_btn_pos', 'footer');
         const inDynamicFocus = !!(it.closest && it.closest('.emby-dynamic-focus'));
         const useFooter = rawBtnPos === 'footer' && !inDynamicFocus && !!box;
         const effectivePos = useFooter ? 'footer' : (rawBtnPos === 'footer' ? 'bottom-left' : rawBtnPos);
@@ -31897,7 +32115,10 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
      * ===================================================================== */
     function openFusionSettings(tab) {
       const oldMask = document.querySelector('.jf-set-mask');
-      if (oldMask) oldMask.remove();
+      if (oldMask) {
+        if (typeof oldMask._close === 'function') oldMask._close();
+        else oldMask.remove();
+      }
       const mask = document.createElement('div');
       mask.className = 'jf-set-mask';
       mask.innerHTML =
@@ -31916,6 +32137,7 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         '</div>';
       document.body.appendChild(mask);
       const close = function () { mask.remove(); document.removeEventListener('keydown', onKey, true); };
+      mask._close = close;
       const onKey = function (e) { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
       document.addEventListener('keydown', onKey, true);
       mask.addEventListener('click', function (e) { if (e.target === mask) close(); });
@@ -32230,7 +32452,11 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         body.querySelector('#jfUiListBadge').addEventListener('change', function (e) { GM_setValue('jf_ui_listbadge', e.target.checked); fullScan(); });
         body.querySelector('#jfUiLibPlay').addEventListener('change', function (e) {
           GM_setValue('jf_ui_libplay', e.target.checked);
-          if (!e.target.checked) { const w = document.querySelector('.jf-lib-play-wrap'); if (w) w.remove(); }
+          if (!e.target.checked) {
+            document.querySelectorAll('.jf-lib-play-wrap:not(.jf-pan115-play-wrap)').forEach(function (w) { w.remove(); });
+          } else {
+            injectLibPlayButton();
+          }
         });
         const ltxSyncBtn = body.querySelector('#jfUiLtxSync');
         if (ltxSyncBtn) ltxSyncBtn.addEventListener('click', function () {
@@ -32893,8 +33119,30 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
         } catch (e) { cache = def; }
         return cache;
       }
+      let compiledKeywords = [];
+      let compiledKeySig = '';
+      function ensureCompiledKeywords(r) {
+        const list = (r && Array.isArray(r.keywords)) ? r.keywords : [];
+        const sig = list.join('\u0001');
+        if (sig === compiledKeySig) return compiledKeywords;
+        compiledKeySig = sig;
+        compiledKeywords = list.map(function (kw) {
+          if (!kw) return null;
+          if (kw.charAt(0) === '/' && kw.lastIndexOf('/') > 1) {
+            try {
+              const lastSlash = kw.lastIndexOf('/');
+              const flags = (kw.slice(lastSlash + 1) || 'i').replace(/[gy]/g, '');
+              return { raw: kw, re: new RegExp(kw.slice(1, lastSlash), flags) };
+            } catch (e) { return null; }
+          }
+          return { raw: kw, lower: kw.toLowerCase() };
+        }).filter(Boolean);
+        return compiledKeywords;
+      }
+
       function saveRules(next) {
         cache = next;
+        compiledKeySig = '';
         try { GM_setValue(KEY, JSON.stringify(next)); } catch (e) {}
         scan();
       }
@@ -32953,17 +33201,14 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           }
         }
         if (r.keywords.length) {
-          for (let i = 0; i < r.keywords.length; i++) {
-            const kw = r.keywords[i];
-            if (!kw) continue;
-            if (kw.charAt(0) === '/' && kw.lastIndexOf('/') > 1) {
-              try {
-                const lastSlash = kw.lastIndexOf('/');
-                const re = new RegExp(kw.slice(1, lastSlash), kw.slice(lastSlash + 1) || 'i');
-                if (re.test(rawTitle)) return '正则屏蔽: ' + kw;
-              } catch (e) {}
-            } else if (rawTitle.toLowerCase().indexOf(kw.toLowerCase()) >= 0) {
-              return '关键词: ' + kw;
+          const compiled = ensureCompiledKeywords(r);
+          const lowerTitle = rawTitle.toLowerCase();
+          for (let i = 0; i < compiled.length; i++) {
+            const item = compiled[i];
+            if (item.re) {
+              if (item.re.test(rawTitle)) return '正则屏蔽: ' + item.raw;
+            } else if (lowerTitle.indexOf(item.lower) >= 0) {
+              return '关键词: ' + item.raw;
             }
           }
         }
@@ -33117,11 +33362,20 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           const cur = getRules(); cur.mode = e.target.value === 'dim' ? 'dim' : 'hide'; saveRules(cur);
         });
         const scInp = mount.querySelector('#jf-pur-score'), scVal = mount.querySelector('#jf-pur-score-val');
-        scInp.addEventListener('input', function () {
+        let scoreSaveTimer = null;
+        const commitScore = function () {
+          if (scoreSaveTimer) { clearTimeout(scoreSaveTimer); scoreSaveTimer = null; }
           const v = parseFloat(scInp.value) || 0;
           scVal.textContent = v > 0 ? (v.toFixed(1) + ' 分') : '不限';
           const cur = getRules(); cur.minScore = v; saveRules(cur);
+        };
+        scInp.addEventListener('input', function () {
+          const v = parseFloat(scInp.value) || 0;
+          scVal.textContent = v > 0 ? (v.toFixed(1) + ' 分') : '不限';
+          if (scoreSaveTimer) clearTimeout(scoreSaveTimer);
+          scoreSaveTimer = setTimeout(commitScore, 180);
         });
+        scInp.addEventListener('change', commitScore);
         const handleAdd = function (key) {
           const inp = mount.querySelector('[data-pur-inp="' + key + '"]');
           if (!inp) return;
@@ -33236,11 +33490,16 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
           let candidateQueue = [];
           let trying = false;
           let startedPlaying = false;
+          let resolvedDone = false;
           const triedUrls = new Set();
 
           const tryNext = function () {
             if (myToken !== activeToken || startedPlaying) return;
-            if (!candidateQueue.length) { trying = false; return; }
+            if (!candidateQueue.length) {
+              trying = false;
+              if (resolvedDone && loaderEl) { loaderEl.remove(); loaderEl = null; }
+              return;
+            }
             trying = true;
             const nextUrl = candidateQueue.shift();
             if (!nextUrl || triedUrls.has(nextUrl)) { tryNext(); return; }
@@ -33282,11 +33541,13 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
 
           try {
             const finalSources = await resolveTrailer(code, enqueueSources, abortCtrl ? abortCtrl.signal : undefined);
+            resolvedDone = true;
             enqueueSources(finalSources);
             if (myToken === activeToken && !startedPlaying && !candidateQueue.length && !trying) {
               if (loaderEl) { loaderEl.remove(); loaderEl = null; }
             }
           } catch (e) {
+            resolvedDone = true;
             if (loaderEl) { loaderEl.remove(); loaderEl = null; }
           }
         }, 950);
@@ -33416,6 +33677,12 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
    * 初始化入口
    * ===================================================================== */
   function init() {
+    if (isCloudflareChallengePage()) {
+      clearSkinBoot();
+      log('检测到 Cloudflare 安全验证页，已自动避让注入');
+      return;
+    }
+    if (maybeBypassPlansRedirect()) return;
     log('初始化 | 皮肤=' + (enabled ? '开' : '关'));
     bindSlashSearchShortcut();
     try { if (isDetailPage()) autoBlockJavdbTranslate(); } catch (e) {}
@@ -33459,12 +33726,9 @@ html.emby-skin.emby-style-liquid .cover-modal-base {
     try { FUSION.init(); } catch (e) { log('FUSION 初始化失败: ' + e.message); }
   }
 
-  // 在 document-start 阶段提前执行一次（仅当 DOM 仍在解析时），避免首屏翻译闪烁且不与下方同步 init() 重复跑两遍
+  // 在 document-start 阶段仅提前执行轻量的去翻译守卫；其余依赖 DOM 的模块统一延后至 DOMContentLoaded 的 init() 避免空跑与重复初始化
   if (document.readyState === 'loading') {
     try { if (isDetailPage()) autoBlockJavdbTranslate(); } catch (e) {}
-    try { if (isDetailPage()) ReviewListInfiniteManager.init(); } catch (e) {}
-    try { if (isDetailPage()) FAV.passiveCollect(); } catch (e) {}
-    try { Top250ViewManager.hookNativePage(); } catch (e) {}
     document.addEventListener('DOMContentLoaded', init);
   } else {
     init();
